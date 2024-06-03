@@ -147,3 +147,4 @@ class MarkovModelAlgorithm(QCAlgorithm):
                 self.liquidate(symbol)
             self._equity.hedge_contracts = []
 
+

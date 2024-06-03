@@ -1,0 +1,2 @@
+Backtest Parameters
+alpha_exponent: 4
