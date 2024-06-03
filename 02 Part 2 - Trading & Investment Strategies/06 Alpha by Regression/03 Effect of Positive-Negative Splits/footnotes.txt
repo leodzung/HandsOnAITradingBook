@@ -1,0 +1,4 @@
+Backtest Parameters
+max_open_trades: 4
+hold_duration: 3
+training_lookback_years: 4

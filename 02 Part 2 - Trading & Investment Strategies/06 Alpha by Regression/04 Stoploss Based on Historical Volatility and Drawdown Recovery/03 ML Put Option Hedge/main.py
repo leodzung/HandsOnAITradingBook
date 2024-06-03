@@ -8,7 +8,7 @@ from sklearn.linear_model import Lasso
 class CaseOfTheMondaysAlgorithm(QCAlgorithm):
     """
     This algorithm is Part 2 of a 3-part series. Similar to the 
-    benchmark algorithm, this version buys 100 shares of AAPL at 
+    benchmark algorithm, this version allocates 100% to KO at 
     9:32 AM on the first trading day of each week. However, instead
     of placing a stop market order, this version of the algorithm
     buys a put Option contract to hedge the position. This algorithm
@@ -40,10 +40,9 @@ class CaseOfTheMondaysAlgorithm(QCAlgorithm):
 
         # Subscribe to the underlying Equity.
         self._security = self.add_equity(
-            "AAPL", data_normalization_mode=DataNormalizationMode.RAW
+            "KO", data_normalization_mode=DataNormalizationMode.RAW
         )
         self._symbol = self._security.symbol
-        self._quantity = 100
         
         # Subscribe to the put Option contracts.
         option = self.add_option(self._symbol)
@@ -188,7 +187,8 @@ class CaseOfTheMondaysAlgorithm(QCAlgorithm):
 
         for chain in self.current_slice.option_chains.values():
             # Buy the underlying Equity.
-            self.market_order(self._symbol, self._quantity)
+            quantity = self.calculate_order_quantity(self._symbol, 1)
+            self.market_order(self._symbol, quantity)
 
             # Select the put Contract.
             puts = [
@@ -200,7 +200,7 @@ class CaseOfTheMondaysAlgorithm(QCAlgorithm):
             
             # Buy the put Contract.
             tag = f"Predicted weekly low price: {round(predicted_low_price, 2)}"
-            self.market_order(contract.symbol, 1, tag=tag)
+            self.market_order(contract.symbol, quantity // 100, tag=tag)
 
 
 class IBFeesSecurityInitializer(BrokerageModelSecurityInitializer):
