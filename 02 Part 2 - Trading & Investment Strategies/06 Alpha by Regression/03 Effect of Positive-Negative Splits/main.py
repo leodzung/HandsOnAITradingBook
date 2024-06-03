@@ -208,3 +208,4 @@ class Trade:
             algorithm.market_on_open_order(self._symbol , -self._quantity)
             self.closed = True
 
+

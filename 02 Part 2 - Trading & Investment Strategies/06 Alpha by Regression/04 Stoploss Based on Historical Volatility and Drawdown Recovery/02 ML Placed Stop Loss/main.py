@@ -8,7 +8,7 @@ from sklearn.linear_model import Lasso
 class CaseOfTheMondaysAlgorithm(QCAlgorithm):
     """
     This algorithm is Part 2 of a 3 Part series. Similar to the 
-    benchmark algorithm, this version buys 100 shares of AAPL and places
+    benchmark algorithm, this version allocates 100% to KO and places
     a stop market at 9:32 AM on the first trading day of each week. The 
     difference is that this version of the algorithm uses a Lasso 
     regression model to determine where to place the stop loss instead 
@@ -32,10 +32,9 @@ class CaseOfTheMondaysAlgorithm(QCAlgorithm):
         self.set_end_date(2024, 4, 1)
         self.set_cash(100_000)
         self._security = self.add_equity(
-            "AAPL", data_normalization_mode=DataNormalizationMode.RAW
+            "KO", data_normalization_mode=DataNormalizationMode.RAW
         )
         self._symbol = self._security.symbol
-        self._quantity = 100
         self._stop_loss_buffer = self.get_parameter('stop_loss_buffer', 0.01)
         
         # Create a DataFrame to store the factors and labels.
@@ -172,12 +171,13 @@ class CaseOfTheMondaysAlgorithm(QCAlgorithm):
         self.plot("Stop Loss", "Distance", 1 + prediction)
 
         # Place the entry order.
-        self.market_order(self._symbol, self._quantity)
+        quantity = self.calculate_order_quantity(self._symbol, 1)
+        self.market_order(self._symbol, quantity)
         # Place the stop loss $0.0x below the predicted low price, so 
         # that the stop loss is only hit if the market is more volatile 
         # than we expected.
         self.stop_market_order(
-            self._symbol, -self._quantity, 
+            self._symbol, -quantity, 
             round(predicted_low_price - self._stop_loss_buffer, 2)
         )
 
