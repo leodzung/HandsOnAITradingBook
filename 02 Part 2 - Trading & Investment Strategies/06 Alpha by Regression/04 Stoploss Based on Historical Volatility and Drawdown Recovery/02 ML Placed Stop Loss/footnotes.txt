@@ -1,0 +1,4 @@
+Backtest Parameters
+indicator_lookback_months: 3
+stop_loss_buffer: 0.01
+alpha_exponent: 4
