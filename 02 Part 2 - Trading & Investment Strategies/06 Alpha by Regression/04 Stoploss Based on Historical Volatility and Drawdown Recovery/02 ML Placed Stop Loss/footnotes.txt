@@ -10,7 +10,7 @@ Parameter `stop_loss_buffer`:
 
 The results show:
 - The Sharpe ratio generally increases with a larger stop_loss_buffer over the range we tested.
-- 28/38 parameter combinations tested outperform buy-and-hold (0.263 Sharpe).
+- 28/30 parameter combinations tested outperform buy-and-hold (0.263 Sharpe).
 - All parameter combinations lead to a positive Sharpe ratio.
 
 Backtest Parameters
