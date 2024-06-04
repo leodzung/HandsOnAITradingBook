@@ -39,8 +39,6 @@ class CaseOfTheMondaysAlgorithm(QCAlgorithm):
         )
 
     def _enter(self):
-        if self.portfolio.invested:
-            self.quit("Invested")
         quantity = self.calculate_order_quantity(self._symbol, 1)
         self.market_order(self._symbol, quantity)
         self.stop_market_order(
