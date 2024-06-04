@@ -118,7 +118,7 @@ class SplitEventsAlgorithm(QCAlgorithm):
                 entry_price = entry_series[0]
                 # Get exit price.
                 exit_series = prices[symbol].loc[
-                    t + self._hold_duration <= prices.index
+                    t + self._hold_duration < prices.index
                 ]
                 if exit_series.empty or np.isnan(exit_series[0]):
                     continue
@@ -207,5 +207,4 @@ class Trade:
         if not self.closed and self._close_time <= algorithm.time:
             algorithm.market_on_open_order(self._symbol , -self._quantity)
             self.closed = True
-
 
