@@ -17,3 +17,5 @@ Backtest Parameters
 indicator_lookback_months: 3
 stop_loss_buffer: 0.01
 alpha_exponent: 4
+
+The x-axis tick labels are only shown on the bottom plot of tearsheet1 to save space.
