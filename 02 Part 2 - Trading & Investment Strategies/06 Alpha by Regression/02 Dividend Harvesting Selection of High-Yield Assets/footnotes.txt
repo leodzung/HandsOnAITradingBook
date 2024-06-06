@@ -17,3 +17,5 @@ The results show:
 Backtest Parameters
 universe_size: 100
 lookback_years: 5
+
+The x-axis tick labels are only shown on the bottom plot of tearsheet1 to save space.
