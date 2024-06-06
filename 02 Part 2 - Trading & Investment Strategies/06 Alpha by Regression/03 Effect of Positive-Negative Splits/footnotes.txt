@@ -17,3 +17,5 @@ Backtest Parameters
 max_open_trades: 4
 hold_duration: 2
 training_lookback_years: 4
+
+The x-axis tick labels are only shown on the bottom plot of tearsheet1 to save space.

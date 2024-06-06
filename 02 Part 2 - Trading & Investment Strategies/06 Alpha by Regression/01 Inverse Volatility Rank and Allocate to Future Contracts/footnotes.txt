@@ -17,3 +17,5 @@ Backtest Parameters
 std_months: 3
 atr_months: 3
 training_set_duration: 365
+
+The x-axis tick labels are only shown on the bottom plot of tearsheet1 to save space.
