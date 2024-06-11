@@ -36,10 +36,10 @@ class InverseVolatilityRankAlgorithm(QCAlgorithm):
             Futures.Indices.SP_500_E_MINI,
             Futures.Indices.NASDAQ_100_E_MINI,
             Futures.Indices.DOW_30_E_MINI,
-            Futures.Energies.BRENT_CRUDE,
-            Futures.Energies.GASOLINE,
-            Futures.Energies.HEATING_OIL,
-            Futures.Energies.NATURAL_GAS,
+            Futures.Energy.BRENT_CRUDE,
+            Futures.Energy.GASOLINE,
+            Futures.Energy.HEATING_OIL,
+            Futures.Energy.NATURAL_GAS,
             Futures.Grains.CORN,
             Futures.Grains.OATS,
             Futures.Grains.SOYBEANS,
@@ -217,5 +217,4 @@ class InverseVolatilityRankAlgorithm(QCAlgorithm):
             (security.label_history.index >= 
             self.time - self._training_set_duration)
         ]
-
 
