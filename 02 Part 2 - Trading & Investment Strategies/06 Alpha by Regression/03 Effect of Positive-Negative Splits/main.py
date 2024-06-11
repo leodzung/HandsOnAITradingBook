@@ -13,11 +13,6 @@ class SplitEventsAlgorithm(QCAlgorithm):
     about to occur. It places a trade in the same direction and then
     liquidates the position after a specified number of days.
     """
-    _blocked_assets = [
-        'MLCH R735QTJ8XC9X',  # quantconnect.com/datasets/issue/16642
-        'DELL X0QFBGE1E9GL',  # quantconnect.com/datasets/issue/14885
-        'SPI W7CX71IR7Z39'    # quantconnect.com/datasets/issue/16645
-    ] 
 
     def initialize(self):
         self.set_start_date(2019, 1, 1)
@@ -34,8 +29,7 @@ class SplitEventsAlgorithm(QCAlgorithm):
                 x.symbol 
                 for x in fundamental 
                 if (x.asset_classification.morningstar_sector_code == 
-                    MorningstarSectorCode.TECHNOLOGY and
-                    str(x.symbol.id) not in self._blocked_assets)
+                    MorningstarSectorCode.TECHNOLOGY)
             ]
         )
 

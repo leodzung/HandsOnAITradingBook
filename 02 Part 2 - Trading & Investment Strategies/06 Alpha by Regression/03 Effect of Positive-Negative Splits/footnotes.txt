@@ -9,9 +9,8 @@ Parameter `training_lookback_years`:
 - The step size is 1 because it's the smallest possible step size.
 
 The results show:
-- The most consistent returns occur within the first day following the split.
-- A hold_duration of 1 day generates the greatest Sharpe ratio for all values of the training_lookback_years parameter.
-- All the Sharpe ratios are >= 0.9.
+- A hold_duration of 3 days generates the greatest Sharpe ratio.
+- All the Sharpe ratios are >= 0.7
 
 Backtest Parameters
 max_open_trades: 4
