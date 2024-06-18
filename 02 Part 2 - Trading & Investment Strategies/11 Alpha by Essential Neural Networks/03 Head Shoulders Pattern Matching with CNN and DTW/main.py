@@ -40,7 +40,7 @@ class CNNPatternDetectionAlgorithm(QCAlgorithm):
         self.add_chart(chart)
         series = [
             Series('USDCAD Price', SeriesType.LINE, 0),
-            Series('End of H&S Pattern Detected', SeriesType.SCATTER, 0),
+            Series('End of Pattern Detected', SeriesType.SCATTER, 0),
             Series("Window Length", SeriesType.SCATTER, 1)
         ]
         for s in series:
@@ -59,6 +59,7 @@ class CNNPatternDetectionAlgorithm(QCAlgorithm):
         # Calculate the order quantity.
         quantity = 0
         
+        self._window_lengths_detected = []        
         for size in range(self._min_size, self._max_size + 1, self._step_size):
             # Ensure there are enough trailing data points to fill this 
             # window size.
@@ -90,8 +91,20 @@ class CNNPatternDetectionAlgorithm(QCAlgorithm):
                 self.plot(
                     "HS Patterns Detected", 'End of Pattern Detected', price
                 )
-                self.plot("HS Patterns Detected", "Window Length", size)
+                self._window_lengths_detected.append(size)
                 quantity -= 10_000
+        
+        # Plot the window length values.
+        for i in range(len(self._window_lengths_detected)):
+            t = self.time + timedelta(seconds=i)
+            self.schedule.on(
+                self.date_rules.on(t.year, t.month, t.day),
+                self.time_rules.at(t.hour, t.minute, t.second),
+                lambda: self.plot(
+                    "HS Patterns Detected", "Window Length", 
+                    self._window_lengths_detected.pop(0)
+                )
+            )
         
         if quantity:
             self._cad_before_sell = self.portfolio.cash_book['CAD'].amount
@@ -153,4 +166,3 @@ def downsample(values, num_points=25):
     smoothed_data.append(adj_values[-1])
 
     return np.array(smoothed_data)
-
