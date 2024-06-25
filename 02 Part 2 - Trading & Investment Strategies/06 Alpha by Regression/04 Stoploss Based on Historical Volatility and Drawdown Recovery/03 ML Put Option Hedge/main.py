@@ -30,7 +30,7 @@ class CaseOfTheMondaysAlgorithm(QCAlgorithm):
         self.set_end_date(2024, 4, 1)
         self.set_cash(100_000)
  
-        # Disable trading fees.
+        # Set the fee model.
         self.set_security_initializer(
             IBFeesSecurityInitializer(
                 self.brokerage_model, 
@@ -48,7 +48,7 @@ class CaseOfTheMondaysAlgorithm(QCAlgorithm):
         option = self.add_option(self._symbol)
         option.set_filter(
             lambda universe: universe.include_weeklys().puts_only()
-                .strikes(-10, 0).expiration(0, 7)
+                .strikes(-20, 0).expiration(0, 7)
         )
 
         # Create a DataFrame to store the factors and labels.
@@ -81,7 +81,7 @@ class CaseOfTheMondaysAlgorithm(QCAlgorithm):
             self._liquidate_if_possible
         )
 
-        self._model = Lasso()
+        self._model = Lasso(alpha=10**(-self.get_parameter('alpha_exponent', 4)))
 
     def on_splits(self, splits):
         if splits[self._symbol].type == SplitType.SPLIT_OCCURRED:
