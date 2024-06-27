@@ -211,7 +211,7 @@ class StockSelectionThroughClusteringFundamentalDataAlgorithm(QCAlgorithm):
         )
         label_by_symbol = {}
         for symbol in tradable_symbols[:]:
-            # Remoe the asset if there is not data for it.
+            # Remove the asset if there is not data for it.
             if symbol not in history.index:
                 tradable_symbols.remove(symbol)
                 continue 
