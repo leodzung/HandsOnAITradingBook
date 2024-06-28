@@ -108,7 +108,7 @@ class MarkovModelAlgorithm(QCAlgorithm):
                 return
 
             # Define the straddle type. Low volatility regime => short 
-            # straddle; High volaility regime => long straddle.
+            # straddle; High volatility regime => long straddle.
             if regime == 0:
                 option_type = OptionStrategies.short_straddle
                 expiry = min(expiries)

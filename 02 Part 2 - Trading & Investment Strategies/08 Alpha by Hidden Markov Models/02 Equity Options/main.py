@@ -106,7 +106,7 @@ class MarkovModelAlgorithm(QCAlgorithm):
             ]
 
             # Define the straddle type. Low volatility regime => short 
-            # straddle; High volaility regime => long straddle.
+            # straddle; High volatility regime => long straddle.
             if regime == 0:
                 option_type = OptionStrategies.short_straddle
                 expiry = min(expiries)
@@ -146,5 +146,4 @@ class MarkovModelAlgorithm(QCAlgorithm):
             for symbol in self._equity.hedge_contracts:
                 self.liquidate(symbol)
             self._equity.hedge_contracts = []
-
 
