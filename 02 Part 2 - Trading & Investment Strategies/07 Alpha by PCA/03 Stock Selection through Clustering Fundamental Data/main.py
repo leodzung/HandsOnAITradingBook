@@ -291,4 +291,3 @@ class StockSelectionThroughClusteringFundamentalDataAlgorithm(QCAlgorithm):
             True
         )
 
-

@@ -209,8 +209,8 @@ class GaussianNaiveBayesAlgorithm(QCAlgorithm):
         # consolidated bars close. Let's remove them.
         features.dropna(inplace=True) 
 
-        # Find the intersection of the indicies for the features and 
-        # lables. 
+        # Find the intersection of the indices for the features and 
+        # labels. 
         idx = set([t for t in features.index])
         for i, (symbol, labels) in enumerate(labels_by_symbol.items()):
             a = set([t for t in labels.index])
