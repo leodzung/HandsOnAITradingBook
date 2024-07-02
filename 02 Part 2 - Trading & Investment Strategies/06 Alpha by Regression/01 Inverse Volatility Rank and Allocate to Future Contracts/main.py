@@ -47,7 +47,7 @@ class InverseVolatilityRankAlgorithm(QCAlgorithm):
         ]
         for ticker in tickers:
             future = self.add_future(ticker, extended_market_hours=True)
-            future.set_filter(lambda universe: universe.FrontMonth())
+            future.set_filter(lambda universe: universe.front_month())
         
         schedule_symbol = Symbol.create("SPY", SecurityType.EQUITY, Market.USA)
         self.schedule.on(
@@ -124,7 +124,7 @@ class InverseVolatilityRankAlgorithm(QCAlgorithm):
             # 3 is the middle-ground where the algorithm trades 
             # most of the Futures without having to set 
             # minimum_order_margin_portfolio_percentage to zero.
-            portfolio_targets.append(PortfolioTarget(security.Symbol, weight))
+            portfolio_targets.append(PortfolioTarget(security.symbol, weight))
         self.set_holdings(portfolio_targets, True)
 
     def on_securities_changed(self, changes):
@@ -168,7 +168,7 @@ class InverseVolatilityRankAlgorithm(QCAlgorithm):
                 security.symbol, warm_up_length, Resolution.DAILY
             )
             for bar in bars:
-                security.consolidator.Update(bar)
+                security.consolidator.update(bar)
 
             self._contracts.append(security)
 

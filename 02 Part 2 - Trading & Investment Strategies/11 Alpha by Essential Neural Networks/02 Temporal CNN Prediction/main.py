@@ -49,15 +49,15 @@ class TemporalCNNPredictionAlgorithm(QCAlgorithm):
 
     def _select_assets(self, constituents):
         # Select the assets with the largest weight in the ETF.
-        constituents = [c for c in constituents if c.Weight]
+        constituents = [c for c in constituents if c.weight]
         if constituents: 
             return [
-                c.Symbol 
+                c.symbol 
                 for c in sorted(
-                    constituents, key=lambda c: c.Weight
+                    constituents, key=lambda c: c.weight
                 )[-self._universe_size:]
             ]
-        return Universe.Unchanged
+        return Universe.UNCHANGED
 
     def _trade(self):
         # Get predictions for all the assets.

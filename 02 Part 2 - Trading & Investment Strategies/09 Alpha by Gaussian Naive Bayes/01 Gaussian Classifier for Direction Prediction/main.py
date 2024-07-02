@@ -229,8 +229,6 @@ class GaussianNaiveBayesAlgorithm(QCAlgorithm):
                 key = str(symbol.id)
                 self._models_by_symbol[key] = pickle.dumps(security.model)
 
-
-
     def _is_ready(self, security):
         return (
             security.features_by_day.shape[0] == 
