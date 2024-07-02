@@ -45,7 +45,7 @@ class SVMWaveletForecastingAlgorithm(QCAlgorithm):
                 security.symbol, period, Resolution.DAILY
             )
             for bar in history:
-                consolidator.Update(bar)
+                consolidator.update(bar)
         
         self._wavelet = SVMWavelet()
         
@@ -67,5 +67,4 @@ class SVMWaveletForecastingAlgorithm(QCAlgorithm):
         ticker = security.symbol.value
         self.plot(ticker, "Price", bar.close)
         self.plot(ticker, "Forecast", forecasted_value)
-
 
