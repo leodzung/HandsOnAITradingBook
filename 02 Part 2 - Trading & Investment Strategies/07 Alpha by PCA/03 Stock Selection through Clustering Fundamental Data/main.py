@@ -171,7 +171,7 @@ class StockSelectionThroughClusteringFundamentalDataAlgorithm(QCAlgorithm):
                 factor_values = []
                 for factor in self._factors:
                     factor_values.append(eval(f"asset_fundamentals.{factor}"))
-                t = asset_fundamentals.EndTime
+                t = asset_fundamentals.end_time
                 factors_by_symbol[symbol].loc[t] = factor_values
         
         # Determine which factors to use for PCA. We can't have any NaN 
@@ -283,7 +283,7 @@ class StockSelectionThroughClusteringFundamentalDataAlgorithm(QCAlgorithm):
     def _trade(self):
         # Rebalance to form an equal-weighted portfolio.
         weight = 1 / len(self._universe.selected)
-        self.SetHoldings(
+        self.set_holdings(
             [
                 PortfolioTarget(symbol, weight) 
                 for symbol in self._universe.selected
