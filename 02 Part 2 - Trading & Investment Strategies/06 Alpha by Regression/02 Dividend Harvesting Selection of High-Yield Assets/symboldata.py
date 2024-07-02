@@ -59,7 +59,7 @@ class SymbolData:
             'dividend_payout_ratio': (
                 -cf_statement.cash_dividends_paid.three_months / 
                 f.financial_statements.income_statement.net_income.three_months 
-            ) if f.financial_statements.income_statement.NetIncome.three_months 
+            ) if f.financial_statements.income_statement.net_income.three_months 
                 else 0,
             'current_ratio': f.operation_ratios.current_ratio.three_months
         }
@@ -71,7 +71,7 @@ class SymbolData:
         if t in self._label_timestamps:
             return 
         self._label_timestamps.append(t)
-        self._label_history.Add(dividend.Distribution / dividend.ReferencePrice)            
+        self._label_history.Add(dividend.distribution / dividend.reference_price)
 
     def train(self):
         if (len(self._factor_timestamps) < self._minimum_samples or 
@@ -157,5 +157,4 @@ class SymbolData:
             for factor_name in self._factor_names
         ]
         return self._model.predict([latest_factor_values])[0]
-
 
