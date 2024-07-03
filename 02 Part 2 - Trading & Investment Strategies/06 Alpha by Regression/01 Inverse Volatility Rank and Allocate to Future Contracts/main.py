@@ -52,7 +52,7 @@ class InverseVolatilityRankAlgorithm(QCAlgorithm):
         schedule_symbol = Symbol.create("SPY", SecurityType.EQUITY, Market.USA)
         self.schedule.on(
             self.date_rules.week_start(schedule_symbol),
-            self.time_rules.after_market_open(schedule_symbol, 2), 
+            self.time_rules.after_market_open(schedule_symbol, 1), 
             self._trade
         )
 
