@@ -9,6 +9,7 @@ import torch.distributions as D
 import torch.nn as nn
 import joblib
 import plotly.graph_objects as go
+from plotly.subplots import make_subplots
 
 from policy import Policy
 #endregion
@@ -289,13 +290,30 @@ class AIDeltaHedgeModel:
             )
         ).show()
 
-        go.Figure(
-            go.Scatter(x=path.index, y=S.flatten(), name='Price'),
-            dict(
-                title="Underlying Price", xaxis_title='Date', yaxis_title='Value', 
-                showlegend=True
+        fig = make_subplots(specs=[[{"secondary_y": True}]])
+        fig.add_trace(
+            go.Scatter(x=path.index, y=S.flatten(), name='Underlying', mode='lines+markers'),
+            secondary_y=False,
+        )
+        for s in contract_symbols:
+            contract_info = data[data['symbol'] == s]
+            fig.add_trace(
+                go.Scatter(
+                    x=contract_info.index, y=contract_info['close_option'], 
+                    name=f"Expiry {contract_info['expiry'].iloc[0].date()}", mode='lines'
+                ),
+                secondary_y=True,
             )
-        ).show()
+        fig.update_yaxes(title_text="Underlying Price", secondary_y=False)
+        fig.update_yaxes(title_text="Contract Price", secondary_y=True)
+        fig.update_xaxes(title_text="Date")
+        fig.update_yaxes(showgrid=False, secondary_y=False)
+        fig.update_yaxes(showgrid=False, secondary_y=True)
+        fig.update_layout(
+            title_text=f"Prices<br><sub>Underlying and contracts with a {K} strike price</sub>"
+        )
+        fig.update_xaxes(range=[data.index.min(), data.index.max()])
+        fig.show()
 
         fee = self._commission * S[:-1]
         hold_change = (
