@@ -118,7 +118,7 @@ class FinbertBaseModelAlgorithm(QCAlgorithm):
         
         # Classify the market reaction into positive/negative/neutral.
         # 75% of the most negative labels => class 0 (negative)
-        # 75% of the most postiive labels => class 2 (positive)
+        # 75% of the most positive labels => class 2 (positive)
         # Remaining labels                => class 1 (netural)
         sorted_samples = samples.sort_values(
             by='label', ascending=False
