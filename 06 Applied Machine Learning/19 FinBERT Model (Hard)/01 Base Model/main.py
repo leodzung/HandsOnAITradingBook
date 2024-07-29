@@ -29,6 +29,11 @@ class FinbertBaseModelAlgorithm(QCAlgorithm):
         spy = Symbol.create("SPY", SecurityType.EQUITY, Market.USA)
         self.universe_settings.resolution = Resolution.DAILY
         self.universe_settings.schedule.on(self.date_rules.month_start(spy))
+        # The universe selection function returns a list of Symbol
+        # objects to define the universe constituents. The `history`
+        # method returns a DataFrame where the first index level is
+        # the Symbol and the second index is the time of the 
+        # price sample.
         self._universe = self.add_universe(
             lambda fundamental: [
                 self.history(
