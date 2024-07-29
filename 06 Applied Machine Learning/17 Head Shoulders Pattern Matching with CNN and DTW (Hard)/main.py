@@ -24,8 +24,8 @@ class CNNPatternDetectionAlgorithm(QCAlgorithm):
         self._max_size = self.get_parameter('max_size', 100)
         self._step_size = self.get_parameter('step_size', 10)
         self._confidence_threshold = self.get_parameter(
-            'confidence_threshold', 0.8
-        )  # 0.8 => 80%
+            'confidence_threshold', 0.5
+        )  # 0.5 => 50%
         self._holding_period = timedelta(
             self.get_parameter('holding_period', 10)
         )
