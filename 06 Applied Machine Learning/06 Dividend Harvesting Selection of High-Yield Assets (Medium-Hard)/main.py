@@ -158,7 +158,7 @@ class DividendHarvestingAlgorithm(QCAlgorithm):
             dividend_by_symbol.items(), key=lambda x: x[1], reverse=True
         )
         for symbol, total_dividends in sorted_by_dividends_earned:
-            self.log(f"- ${total_dividends} ({symbol.value.split(' ')[0]})")
+            self.log(f"- ${total_dividends} ({symbol.value})")
         self.log("-----------------")
         self.log(f"Total: ${sum(dividend_by_symbol.values())}")
 
