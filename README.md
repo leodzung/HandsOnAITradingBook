@@ -30,7 +30,7 @@ To use the repo open the ```main.py``` and ```research.ipynb``` files from an ex
 
 **Using the backtestlib functionality:**
 
-In order to use the [backtestlib functionality](https://github.com/QuantConnect/HandsOnAITradingBook/blob/master/00%20Libraries/backtestlib/backtestlib.py):
+In order to use the [backtestlib](https://github.com/QuantConnect/HandsOnAITradingBook/blob/master/00%20Libraries/backtestlib/backtestlib.py) functionality:
 
 1. Create a library called ```backtestlib```.
 2. add the library to your project.
@@ -69,7 +69,7 @@ Employs Hidden Markov Models to predict market volatility regimes and allocate f
 
 [FX SVM Wavelet Forecasting](https://github.com/QuantConnect/HandsOnAITradingBook/tree/master/06%20Applied%20Machine%20Learning/05%20FX%20SVM%20Wavelet%20Forecasting)
 <br/>
-Needs description
+Uses Support Vector Machines (SVM) and wavelets to predict forex pair prices, where wavelets decompose price data into components and SVM predicts each component separately.
 <br/><br/>
 
 [Dividend Harvesting Selection of High-Yield Assets](https://github.com/QuantConnect/HandsOnAITradingBook/tree/master/06%20Applied%20Machine%20Learning/06%20Dividend%20Harvesting%20Selection%20of%20High-Yield%20Assets)
@@ -89,7 +89,7 @@ Uses regression models to dynamically adjust stop-loss levels based on market co
 
 [ML Trading Pairs Selection](https://github.com/QuantConnect/HandsOnAITradingBook/tree/master/06%20Applied%20Machine%20Learning/09%20ML%20Trading%20Pairs%20Selection)
 <br/>
-Needs description
+Demonstrates using PCA and clustering techniques to identify potential pairs for statistical arbitrage trading. It first applies PCA to transform standardized stock returns into principal components, then uses the OPTICS clustering algorithm and various statistical tests (cointegration, Hurst exponent, half-life) to select optimal trading pairs.
 <br/><br/>
 
 [Stock Selection through Clustering Fundamental Data](https://github.com/QuantConnect/HandsOnAITradingBook/tree/master/06%20Applied%20Machine%20Learning/10%20Stock%20Selection%20through%20Clustering%20Fundamental%20Data)
