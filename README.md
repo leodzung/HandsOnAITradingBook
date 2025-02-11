@@ -79,7 +79,7 @@ Uses a decision tree regression model to predict future dividend yields based on
 
 [Effect of Positive-Negative Splits](https://github.com/QuantConnect/HandsOnAITradingBook/tree/master/06%20Applied%20Machine%20Learning/07%20Effect%20of%20Positive-Negative%20Splits)
 <br/>
-Utilizes a multiple linear regression model to estimate future returns when stock splits are imminent and trades accordingly
+Utilizes a multiple linear regression model to estimate future returns when stock splits are imminent and trades accordingly.
 <br/><br/>
 
 [Stoploss Based on Historical Volatility and Drawdown Recovery](https://github.com/QuantConnect/HandsOnAITradingBook/tree/master/06%20Applied%20Machine%20Learning/08%20Stoploss%20Based%20on%20Historical%20Volatility%20and%20Drawdown%20Recovery)
