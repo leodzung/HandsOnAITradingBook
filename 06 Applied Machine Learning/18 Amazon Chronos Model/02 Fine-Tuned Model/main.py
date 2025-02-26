@@ -32,6 +32,8 @@ class HuggingFaceFineTunedDemo(QCAlgorithm):
         self.set_end_date(2024, 4, 1)
         self.set_cash(100_000)
 
+        # Disable the daily precise end time because of the time rules.
+        self.settings.daily_precise_end_time = False
         self.settings.min_absolute_portfolio_target_percentage = 0
 
         # Define the universe.
