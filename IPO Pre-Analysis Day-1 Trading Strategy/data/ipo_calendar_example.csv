@@ -1,0 +1,11 @@
+date,ticker,company_name,score,offer_price,shares_offered,sector
+2024-12-10,ABNB,Airbnb Inc,0.85,68.00,51750000,Technology
+2024-12-15,DASH,DoorDash Inc,0.78,102.00,33300000,Technology
+2024-12-20,SNOW,Snowflake Inc,0.92,120.00,28000000,Technology
+2025-01-05,COIN,Coinbase Global Inc,0.72,250.00,14900000,Financial Services
+2025-01-10,RIVN,Rivian Automotive Inc,0.65,78.00,153000000,Automotive
+2025-01-15,RBLX,Roblox Corporation,0.88,45.00,198900000,Technology
+2025-01-20,HOOD,Robinhood Markets Inc,0.55,38.00,52375000,Financial Services
+2025-02-01,UPST,Upstart Holdings Inc,0.81,20.00,11000000,Financial Services
+2025-02-05,SOFI,SoFi Technologies Inc,0.73,10.00,45000000,Financial Services
+2025-02-10,OPEN,Opendoor Technologies Inc,0.62,18.00,30000000,Real Estate
