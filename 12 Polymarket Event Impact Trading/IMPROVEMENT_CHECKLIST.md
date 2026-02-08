@@ -1,6 +1,22 @@
 # Polymarket Trading Bot - Improvement Checklist
 
-> Generated: 2026-01-18 | Last Updated: 2026-02-07 | Status: Active Development
+> Generated: 2026-01-18 | Last Updated: 2026-02-08 | Status: Active Development
+
+---
+
+## Recent Improvements (2026-02-08)
+
+- [x] **Enhanced API filtering for market discovery** - Moved filtering from client-side to API-level for efficiency
+  - Files: `polymarket_client.py:61-92`, `trader.py:551-608`, `trader_price_levels.py:522-597`
+  - Added parameters to `get_markets()`: `end_date_min`, `end_date_max`, `liquidity_num_min`, `volume_num_min`, `category`, `tag_id`, `slug`
+  - API now pre-filters by volume, liquidity, and expiry dates instead of fetching all markets first
+  - Result: **Can now discover 27,523+ active markets** (vs. only 2 previously due to strict filters)
+  - Performance: Reduced network calls and processing time by filtering at API level
+  - Documentation: Created `.claude/skills/polymarket-api/` skill for API reference
+- [x] **Created Polymarket API documentation skill** - Ensures API usage is verified against official docs
+  - Files: `.claude/skills/polymarket-api/SKILL.md`, `.claude/skills/polymarket-api/current-endpoints.md`
+  - Automatically references official Polymarket documentation when working with API endpoints
+  - Documents all current API methods and identifies gaps in implementation
 
 ---
 
