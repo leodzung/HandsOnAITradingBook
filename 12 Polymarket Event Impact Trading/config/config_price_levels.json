@@ -1,0 +1,73 @@
+{
+  "model_path": "data/price_level_model.pkl",
+  "paper_trading": true,
+  "paper_trading_balance": 500.0,
+
+  "assets": ["BTC", "ETH"],
+
+  "event_slugs": {
+    "BTC": ["what-price-will-bitcoin-hit-before-2027"],
+    "ETH": ["what-price-will-ethereum-hit-before-2027"]
+  },
+
+  "edge_threshold": 0.10,
+  "min_confidence": 0.15,
+  "min_days_to_expiry": 1,
+  "max_days_to_expiry": 365,
+
+  "max_position_size": 100,
+  "max_positions": 10,
+  "max_daily_loss": 500,
+  "kelly_multiplier": 0.5,
+
+  "min_market_volume": 1000,
+  "min_liquidity": 500,
+
+  "cycle_interval_seconds": 3600,
+
+  "spot_price_cache_minutes": 5,
+
+  "exposure_limits": {
+    "max_positions_per_asset": 5,
+    "max_capital_per_asset_pct": 0.40,
+    "max_same_direction_pct": 0.80,
+    "min_strike_distance_pct": 0.10,
+    "max_positions_same_expiry_week": 4,
+    "max_total_positions": 10,
+    "max_capital_deployed_pct": 0.70,
+    "soft_mode": false
+  },
+
+  "logging": {
+    "level": "INFO",
+    "file": "logs/price_level_trader.log"
+  },
+  "stop_loss": {
+    "enabled": true,
+    "pct": 20,
+    "trailing": false,
+    "trailing_distance_pct": 10
+  },
+  "take_profit": {
+    "enabled": true,
+    "pct": 75
+  },
+  "position_check_interval_seconds": 60,
+
+  "slippage_estimation": {
+    "enabled": true,
+    "max_slippage_bps": 100,
+    "max_slippage_dollars": 5.0,
+    "orderbook_staleness_seconds": 10,
+    "depth_buffer_pct": 0.10,
+    "volatility_adjustment": true,
+    "volume_limit_pct": 0.01,
+    "warn_threshold_bps": 50
+  },
+
+  "telegram": {
+    "enabled": true,
+    "bot_token": "8068515860:AAEiKpTK0RtHo5dURsbu7ey8Xa8r3A2xEHA",
+    "chat_id": "6690408994"
+  }
+}

@@ -1,0 +1,68 @@
+{
+  "polymarket_api_key": "YOUR_API_KEY_HERE",
+  "polymarket_api_secret": "YOUR_API_SECRET_HERE",
+  "polymarket_private_key": "YOUR_PRIVATE_KEY_HERE",
+  "alchemy_api_key": "kRJDa-58lYVF4H7p07GI5",
+  "news_api_key": "68502b258cb1434383fa7acce16ce420",
+  "twitter_bearer_token": null,
+  "data_collection": {
+    "backfill_months": 6,
+    "batch_size_blocks": 10,
+    "rate_limit_per_sec": 5
+  },
+  "rss_feeds": [
+    "https://www.coindesk.com/arc/outboundfeeds/rss/",
+    "https://cointelegraph.com/rss",
+    "https://decrypt.co/feed"
+  ],
+  "market_category_filter": "crypto",
+  "model_type": "random_forest",
+  "model_path": "retrained_model_v2.pkl",
+  "use_transformers": true,
+  "paper_trading": true,
+  "paper_trading_balance": 1000.0,
+  "min_confidence": 0.60,
+  "min_expected_return": 0.03,
+  "max_position_size": 100,
+  "max_positions": 10,
+  "max_daily_loss": 500,
+  "hold_time_hours": 24,
+  "min_market_volume": 1000,
+  "min_hours_to_expiry": 2,
+  "max_hours_to_expiry": 8760,
+  "max_market_pages": 50,
+  "cycle_interval_seconds": 300,
+  "event_lookback_hours": 6,
+  "use_sentiment_transformers": false,
+  "price_history_hours": 24,
+  "log_level": "INFO",
+  "log_file": "trader.log",
+  "stop_loss": {
+    "enabled": true,
+    "pct": 15,
+    "trailing": false,
+    "trailing_distance_pct": 10
+  },
+  "take_profit": {
+    "enabled": true,
+    "pct": 50
+  },
+  "position_check_interval_seconds": 60,
+
+  "slippage_estimation": {
+    "enabled": true,
+    "max_slippage_bps": 100,
+    "max_slippage_dollars": 5.0,
+    "orderbook_staleness_seconds": 10,
+    "depth_buffer_pct": 0.10,
+    "volatility_adjustment": true,
+    "volume_limit_pct": 0.01,
+    "warn_threshold_bps": 50
+  },
+
+  "telegram": {
+    "enabled": true,
+    "bot_token": "8068515860:AAEiKpTK0RtHo5dURsbu7ey8Xa8r3A2xEHA",
+    "chat_id": "6690408994"
+  }
+}

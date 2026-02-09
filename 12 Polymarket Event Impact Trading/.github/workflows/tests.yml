@@ -1,0 +1,149 @@
+name: Test Suite
+
+on:
+  push:
+    branches: [ master, main, develop ]
+  pull_request:
+    branches: [ master, main, develop ]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ['3.9', '3.10', '3.11']
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+
+    - name: Set up Python ${{ matrix.python-version }}
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ matrix.python-version }}
+
+    - name: Cache pip dependencies
+      uses: actions/cache@v3
+      with:
+        path: ~/.cache/pip
+        key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements*.txt') }}
+        restore-keys: |
+          ${{ runner.os }}-pip-
+
+    - name: Install dependencies
+      working-directory: "12 Polymarket Event Impact Trading"
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+        pip install -r requirements-test.txt
+
+    - name: Lint with flake8
+      working-directory: "12 Polymarket Event Impact Trading"
+      run: |
+        # Stop the build if there are Python syntax errors or undefined names
+        flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
+        # Exit-zero treats all errors as warnings
+        flake8 . --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
+      continue-on-error: true
+
+    - name: Run unit tests
+      working-directory: "12 Polymarket Event Impact Trading"
+      run: |
+        pytest tests/ -m "unit and not slow" -v --cov=. --cov-report=xml
+
+    - name: Run integration tests
+      working-directory: "12 Polymarket Event Impact Trading"
+      run: |
+        pytest tests/ -m integration -v
+      continue-on-error: true
+
+    - name: Upload coverage to Codecov
+      uses: codecov/codecov-action@v3
+      with:
+        file: ./12 Polymarket Event Impact Trading/coverage.xml
+        flags: unittests
+        name: codecov-umbrella
+        fail_ci_if_error: false
+
+    - name: Generate test report
+      working-directory: "12 Polymarket Event Impact Trading"
+      if: always()
+      run: |
+        pytest tests/ --html=report.html --self-contained-html
+      continue-on-error: true
+
+    - name: Upload test report
+      uses: actions/upload-artifact@v3
+      if: always()
+      with:
+        name: test-report-py${{ matrix.python-version }}
+        path: "12 Polymarket Event Impact Trading/report.html"
+
+  lint:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.10'
+
+    - name: Install linting tools
+      run: |
+        pip install black isort mypy pylint
+
+    - name: Check code formatting with black
+      working-directory: "12 Polymarket Event Impact Trading"
+      run: |
+        black --check --diff .
+      continue-on-error: true
+
+    - name: Check import sorting with isort
+      working-directory: "12 Polymarket Event Impact Trading"
+      run: |
+        isort --check-only --diff .
+      continue-on-error: true
+
+    - name: Type checking with mypy
+      working-directory: "12 Polymarket Event Impact Trading"
+      run: |
+        mypy . --ignore-missing-imports
+      continue-on-error: true
+
+  security:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.10'
+
+    - name: Install security tools
+      run: |
+        pip install bandit safety
+
+    - name: Security check with bandit
+      working-directory: "12 Polymarket Event Impact Trading"
+      run: |
+        bandit -r . -f json -o bandit-report.json
+      continue-on-error: true
+
+    - name: Dependency security check with safety
+      working-directory: "12 Polymarket Event Impact Trading"
+      run: |
+        safety check --json
+      continue-on-error: true
+
+    - name: Upload security reports
+      uses: actions/upload-artifact@v3
+      if: always()
+      with:
+        name: security-reports
+        path: "12 Polymarket Event Impact Trading/bandit-report.json"

@@ -1,0 +1,38 @@
+# Testing dependencies for Polymarket Event Impact Trading
+
+# Core testing framework
+pytest==7.4.3
+pytest-cov==4.1.0
+pytest-mock==3.12.0
+pytest-asyncio==0.21.1
+
+# Code coverage
+coverage==7.3.2
+
+# Mocking and testing utilities
+mock==5.1.0
+faker==20.1.0
+freezegun==1.4.0  # Time mocking
+
+# Data generation
+hypothesis==6.92.1  # Property-based testing
+
+# Linting and formatting (optional but recommended)
+black==23.12.1
+flake8==7.0.0
+mypy==1.7.1
+pylint==3.0.3
+isort==5.13.2
+
+# Type checking
+types-requests==2.31.0.10
+
+# Performance testing
+pytest-benchmark==4.0.0
+
+# Parallel test execution
+pytest-xdist==3.5.0
+
+# Test report generation
+pytest-html==4.1.1
+allure-pytest==2.13.2

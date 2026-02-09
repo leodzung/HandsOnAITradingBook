@@ -1,0 +1,51 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+ENV/
+env/
+.venv
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Logs
+*.log
+*.out
+logs/*.log
+logs/*.out
+
+# Data files
+data/*.db
+data/*.db-journal
+data/*.pkl
+data/*.csv
+*.pid
+
+# Backups
+backups/*.db
+backups/*.db-journal
+
+# Environment
+.env
+.env.local
+config/telegram_config.json
+
+# Pytest
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# OS
+.DS_Store
+Thumbs.db

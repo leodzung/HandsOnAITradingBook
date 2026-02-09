@@ -1,0 +1,160 @@
+services:
+  # Price Level Trading Bot
+  price-level-trader:
+    build: .
+    container_name: polymarket-price-level
+    command: python trader_price_levels.py
+    restart: always
+    volumes:
+      - ./data:/app/data
+      - ./logs:/app/logs
+      - ./config.json:/app/config.json:ro
+      - ./config_price_levels.json:/app/config_price_levels.json:ro
+    environment:
+      - PYTHONUNBUFFERED=1
+      - TZ=America/New_York
+    healthcheck:
+      test: ["CMD", "python", "-c", "import os; exit(0 if os.path.exists('/app/data/positions_price_level.db') else 1)"]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # Event-Based Trading Bot
+  event-trader:
+    build: .
+    container_name: polymarket-event-trader
+    command: python trader.py
+    restart: always
+    volumes:
+      - ./data:/app/data
+      - ./logs:/app/logs
+      - ./config.json:/app/config.json:ro
+    environment:
+      - PYTHONUNBUFFERED=1
+      - TZ=America/New_York
+    healthcheck:
+      test: ["CMD", "python", "-c", "import os; exit(0 if os.path.exists('/app/data/positions.db') else 1)"]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # Arbitrage Bot
+  arbitrage-bot:
+    build: .
+    container_name: polymarket-arbitrage
+    command: python arbitrage_bot.py
+    restart: always
+    volumes:
+      - ./data:/app/data
+      - ./logs:/app/logs
+      - ./config.json:/app/config.json:ro
+      - ./config_arbitrage.json:/app/config_arbitrage.json:ro
+    environment:
+      - PYTHONUNBUFFERED=1
+      - TZ=America/New_York
+    healthcheck:
+      test: ["CMD", "python", "-c", "import os; exit(0 if os.path.exists('/app/data/arbitrage') else 1)"]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # Dashboard (Streamlit)
+  dashboard:
+    build: .
+    container_name: polymarket-dashboard
+    command: streamlit run dashboard.py --server.port 8502 --server.address 0.0.0.0 --browser.gatherUsageStats false
+    restart: always
+    ports:
+      - "8502:8502"
+    volumes:
+      - ./data:/app/data:ro
+      - ./config.json:/app/config.json:ro
+      - ./config_price_levels.json:/app/config_price_levels.json:ro
+      - ./config_arbitrage.json:/app/config_arbitrage.json:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    environment:
+      - PYTHONUNBUFFERED=1
+      - TZ=America/New_York
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8502/_stcore/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # GDELT News Collector
+  gdelt-collector:
+    build: .
+    container_name: polymarket-gdelt-collector
+    command: python gdelt_collector.py --collect 90
+    restart: unless-stopped
+    volumes:
+      - ./data:/app/data
+      - ./logs:/app/logs
+    environment:
+      - PYTHONUNBUFFERED=1
+      - TZ=America/New_York
+    healthcheck:
+      test: ["CMD", "python", "-c", "import sqlite3; c=sqlite3.connect('/app/data/gdelt_news.db'); c.execute('SELECT 1'); exit(0)"]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # Alchemy On-Chain Data Collector
+  alchemy-collector:
+    build: .
+    container_name: polymarket-alchemy-collector
+    command: python alchemy_collector.py --backfill-days 180
+    restart: unless-stopped
+    volumes:
+      - ./data:/app/data
+      - ./logs:/app/logs
+      - ./config.json:/app/config.json:ro
+    environment:
+      - PYTHONUNBUFFERED=1
+      - TZ=America/New_York
+    healthcheck:
+      test: ["CMD", "python", "-c", "import sqlite3; c=sqlite3.connect('/app/data/alchemy_trades.db'); c.execute('SELECT 1'); exit(0)"]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+# Named volumes for persistence
+volumes:
+  data:
+  logs:

@@ -31,29 +31,92 @@ This system implements a machine learning approach to trading Polymarket predict
 
 ```
 12 Polymarket Event Impact Trading/
-├── deploy.sh                  # ⭐ Deployment script (use this!)
-├── trader.py                  # Event-based trading bot
-├── trader_price_levels.py     # Price-level trading bot
-├── arbitrage_bot.py           # Cross-market arbitrage bot
-├── polymarket_client.py       # Polymarket API integration
-├── event_detector.py          # News/event detection system
-├── feature_extractor.py       # Feature engineering pipeline
-├── position_manager.py        # Position persistence & tracking
-├── models.py                  # ML models for prediction
-├── backtester.py              # Backtesting framework
-├── config.json                # Event trader config
-├── config_price_levels.json   # Price-level trader config
-├── requirements.txt           # Python dependencies
-├── research.ipynb             # Jupyter notebook for research
-├── data/                      # Databases & state files
-│   ├── positions.db           # Event trader positions
-│   ├── positions_price_level.db  # Price-level positions
-│   └── paper_trading_*.json   # Balance tracking
-├── backups/                   # Log backups (created by deploy.sh)
-├── trading.out                # Event trader logs
-├── trading_price_levels.out   # Price-level trader logs
-├── arbitrage.out              # Arbitrage bot logs
-└── README.md                  # This file
+├── README.md                   # This file
+├── requirements.txt            # Python dependencies
+├── requirements-test.txt       # Test dependencies
+├── pytest.ini                  # Test configuration
+├── Dockerfile                  # Container definition
+├── docker-compose.yml          # Multi-container setup
+├── .gitignore                  # Git ignore patterns
+│
+├── src/                        # Source code
+│   ├── bots/                   # Trading bots
+│   │   ├── trader.py           # Event-based trading bot
+│   │   ├── trader_price_levels.py  # Price-level trading bot
+│   │   └── arbitrage_bot.py    # Cross-market arbitrage bot
+│   ├── core/                   # Core trading logic
+│   │   ├── polymarket_client.py    # Polymarket API integration
+│   │   ├── position_manager.py     # Position persistence & tracking
+│   │   ├── exposure_manager.py     # Risk and exposure management
+│   │   └── slippage_estimator.py   # Slippage estimation
+│   ├── collectors/             # Data collectors
+│   │   ├── gdelt_collector.py      # GDELT event data
+│   │   ├── alchemy_collector.py    # On-chain trade data
+│   │   └── data_collector.py       # Generic data collection
+│   ├── features/               # Feature engineering
+│   │   ├── feature_extractor.py    # Feature extraction pipeline
+│   │   ├── price_level_features.py # Price-level features
+│   │   └── enhanced_feature_generator.py  # Advanced features
+│   ├── models/                 # ML models & training
+│   │   ├── models.py           # Model definitions
+│   │   ├── cross_validation.py # K-fold validation system
+│   │   ├── cv_utils.py         # CV utilities
+│   │   ├── train_on_real_data.py   # Training scripts
+│   │   └── research.ipynb      # Research notebook
+│   ├── monitoring/             # Monitoring & alerts
+│   │   ├── dashboard.py        # Performance dashboard
+│   │   ├── telegram_notifier.py    # Telegram notifications
+│   │   └── monitor_collectors.py   # Data collector monitoring
+│   └── utils/                  # Utilities
+│       ├── price_tracker.py    # Price tracking
+│       ├── market_mapper.py    # Token to condition ID mapping
+│       ├── external_data.py    # External data sources
+│       └── event_detector.py   # Event detection system
+│
+├── config/                     # Configuration files
+│   ├── config.json             # Event trader config
+│   ├── config_price_levels.json    # Price-level trader config
+│   ├── config_arbitrage.json   # Arbitrage bot config
+│   ├── telegram_config.json    # Telegram bot config
+│   └── telegram_config.json.example  # Example config
+│
+├── scripts/                    # Utility scripts
+│   ├── deployment/             # Deployment automation
+│   │   ├── deploy.sh           # ⭐ Main deployment script
+│   │   └── backup_databases.sh # Database backup
+│   ├── setup/                  # Initial setup
+│   │   ├── setup_cron.sh       # Cron job setup
+│   │   └── setup_monitoring_cron.py  # Monitoring setup
+│   └── maintenance/            # Maintenance scripts
+│       ├── restart_all.sh      # Restart all bots
+│       ├── check_processes.sh  # Check bot status
+│       └── demo.py             # Demo/testing
+│
+├── tests/                      # Test suite
+│   ├── test_trader.py          # Trading bot tests
+│   ├── test_models.py          # Model tests
+│   ├── test_integration.py     # Integration tests
+│   └── README.md               # Test documentation
+│
+├── data/                       # Databases & state files
+│   ├── positions.db            # Event trader positions
+│   ├── positions_price_level.db    # Price-level positions
+│   ├── price_tracking.db       # Price tracking database
+│   └── paper_trading_*.json    # Balance tracking
+│
+├── logs/                       # Log files
+│   ├── trading.out             # Event trader logs
+│   ├── trading_price_levels.out    # Price-level trader logs
+│   └── arbitrage.out           # Arbitrage bot logs
+│
+├── backups/                    # Backups (created by deploy.sh)
+│   └── collectors/             # Data collector backups
+│
+└── docs/                       # Documentation
+    ├── deployment/             # Deployment guides
+    ├── development/            # Development docs
+    ├── guides/                 # How-to guides
+    └── status-reports/         # Status reports & fixes
 ```
 
 ## Quick Start
@@ -65,12 +128,12 @@ This system implements a machine learning approach to trading Polymarket predict
 pip install -r requirements.txt
 
 # Create config file
-python config.py
+python src/utils/config.py
 ```
 
 ### 2. Configure API Keys
 
-Edit `config.json` and add your API keys:
+Edit `config/config.json` and add your API keys:
 
 ```json
 {
@@ -89,10 +152,10 @@ Edit `config.json` and add your API keys:
 
 ### 3. Train Model
 
-Open and run `research.ipynb`:
+Open and run the research notebook:
 
 ```bash
-jupyter notebook research.ipynb
+jupyter notebook src/models/research.ipynb
 ```
 
 This notebook will:
@@ -109,18 +172,18 @@ This notebook will:
 cd "12 Polymarket Event Impact Trading"
 
 # Check current status
-./deploy.sh status
+./scripts/deployment/deploy.sh status
 
 # Deploy specific bot
-./deploy.sh price-level    # or: ./deploy.sh pl
-./deploy.sh event          # or: ./deploy.sh ev
-./deploy.sh arbitrage      # or: ./deploy.sh arb
-./deploy.sh both           # Deploy price-level + event traders
-./deploy.sh all            # Deploy all three bots
+./scripts/deployment/deploy.sh price-level    # or: pl
+./scripts/deployment/deploy.sh event          # or: ev
+./scripts/deployment/deploy.sh arbitrage      # or: arb
+./scripts/deployment/deploy.sh both           # Deploy price-level + event traders
+./scripts/deployment/deploy.sh all            # Deploy all three bots
 
 # Reset positions (use after code changes that affect position storage)
-./deploy.sh reset          # Clear all positions, reset balances
-./deploy.sh reset-and-deploy  # Reset + deploy both traders
+./scripts/deployment/deploy.sh reset          # Clear all positions, reset balances
+./scripts/deployment/deploy.sh reset-and-deploy  # Reset + deploy both traders
 ```
 
 **What the deploy script does:**
@@ -131,18 +194,18 @@ cd "12 Polymarket Event Impact Trading"
 5. Verifies successful startup
 
 **When to redeploy:**
-- After ANY code change to `trader.py` or `trader_price_levels.py`
-- After changes to config files (`config.json`, `config_price_levels.json`)
+- After ANY code change to bot files in `src/bots/`
+- After changes to config files in `config/`
 - After database resets or position clearing
-- After changes to imported modules (`polymarket_client.py`, `position_manager.py`, etc.)
+- After changes to imported modules in `src/core/`, `src/features/`, etc.
 
 ### 5. Paper Trading
 
 Test the strategy without real money:
 
 ```bash
-# Edit config.json: "paper_trading": true
-./deploy.sh both
+# Edit config/config.json: "paper_trading": true
+./scripts/deployment/deploy.sh both
 ```
 
 Monitor performance for 1-2 weeks before going live.
@@ -152,8 +215,8 @@ Monitor performance for 1-2 weeks before going live.
 Once confident:
 
 ```bash
-# Edit config.json: "paper_trading": false
-./deploy.sh both
+# Edit config/config.json: "paper_trading": false
+./scripts/deployment/deploy.sh both
 ```
 
 **WARNING**: Start with small position sizes!
@@ -335,7 +398,7 @@ For better sentiment analysis:
 pip install transformers torch
 ```
 
-Edit `config.json`:
+Edit `config/config.json`:
 ```json
 {
   "use_transformers": true
@@ -344,7 +407,7 @@ Edit `config.json`:
 
 ### Custom Event Sources
 
-Add custom RSS feeds in `config.json`:
+Add custom RSS feeds in `config/config.json`:
 
 ```json
 {
@@ -360,7 +423,7 @@ Add custom RSS feeds in `config.json`:
 Train multiple models and combine:
 
 ```python
-from models import EnsemblePredictor
+from src.models.models import EnsemblePredictor
 
 ensemble = EnsemblePredictor(
     model_types=['random_forest', 'gradient_boost', 'logistic']
@@ -371,7 +434,7 @@ ensemble.train(X_train, y_train)
 ## Troubleshooting
 
 **Problem**: No events detected
-- Check API keys in `config.json`
+- Check API keys in `config/config.json`
 - Verify RSS feeds are accessible
 - Increase `event_lookback_hours`
 
@@ -400,16 +463,16 @@ The system collects on-chain trades from Polymarket's smart contract and maps th
 **Step 1: Collect Trades**
 ```bash
 # Incremental update (recommended for cron jobs)
-python3 alchemy_collector.py --incremental
+python3 src/collectors/alchemy_collector.py --incremental
 
 # Or backfill historical data
-python3 alchemy_collector.py --backfill-days 30
+python3 src/collectors/alchemy_collector.py --backfill-days 30
 ```
 
 **Step 2: Map Token IDs to Condition IDs**
 ```bash
 # Update mappings and populate condition_ids
-python3 market_mapper.py --map-all
+python3 src/utils/market_mapper.py --map-all
 ```
 
 ### Why Two Steps?
@@ -423,18 +486,18 @@ The mapper connects these by querying Polymarket's Gamma API.
 
 **Option 1: Use the helper script**
 ```bash
-./collect_and_map.sh --incremental
+./scripts/maintenance/collect_and_map.sh --incremental
 ```
 
 **Option 2: Use cron**
 ```cron
 # Collect and map every hour
-0 * * * * cd /path/to/project && python3 alchemy_collector.py --incremental && python3 market_mapper.py --map-all >> cron_output.log 2>&1
+0 * * * * cd /path/to/project && python3 src/collectors/alchemy_collector.py --incremental && python3 src/utils/market_mapper.py --map-all >> logs/cron_output.log 2>&1
 ```
 
 **Option 3: Use training_pipeline.py**
 ```python
-from training_pipeline import TrainingDataPipeline
+from src.utils.training_pipeline import TrainingDataPipeline
 pipeline = TrainingDataPipeline()
 pipeline.run_full_pipeline()  # Handles both steps automatically
 ```
@@ -442,7 +505,7 @@ pipeline.run_full_pipeline()  # Handles both steps automatically
 ### Checking Mapping Status
 
 ```bash
-python3 market_mapper.py --stats
+python3 src/utils/market_mapper.py --stats
 
 # Or query directly
 sqlite3 data/alchemy_trades.db "
@@ -549,9 +612,9 @@ See main repository LICENSE
 ## Support
 
 For questions:
-1. Check the research notebook (`research.ipynb`)
-2. Review configuration options
-3. Check logs in `trader.log`
+1. Check the research notebook (`src/models/research.ipynb`)
+2. Review configuration options in `config/`
+3. Check logs in `logs/` directory
 4. Open an issue in the main repo
 
 ---

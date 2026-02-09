@@ -1,0 +1,37 @@
+{
+  "min_profit_pct": 0.02,
+  "scan_interval_seconds": 60,
+  "max_markets": 500,
+
+  "embedding_model": "intfloat/e5-large-v2",
+  "similarity_threshold": 0.7,
+
+  "log_dir": "data/arbitrage",
+
+  "paper_trading": true,
+  "max_position_size": 100,
+
+  "gas_estimate_usd": 0.001,
+
+  "websocket": {
+    "enabled": true,
+    "ping_interval_seconds": 10,
+    "reconnect_delay_seconds": 5,
+    "max_reconnect_attempts": 10,
+    "orderbook_markets_limit": 50,
+    "signal_cooldown_seconds": 30,
+    "min_price_change_pct": 0.01
+  },
+
+  "risk_limits": {
+    "max_single_position": 100,
+    "max_total_exposure": 500,
+    "min_volume_24h": 1000,
+    "max_risk_score": 0.7
+  },
+
+  "logging": {
+    "level": "INFO",
+    "file": "logs/arbitrage_bot.log"
+  }
+}
