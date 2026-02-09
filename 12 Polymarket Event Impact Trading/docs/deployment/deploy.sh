@@ -3,7 +3,8 @@
 # Usage: ./deploy.sh [price-level|event|both]
 
 set -e
-cd "$(dirname "$0")"
+# Change to project root (two levels up from this script)
+cd "$(dirname "$0")/../.."
 
 BOT=$1
 TIMESTAMP=$(date +%Y%m%d_%H%M%S)
@@ -28,8 +29,8 @@ deploy_price_level() {
         log "Found running process: PID $OLD_PID"
 
         # 2. Backup current log
-        if [ -f trading_price_levels.out ]; then
-            cp trading_price_levels.out "backups/trading_price_levels_${TIMESTAMP}.out"
+        if [ -f logs/trading_price_levels.out ]; then
+            cp logs/trading_price_levels.out "backups/trading_price_levels_${TIMESTAMP}.out"
             log "Backed up log to backups/trading_price_levels_${TIMESTAMP}.out"
         fi
 
@@ -53,17 +54,17 @@ deploy_price_level() {
 
     # 5. Start new process
     log "Starting new process..."
-    nohup python3 trader_price_levels.py >> trading_price_levels.out 2>&1 &
+    nohup python3 src/bots/trader_price_levels.py >> logs/trading_price_levels.out 2>&1 &
     NEW_PID=$!
     sleep 3
 
     # 6. Verify startup
     if pgrep -f "trader_price_levels.py" > /dev/null; then
         log "✓ Price-Level Trader started successfully (PID: $NEW_PID)"
-        tail -5 trading_price_levels.out
+        tail -5 logs/trading_price_levels.out
     else
         error "✗ Failed to start Price-Level Trader"
-        tail -20 trading_price_levels.out
+        tail -20 logs/trading_price_levels.out
         return 1
     fi
 }
@@ -78,8 +79,8 @@ deploy_arbitrage() {
         log "Found running process: PID $OLD_PID"
 
         # 2. Backup current log
-        if [ -f arbitrage.out ]; then
-            cp arbitrage.out "backups/arbitrage_${TIMESTAMP}.out"
+        if [ -f logs/arbitrage.out ]; then
+            cp logs/arbitrage.out "backups/arbitrage_${TIMESTAMP}.out"
             log "Backed up log to backups/arbitrage_${TIMESTAMP}.out"
         fi
 
@@ -98,17 +99,17 @@ deploy_arbitrage() {
 
     # 4. Start new process
     log "Starting new process..."
-    nohup python3 arbitrage_bot.py >> arbitrage.out 2>&1 &
+    nohup python3 src/bots/arbitrage_bot.py >> logs/arbitrage.out 2>&1 &
     NEW_PID=$!
     sleep 3
 
     # 5. Verify startup
     if pgrep -f "arbitrage_bot.py" > /dev/null; then
         log "✓ Arbitrage Bot started successfully (PID: $NEW_PID)"
-        tail -5 arbitrage.out
+        tail -5 logs/arbitrage.out
     else
         error "✗ Failed to start Arbitrage Bot"
-        tail -20 arbitrage.out
+        tail -20 logs/arbitrage.out
         return 1
     fi
 }
@@ -123,8 +124,8 @@ deploy_event() {
         log "Found running process: PID $OLD_PID"
 
         # 2. Backup current log
-        if [ -f trading.out ]; then
-            cp trading.out "backups/trading_${TIMESTAMP}.out"
+        if [ -f logs/trading.out ]; then
+            cp logs/trading.out "backups/trading_${TIMESTAMP}.out"
             log "Backed up log to backups/trading_${TIMESTAMP}.out"
         fi
 
@@ -141,17 +142,17 @@ deploy_event() {
 
     # 5. Start new process
     log "Starting new process..."
-    nohup python3 trader.py >> trading.out 2>&1 &
+    nohup python3 src/bots/trader.py >> logs/trading.out 2>&1 &
     NEW_PID=$!
     sleep 3
 
     # 6. Verify startup
     if pgrep -f "trader.py" > /dev/null; then
         log "✓ Event Trader started successfully (PID: $NEW_PID)"
-        tail -5 trading.out
+        tail -5 logs/trading.out
     else
         error "✗ Failed to start Event Trader"
-        tail -20 trading.out
+        tail -20 logs/trading.out
         return 1
     fi
 }
@@ -189,8 +190,8 @@ deploy_gdelt() {
         OLD_PID=$(pgrep -f "gdelt_collector.py" || true)
         if [ -n "$OLD_PID" ]; then
             log "Found running process: PID $OLD_PID"
-            if [ -f gdelt_collection.out ]; then
-                cp gdelt_collection.out "backups/gdelt_collection_${TIMESTAMP}.out"
+            if [ -f logs/gdelt_collection.out ]; then
+                cp logs/gdelt_collection.out "backups/gdelt_collection_${TIMESTAMP}.out"
                 log "Backed up log to backups/gdelt_collection_${TIMESTAMP}.out"
             fi
             log "Stopping old process..."
@@ -204,17 +205,17 @@ deploy_gdelt() {
         fi
 
         log "Starting new process in continuous mode..."
-        nohup python3 gdelt_collector.py --continuous >> gdelt_collection.out 2>&1 &
+        nohup python3 src/collectors/gdelt_collector.py --continuous >> logs/gdelt_collection.out 2>&1 &
         NEW_PID=$!
         sleep 3
 
         if pgrep -f "gdelt_collector.py" > /dev/null; then
             log "✓ GDELT Collector started successfully (PID: $NEW_PID)"
             log "  Collecting news updates every 15 minutes"
-            tail -5 gdelt_collection.out
+            tail -5 logs/gdelt_collection.out
         else
             error "✗ Failed to start GDELT Collector"
-            tail -20 gdelt_collection.out
+            tail -20 logs/gdelt_collection.out
             return 1
         fi
     fi
@@ -253,8 +254,8 @@ deploy_alchemy() {
         OLD_PID=$(pgrep -f "alchemy_collector.py" || true)
         if [ -n "$OLD_PID" ]; then
             log "Found running process: PID $OLD_PID"
-            if [ -f alchemy_collection.out ]; then
-                cp alchemy_collection.out "backups/alchemy_collection_${TIMESTAMP}.out"
+            if [ -f logs/alchemy_collection.out ]; then
+                cp logs/alchemy_collection.out "backups/alchemy_collection_${TIMESTAMP}.out"
                 log "Backed up log to backups/alchemy_collection_${TIMESTAMP}.out"
             fi
             log "Stopping old process..."
@@ -268,17 +269,17 @@ deploy_alchemy() {
         fi
 
         log "Starting new process in continuous mode..."
-        nohup python3 alchemy_collector.py --continuous >> alchemy_collection.out 2>&1 &
+        nohup python3 src/collectors/alchemy_collector.py --continuous >> logs/alchemy_collection.out 2>&1 &
         NEW_PID=$!
         sleep 3
 
         if pgrep -f "alchemy_collector.py" > /dev/null; then
             log "✓ Alchemy Collector started successfully (PID: $NEW_PID)"
             log "  Collecting on-chain trades every hour"
-            tail -5 alchemy_collection.out
+            tail -5 logs/alchemy_collection.out
         else
             error "✗ Failed to start Alchemy Collector"
-            tail -20 alchemy_collection.out
+            tail -20 logs/alchemy_collection.out
             return 1
         fi
     fi
