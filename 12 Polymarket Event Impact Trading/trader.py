@@ -711,12 +711,14 @@ class PolymarketTrader:
 
         # Execute trade if signal is actionable
         if signal['action'] in ['BUY', 'SELL']:
-            self.execute_trade(market_id, token_id, signal, current_price, outcome)
+            self.execute_trade(market_id, token_id, signal, current_price, outcome,
+                             yes_price, no_price, market)
 
     def execute_trade(self, market_id: str, token_id: str,
-                     signal: Dict, current_price: float, outcome: str = None):
+                     signal: Dict, current_price: float, outcome: str = None,
+                     yes_price: float = None, no_price: float = None, market: Dict = None):
         """
-        Execute a trade.
+        Execute a trade with slippage estimation.
 
         Args:
             market_id: Market ID
@@ -724,10 +726,14 @@ class PolymarketTrader:
             signal: Trading signal
             current_price: Current price
             outcome: 'YES' or 'NO' - which outcome we're betting on
+            yes_price: Current YES price
+            no_price: Current NO price
+            market: Market dictionary
         """
         # Determine outcome if not provided
         if outcome is None:
             outcome = 'YES' if signal['action'] == 'BUY' else 'NO'
+
         # Check if already have position
         if market_id in self.risk_manager.active_positions:
             logger.info(f"Already have position in {market_id}")
@@ -755,9 +761,48 @@ class PolymarketTrader:
             logger.warning(f"Cannot open position: {reason}")
             return
 
-        # Determine actual entry price based on outcome
-        # For YES: use yes_price, For NO: use no_price
-        entry_price = yes_price if outcome == 'YES' else no_price
+        # Determine quoted price and token_id based on outcome
+        if yes_price is None or no_price is None:
+            logger.warning("Missing YES/NO prices for slippage estimation")
+            quoted_price = current_price
+        else:
+            quoted_price = yes_price if outcome == 'YES' else no_price
+
+        # Get orderbook for slippage estimation
+        orderbook = self.client.get_orderbook(token_id)
+
+        # Estimate slippage
+        from slippage_estimator import SlippageEstimator
+
+        estimator = SlippageEstimator(config=self.config.get('slippage_estimation', {}))
+
+        # Get market volume
+        market_volume_24h = market.get('volume', 0) if market else 0
+
+        slippage_est = estimator.estimate_slippage(
+            order_side='BUY',  # Always BUY for opening positions
+            order_size=position_size,
+            orderbook=orderbook,
+            quoted_price=quoted_price,
+            market_volume_24h=market_volume_24h
+        )
+
+        # Check if slippage is acceptable
+        if not slippage_est.is_acceptable:
+            logger.warning(f"Trade REJECTED - {slippage_est.rejection_reason}")
+            return
+
+        # Log slippage estimate
+        logger.info(f"Slippage estimate: ${slippage_est.slippage_dollars:.3f} "
+                   f"({slippage_est.slippage_bps:.0f} bps), "
+                   f"levels: {slippage_est.levels_consumed}")
+
+        # Log warnings if any
+        for warning in slippage_est.warnings:
+            logger.warning(f"Slippage warning: {warning}")
+
+        # Use adjusted execution price
+        entry_price = slippage_est.expected_execution_price
 
         # Place order
         if self.config.get('paper_trading', True):

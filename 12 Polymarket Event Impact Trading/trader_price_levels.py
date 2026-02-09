@@ -930,13 +930,48 @@ class PriceLevelTrader:
             logger.warning(f"  ⚠️ BLOCKED by exposure limits: {reason}")
             return
 
-        # Determine actual entry price based on outcome
-        # For YES: use market_price (YES price)
-        # For NO: use no_price (actual NO price from API)
+        # Get quoted price based on outcome
         if outcome == 'YES':
-            entry_price = signal['market_price']
+            quoted_price = signal['market_price']
         else:
-            entry_price = signal.get('no_price', 1.0 - signal['market_price'])
+            quoted_price = signal.get('no_price', 1.0 - signal['market_price'])
+
+        # Get orderbook for slippage estimation
+        orderbook = self.client.get_orderbook(token_id)
+
+        # Estimate slippage
+        from slippage_estimator import SlippageEstimator
+
+        estimator = SlippageEstimator(config=self.config.get('slippage_estimation', {}))
+
+        # Get market volume from original market data
+        orig_market = parsed_market.get('original_market', {})
+        market_volume_24h = orig_market.get('volume', 0)
+
+        slippage_est = estimator.estimate_slippage(
+            order_side='BUY',  # Always BUY for opening positions
+            order_size=position_size,
+            orderbook=orderbook,
+            quoted_price=quoted_price,
+            market_volume_24h=market_volume_24h
+        )
+
+        # Check if slippage is acceptable
+        if not slippage_est.is_acceptable:
+            logger.warning(f"  ⚠️ Trade REJECTED: {slippage_est.rejection_reason}")
+            return
+
+        # Log slippage estimate
+        logger.info(f"  Slippage: ${slippage_est.slippage_dollars:.3f} "
+                   f"({slippage_est.slippage_bps:.0f} bps), "
+                   f"depth: {slippage_est.levels_consumed} levels")
+
+        # Log warnings if any
+        for warning in slippage_est.warnings:
+            logger.warning(f"  ⚠️ Slippage warning: {warning}")
+
+        # Use adjusted execution price
+        entry_price = slippage_est.expected_execution_price
 
         # Execute trade
         if self.config.get('paper_trading', True):

@@ -167,7 +167,13 @@ Key papers that can improve the bots:
   - Fix: Added `max_capital_deployed_pct: 0.50` in exposure_limits
   - Result: Exposure report shows 59% capital deployed, 100% BTC concentration
 - [ ] Add volatility-adjusted position sizing (reduce size in high vol regimes)
-- [ ] Add slippage estimation before order submission
+- [x] **Add slippage estimation before order submission** - FIXED 2026-02-09
+  - Files: `trader.py:714-804`, `trader_price_levels.py:933-974`, `slippage_estimator.py` (existing)
+  - Fix: Integrated SlippageEstimator into both traders' order execution flow
+  - Features: Orderbook depth analysis, quoted vs execution price, configurable thresholds
+  - Rejection criteria: Max slippage (50 bps), insufficient liquidity, empty orderbook
+  - Warnings: Low liquidity (<$500), wide spread (>5%), shallow depth (<3 levels)
+  - Result: Trades now rejected if slippage exceeds acceptable thresholds, logs detailed metrics
 - [ ] Create daily risk report generator (positions, P&L, exposure by asset)
 - [x] **Add stop-loss/take-profit** - ~~Currently holds positions for fixed 24h regardless~~ FIXED 2026-01-31
   - Files: `trader.py`, `trader_price_levels.py`, `config.json`, `config_price_levels.json`
@@ -462,6 +468,7 @@ Key papers that can improve the bots:
 | 2026-02-09 | **CRITICAL: Fixed production retraining** | `label_and_retrain.py` was training on FULL dataset with NO validation - now uses CV by default |
 | 2026-02-09 | **Production readiness gates** | Criteria: AUC≥0.70, std<0.10, |degradation|<0.10 - blocks bad deployments |
 | 2026-02-09 | **Enhanced models.py with CV** | Added `train_with_cv()` method, backward compatible, automatic visualization/reports |
+| 2026-02-09 | **Slippage estimation integration** | Both traders now check orderbook depth before execution - rejects trades with >50 bps slippage |
 
 ---
 
