@@ -1078,7 +1078,7 @@ class PolymarketTrader:
                        f"24h accuracy: {stats.get('accuracy_last_24h', 0):.2%}")
 
 
-def load_config(config_path: str = 'config.json') -> Dict:
+def load_config(config_path: str = 'config/config.json') -> Dict:
     """Load configuration from file."""
     try:
         with open(config_path, 'r') as f:

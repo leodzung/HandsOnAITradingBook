@@ -181,7 +181,7 @@ class PriceLevelSignalGenerator:
 class PriceLevelTrader:
     """Main trading bot for price-level markets."""
 
-    def __init__(self, config_path: str = 'config_price_levels.json'):
+    def __init__(self, config_path: str = 'config/config_price_levels.json'):
         """
         Initialize trader.
 
