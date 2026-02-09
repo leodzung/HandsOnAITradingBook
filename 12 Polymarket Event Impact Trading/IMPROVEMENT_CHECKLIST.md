@@ -131,7 +131,19 @@ Key papers that can improve the bots:
   - Mean ROC-AUC: 0.9113 ± 0.0169 on synthetic data (production ready)
   - 11/11 tests passing with comprehensive temporal ordering verification
   - Full documentation in `WALK_FORWARD_VALIDATION_GUIDE.md`
-- [ ] Add cross-validation during model training (k=5 minimum)
+- [x] **Add cross-validation during model training (k=5 minimum)** - DONE 2026-02-09
+  - Files: `cross_validation.py` (NEW), `cv_utils.py` (NEW), `models.py:70-270`, `label_and_retrain.py:200-310`, `train_on_real_data.py:96-180`
+  - Fix: Implemented unified CV interface with production readiness checks:
+    - Enforces k≥5 minimum folds (raises ValueError if k<4)
+    - Walk-forward validation for time-series (wraps WalkForwardValidator)
+    - Automatic synthetic date injection for datasets without temporal columns
+    - Production readiness criteria (AUC≥0.70, std<0.10, |degradation|<0.10)
+    - **CRITICAL FIX:** `label_and_retrain.py` now uses CV (was training on FULL dataset with NO validation)
+    - Comprehensive metrics: ROC-AUC, accuracy, F1, Brier score, degradation
+    - Automatic visualization of fold performance (plots saved to data/)
+    - JSON export of reports and summaries
+  - Result: All training paths support CV, 15/15 tests passing, backward compatible
+  - Full documentation in `CV_IMPLEMENTATION.md`
 - [ ] Track feature importance over time to detect data drift
 - [ ] Build A/B testing framework to compare model versions in parallel
 
@@ -446,6 +458,10 @@ Key papers that can improve the bots:
 | 2026-02-07 | **Walk-forward validation** | Implemented expanding window cross-validation - Mean AUC 0.9113±0.0169, 11/11 tests passing |
 | 2026-02-07 | **Temporal integrity verified** | No lookahead bias - all train dates strictly before validation dates across 5 folds |
 | 2026-02-07 | **Found training data is synthetic** | `training_data_v2.csv` has 2K synthetic samples; 603K real trades exist but unmapped |
+| 2026-02-09 | **Cross-validation system (k≥5)** | Unified CV interface with production readiness checks - 15/15 tests passing |
+| 2026-02-09 | **CRITICAL: Fixed production retraining** | `label_and_retrain.py` was training on FULL dataset with NO validation - now uses CV by default |
+| 2026-02-09 | **Production readiness gates** | Criteria: AUC≥0.70, std<0.10, |degradation|<0.10 - blocks bad deployments |
+| 2026-02-09 | **Enhanced models.py with CV** | Added `train_with_cv()` method, backward compatible, automatic visualization/reports |
 
 ---
 
