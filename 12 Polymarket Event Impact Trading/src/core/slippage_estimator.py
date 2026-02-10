@@ -133,6 +133,12 @@ class SlippageEstimator:
         if order_size <= 0:
             raise ValueError(f"Invalid order_size: {order_size}. Must be positive")
 
+        # Ensure market_volume_24h is numeric
+        try:
+            market_volume_24h = float(market_volume_24h) if market_volume_24h else 0
+        except (ValueError, TypeError):
+            market_volume_24h = 0
+
         # Check volume limit
         if market_volume_24h > 0:
             order_pct_of_volume = order_size / market_volume_24h
@@ -158,6 +164,12 @@ class SlippageEstimator:
             levels = orderbook.get('asks', [])
         else:
             levels = orderbook.get('bids', [])
+
+        # Convert dict format to list format [price, size]
+        if levels and isinstance(levels[0], dict):
+            levels = [[float(level.get('price', 0)), float(level.get('size', 0))] for level in levels]
+        elif levels:
+            levels = [[float(level[0]), float(level[1])] for level in levels]
 
         # Handle empty orderbook
         if not levels or len(levels) == 0:
@@ -362,8 +374,13 @@ class SlippageEstimator:
         if not bids or not asks:
             return 0.0
 
-        best_bid = bids[0][0] if len(bids) > 0 else 0
-        best_ask = asks[0][0] if len(asks) > 0 else 0
+        # Handle both dict and list formats
+        if isinstance(bids[0], dict):
+            best_bid = float(bids[0].get('price', 0))
+            best_ask = float(asks[0].get('price', 0))
+        else:
+            best_bid = float(bids[0][0]) if len(bids) > 0 else 0
+            best_ask = float(asks[0][0]) if len(asks) > 0 else 0
 
         if best_bid <= 0 or best_ask <= 0:
             return 0.0

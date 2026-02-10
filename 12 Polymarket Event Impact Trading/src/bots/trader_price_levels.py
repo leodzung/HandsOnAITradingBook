@@ -510,7 +510,9 @@ class PriceLevelTrader:
                         signals_generated += 1
                         self.execute_signal(parsed_market, signal)
             except Exception as e:
+                import traceback
                 logger.error(f"Error processing market {parsed_market.get('question', '')[:40]}: {e}")
+                logger.error(f"Full traceback:\n{traceback.format_exc()}")
 
         logger.info(f"Generated {signals_generated} actionable signals, {arbitrage_found} arbitrage opportunities")
 
