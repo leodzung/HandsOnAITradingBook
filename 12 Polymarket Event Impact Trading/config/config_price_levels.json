@@ -3,11 +3,12 @@
   "paper_trading": true,
   "paper_trading_balance": 500.0,
 
-  "assets": ["BTC", "ETH"],
+  "assets": ["BTC", "ETH", "GOLD"],
 
   "event_slugs": {
     "BTC": ["what-price-will-bitcoin-hit-before-2027"],
-    "ETH": ["what-price-will-ethereum-hit-before-2027"]
+    "ETH": ["what-price-will-ethereum-hit-before-2027"],
+    "GOLD": ["what-will-gold-gc-hit-by-end-of-february"]
   },
 
   "edge_threshold": 0.10,

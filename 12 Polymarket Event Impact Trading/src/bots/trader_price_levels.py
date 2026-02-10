@@ -15,14 +15,18 @@ from pathlib import Path
 import pandas as pd
 import numpy as np
 
-from polymarket_client import PolymarketClient
-from market_parser import PriceLevelMarketParser
-from external_data import SpotPriceDataSource
-from price_level_features import PriceLevelFeatureExtractor
-from position_manager import PositionManager
-from conditional_resolution import ConditionalResolutionAnalyzer
-from exposure_manager import ExposureManager
-from telegram_notifier import TelegramNotifier
+import sys
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).parent.parent))
+
+from core.polymarket_client import PolymarketClient
+from utils.market_parser import PriceLevelMarketParser
+from utils.external_data import SpotPriceDataSource
+from features.price_level_features import PriceLevelFeatureExtractor
+from core.position_manager import PositionManager
+from utils.conditional_resolution import ConditionalResolutionAnalyzer
+from core.exposure_manager import ExposureManager
+from monitoring.telegram_notifier import TelegramNotifier
 
 
 class ArbitrageLogger:
