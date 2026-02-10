@@ -951,7 +951,7 @@ class PriceLevelTrader:
         orderbook = self.client.get_orderbook(token_id)
 
         # Estimate slippage
-        from slippage_estimator import SlippageEstimator
+        from core.slippage_estimator import SlippageEstimator
 
         estimator = SlippageEstimator(config=self.config.get('slippage_estimation', {}))
 
