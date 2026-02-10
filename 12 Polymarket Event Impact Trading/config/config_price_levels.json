@@ -32,7 +32,7 @@
     "max_capital_per_asset_pct": 0.40,
     "max_same_direction_pct": 0.80,
     "min_strike_distance_pct": 0.10,
-    "max_positions_same_expiry_week": 4,
+    "max_positions_same_expiry_week": 8,
     "max_total_positions": 10,
     "max_capital_deployed_pct": 0.70,
     "soft_mode": false

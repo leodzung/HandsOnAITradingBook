@@ -6,7 +6,7 @@ Extracts features from events and market data for ML models.
 import numpy as np
 import pandas as pd
 from typing import Dict, List, Optional
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from collections import Counter
 import re
 
@@ -261,7 +261,7 @@ class EventFeatureExtractor:
         text_features['source_credibility'] = 1.0 if event.source in credible_sources else 0.5
 
         # Time features
-        now = datetime.now()
+        now = datetime.now(timezone.utc)
         time_diff = (now - event.published_time).total_seconds()
         text_features['minutes_since_published'] = time_diff / 60
         text_features['hours_since_published'] = time_diff / 3600
@@ -321,7 +321,7 @@ class FeatureEngineering:
         # Time to expiry
         try:
             end_date = datetime.fromisoformat(market.get('end_date_iso', '2099-01-01'))
-            hours_to_expiry = (end_date - datetime.now()).total_seconds() / 3600
+            hours_to_expiry = (end_date - datetime.now(timezone.utc)).total_seconds() / 3600
             features['hours_to_expiry'] = hours_to_expiry
         except:
             features['hours_to_expiry'] = 10000

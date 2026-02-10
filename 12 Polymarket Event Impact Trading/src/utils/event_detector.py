@@ -12,13 +12,14 @@ import requests
 import time
 import logging
 from typing import List, Dict, Optional, Set, Tuple
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import feedparser
 import re
 from collections import defaultdict
 import hashlib
 import json
 from pathlib import Path
+import sqlite3
 
 # Set up logging
 logger = logging.getLogger(__name__)
@@ -81,39 +82,50 @@ class NewsAPIDetector:
         Returns:
             List of Event objects
         """
-        params = {
-            'apiKey': self.api_key,
-            'language': language,
-            'sortBy': 'publishedAt',
-            'from': (datetime.now() - timedelta(hours=lookback_hours)).strftime('%Y-%m-%dT%H:%M:%S'),
-            'q': query if query else 'news OR market OR election OR crypto OR bitcoin'  # Default broad query for free tier
-        }
+        # NewsAPI free tier has ~24h delay on /everything endpoint
+        # Enforce minimum lookback of 24 hours
+        effective_lookback = max(lookback_hours, 24)
 
-        if sources:
-            params['sources'] = ','.join(sources)
+        if effective_lookback > lookback_hours:
+            logger.debug(f"NewsAPI: Increased lookback from {lookback_hours}h to {effective_lookback}h (free tier limitation)")
 
+        events = []
+
+        # Try /everything endpoint first
         try:
+            params = {
+                'apiKey': self.api_key,
+                'language': language,
+                'sortBy': 'publishedAt',
+                'from': (datetime.now() - timedelta(hours=effective_lookback)).strftime('%Y-%m-%dT%H:%M:%S'),
+                'q': query if query else 'crypto OR bitcoin OR ethereum OR blockchain'
+            }
+
+            if sources:
+                params['sources'] = ','.join(sources)
+
             response = requests.get(f"{self.base_url}/everything", params=params)
             response.raise_for_status()
             data = response.json()
 
-            events = []
+            if data.get('status') == 'error':
+                logger.warning(f"NewsAPI error: {data.get('message', 'Unknown error')}")
+                return self._get_top_headlines(query, language)
+
             for article in data.get('articles', []):
-                # Skip if already seen
                 url = article.get('url', '')
                 if url in self.seen_urls:
                     continue
 
                 self.seen_urls.add(url)
 
-                # Extract keywords from title and description
                 text = f"{article.get('title', '')} {article.get('description', '')}"
                 keywords = self._extract_keywords(text)
 
                 event = Event(
                     title=article.get('title', ''),
                     description=article.get('description', ''),
-                    source=article.get('source', {}).get('name', 'Unknown'),
+                    source=f"NewsAPI/{article.get('source', {}).get('name', 'Unknown')}",
                     published_time=datetime.fromisoformat(
                         article.get('publishedAt', '').replace('Z', '+00:00')
                     ),
@@ -122,10 +134,70 @@ class NewsAPIDetector:
                 )
                 events.append(event)
 
+            logger.debug(f"NewsAPI /everything: {len(events)} articles")
+            return events
+
+        except requests.exceptions.RequestException as e:
+            logger.error(f"NewsAPI request error: {e}")
+            return self._get_top_headlines(query, language)
+        except Exception as e:
+            logger.error(f"NewsAPI error: {e}")
+            return []
+
+    def _get_top_headlines(self, query: Optional[str] = None, language: str = 'en') -> List[Event]:
+        """
+        Fallback to top-headlines endpoint (real-time but limited).
+
+        Args:
+            query: Search query
+            language: Language code
+
+        Returns:
+            List of Event objects
+        """
+        try:
+            params = {
+                'apiKey': self.api_key,
+                'language': language,
+                'category': 'business',
+                'pageSize': 20
+            }
+
+            if query:
+                params['q'] = query
+
+            response = requests.get(f"{self.base_url}/top-headlines", params=params)
+            response.raise_for_status()
+            data = response.json()
+
+            events = []
+            for article in data.get('articles', []):
+                url = article.get('url', '')
+                if url in self.seen_urls:
+                    continue
+
+                self.seen_urls.add(url)
+
+                text = f"{article.get('title', '')} {article.get('description', '')}"
+                keywords = self._extract_keywords(text)
+
+                event = Event(
+                    title=article.get('title', ''),
+                    description=article.get('description', ''),
+                    source=f"NewsAPI/{article.get('source', {}).get('name', 'Unknown')}",
+                    published_time=datetime.fromisoformat(
+                        article.get('publishedAt', '').replace('Z', '+00:00')
+                    ),
+                    url=url,
+                    keywords=keywords
+                )
+                events.append(event)
+
+            logger.debug(f"NewsAPI /top-headlines: {len(events)} articles")
             return events
 
         except Exception as e:
-            print(f"Error fetching news: {e}")
+            logger.error(f"NewsAPI top-headlines error: {e}")
             return []
 
     def _extract_keywords(self, text: str) -> List[str]:
@@ -152,7 +224,7 @@ class RSSFeedDetector:
         Returns:
             List of Event objects
         """
-        cutoff_time = datetime.now() - timedelta(hours=lookback_hours)
+        cutoff_time = datetime.now(timezone.utc) - timedelta(hours=lookback_hours)
         events = []
 
         for feed_url in self.feed_urls:
@@ -172,10 +244,11 @@ class RSSFeedDetector:
 
                     self.seen_guids.add(guid)
 
-                    # Parse published time
-                    published_time = datetime.now()
+                    # Parse published time (make timezone-aware)
+                    published_time = datetime.now(timezone.utc)
                     if hasattr(entry, 'published_parsed') and entry.published_parsed:
-                        published_time = datetime(*entry.published_parsed[:6])
+                        # Convert struct_time to timezone-aware datetime
+                        published_time = datetime(*entry.published_parsed[:6], tzinfo=timezone.utc)
 
                     # Skip if too old
                     if published_time < cutoff_time:
@@ -196,7 +269,7 @@ class RSSFeedDetector:
                     events.append(event)
 
             except Exception as e:
-                print(f"Error parsing feed {feed_url}: {e}")
+                logger.error(f"Error parsing feed {feed_url}: {e}")
                 continue
 
         return events
@@ -284,6 +357,133 @@ class TwitterDetector:
         words = re.findall(r'\b[A-Z][a-z]+\b|\b[A-Z]+\b', text)
 
         return list(set(hashtags + mentions + words))[:10]
+
+
+class GDELTDetector:
+    """Detect events from GDELT database."""
+
+    def __init__(self, db_path: str = 'data/gdelt_news.db'):
+        """
+        Initialize GDELT detector.
+
+        Args:
+            db_path: Path to GDELT SQLite database
+        """
+        self.db_path = db_path
+        self.seen_urls: Set[str] = set()
+
+    def get_recent_news(self, lookback_hours: int = 24,
+                       min_tone: Optional[float] = None,
+                       themes_filter: Optional[List[str]] = None) -> List[Event]:
+        """
+        Get recent news from GDELT database.
+
+        Args:
+            lookback_hours: How far back to look
+            min_tone: Minimum tone value (filters out negative tone if set)
+            themes_filter: List of themes to filter by (e.g., ['CRYPTO', 'BITCOIN'])
+
+        Returns:
+            List of Event objects
+        """
+        try:
+            conn = sqlite3.connect(self.db_path)
+            cursor = conn.cursor()
+
+            # Calculate cutoff time
+            cutoff_time = (datetime.now(timezone.utc) - timedelta(hours=lookback_hours)).isoformat()
+
+            # Build query
+            query = """
+                SELECT source_url, source, timestamp, themes, keywords, tone
+                FROM news_events
+                WHERE timestamp >= ?
+                ORDER BY timestamp DESC
+                LIMIT 1000
+            """
+
+            cursor.execute(query, (cutoff_time,))
+            rows = cursor.fetchall()
+            conn.close()
+
+            events = []
+            for row in rows:
+                source_url, source, timestamp, themes, keywords, tone = row
+
+                # Skip if already seen
+                if source_url in self.seen_urls:
+                    continue
+
+                # Apply tone filter if specified
+                if min_tone is not None and (tone is None or tone < min_tone):
+                    continue
+
+                # Parse themes
+                theme_list = themes.split(';') if themes else []
+
+                # Apply theme filter if specified
+                if themes_filter:
+                    if not any(tf.upper() in theme.upper() for tf in themes_filter for theme in theme_list):
+                        continue
+
+                # Build title from themes and keywords
+                title_parts = []
+
+                # Extract readable themes (skip technical codes)
+                readable_themes = [t for t in theme_list[:5]
+                                 if not t.startswith('WB_') and not t.startswith('TAX_')
+                                 and not t.startswith('UNGP_') and not t.startswith('CRISISLEX_')]
+                if readable_themes:
+                    title_parts.extend(readable_themes[:3])
+
+                # Add keywords
+                if keywords:
+                    keyword_list = keywords.split(',') if ',' in keywords else [keywords]
+                    title_parts.extend([kw.strip().upper() for kw in keyword_list[:3]])
+
+                # Fallback to source if no title parts
+                if not title_parts:
+                    title = f"News from {source}"
+                else:
+                    title = ' | '.join(title_parts)
+
+                # Create description from themes
+                description = ', '.join(readable_themes[:10]) if readable_themes else f"News article from {source}"
+
+                # Parse timestamp
+                try:
+                    published_time = datetime.fromisoformat(timestamp.replace('Z', '+00:00'))
+                except:
+                    published_time = datetime.now(timezone.utc)
+
+                # Extract keywords for matching
+                event_keywords = []
+                if keywords:
+                    event_keywords.extend(keywords.split(','))
+                event_keywords.extend(readable_themes[:5])
+                event_keywords = [kw.strip() for kw in event_keywords if kw.strip()]
+
+                self.seen_urls.add(source_url)
+
+                event = Event(
+                    title=title[:200],  # Limit title length
+                    description=description[:500],  # Limit description length
+                    source=f"GDELT/{source}",
+                    published_time=published_time,
+                    url=source_url,
+                    keywords=event_keywords[:15]
+                )
+                events.append(event)
+
+            logger.info(f"✓ GDELT: Retrieved {len(events)} events from last {lookback_hours}h")
+            return events
+
+        except sqlite3.OperationalError as e:
+            logger.warning(f"GDELT database not available: {e}")
+            return []
+        except Exception as e:
+            logger.error(f"Error fetching GDELT events: {e}")
+            return []
 
 
 class EmbeddingMatcher:
@@ -800,6 +1000,7 @@ class EventDetector:
     def __init__(self, news_api_key: Optional[str] = None,
                  twitter_bearer_token: Optional[str] = None,
                  rss_feeds: Optional[List[str]] = None,
+                 gdelt_db_path: Optional[str] = 'data/gdelt_news.db',
                  use_embeddings: bool = True,
                  embedding_model: str = 'intfloat/e5-large-v2',
                  embedding_threshold: float = 0.5):
@@ -810,20 +1011,32 @@ class EventDetector:
             news_api_key: NewsAPI key
             twitter_bearer_token: Twitter API bearer token
             rss_feeds: List of RSS feed URLs
+            gdelt_db_path: Path to GDELT database (set to None to disable)
             use_embeddings: Whether to use vector embeddings for matching
             embedding_model: HuggingFace model name for embeddings
             embedding_threshold: Minimum similarity for embedding match (0-1)
         """
         self.detectors = []
 
+        # Add GDELT detector first (primary source with most comprehensive data)
+        if gdelt_db_path:
+            self.detectors.append(GDELTDetector(gdelt_db_path))
+            logger.info("✓ GDELT detector enabled")
+
         if news_api_key:
             self.detectors.append(NewsAPIDetector(news_api_key))
+            logger.info("✓ NewsAPI detector enabled")
 
         if twitter_bearer_token:
             self.detectors.append(TwitterDetector(twitter_bearer_token))
+            logger.info("✓ Twitter detector enabled")
 
         if rss_feeds:
             self.detectors.append(RSSFeedDetector(rss_feeds))
+            logger.info("✓ RSS detector enabled")
+
+        if not self.detectors:
+            logger.warning("⚠ No event detectors configured!")
 
         self.matcher = EventMatcher(
             use_embeddings=use_embeddings,
@@ -847,7 +1060,11 @@ class EventDetector:
 
         for detector in self.detectors:
             try:
-                if isinstance(detector, NewsAPIDetector):
+                if isinstance(detector, GDELTDetector):
+                    events = detector.get_recent_news(
+                        lookback_hours=lookback_hours
+                    )
+                elif isinstance(detector, NewsAPIDetector):
                     events = detector.get_recent_news(
                         query=query,
                         lookback_hours=lookback_hours
@@ -860,13 +1077,15 @@ class EventDetector:
                     continue
 
                 all_events.extend(events)
+                logger.info(f"  {type(detector).__name__}: {len(events)} events")
             except Exception as e:
-                print(f"Error from detector {type(detector).__name__}: {e}")
+                logger.error(f"Error from detector {type(detector).__name__}: {e}")
                 continue
 
         # Sort by published time
         all_events.sort(key=lambda e: e.published_time, reverse=True)
 
+        logger.info(f"✓ Total: {len(all_events)} events from all sources")
         return all_events
 
     def find_relevant_events(self, markets: List[Dict],

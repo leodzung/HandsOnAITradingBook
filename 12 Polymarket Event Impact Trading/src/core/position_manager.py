@@ -6,7 +6,7 @@ Ensures positions survive bot restarts.
 
 import sqlite3
 import json
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Dict, List, Optional
 import logging
 
@@ -147,10 +147,15 @@ class PositionManager:
 
         positions = []
         for row in cursor:
+            # Parse entry_time and ensure it's timezone-aware
+            entry_time = datetime.fromisoformat(row['entry_time'])
+            if entry_time.tzinfo is None:
+                entry_time = entry_time.replace(tzinfo=timezone.utc)
+
             position = {
                 'market_id': row['market_id'],
                 'token_id': row['token_id'],
-                'entry_time': datetime.fromisoformat(row['entry_time']),
+                'entry_time': entry_time,
                 'entry_price': row['entry_price'],
                 'side': row['side'],
                 'size': row['size'],
@@ -234,10 +239,15 @@ class PositionManager:
         conn.close()
 
         if row:
+            # Parse entry_time and ensure it's timezone-aware
+            entry_time = datetime.fromisoformat(row['entry_time'])
+            if entry_time.tzinfo is None:
+                entry_time = entry_time.replace(tzinfo=timezone.utc)
+
             return {
                 'market_id': row['market_id'],
                 'token_id': row['token_id'],
-                'entry_time': datetime.fromisoformat(row['entry_time']),
+                'entry_time': entry_time,
                 'entry_price': row['entry_price'],
                 'side': row['side'],
                 'size': row['size'],
@@ -289,15 +299,27 @@ class PositionManager:
 
         positions = []
         for row in cursor:
+            # Parse entry_time and ensure it's timezone-aware
+            entry_time = datetime.fromisoformat(row['entry_time'])
+            if entry_time.tzinfo is None:
+                entry_time = entry_time.replace(tzinfo=timezone.utc)
+
+            # Parse exit_time if exists and ensure it's timezone-aware
+            exit_time = None
+            if row['exit_time']:
+                exit_time = datetime.fromisoformat(row['exit_time'])
+                if exit_time.tzinfo is None:
+                    exit_time = exit_time.replace(tzinfo=timezone.utc)
+
             position = {
                 'market_id': row['market_id'],
                 'token_id': row['token_id'],
-                'entry_time': datetime.fromisoformat(row['entry_time']),
+                'entry_time': entry_time,
                 'entry_price': row['entry_price'],
                 'side': row['side'],
                 'size': row['size'],
                 'status': row['status'],
-                'exit_time': datetime.fromisoformat(row['exit_time']) if row['exit_time'] else None,
+                'exit_time': exit_time,
                 'exit_price': row['exit_price'],
                 'pnl': row['pnl']
             }

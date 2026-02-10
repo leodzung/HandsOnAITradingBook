@@ -6,7 +6,7 @@ Executes trades on Polymarket based on model predictions.
 import time
 import logging
 from typing import Dict, List, Optional
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import pandas as pd
 import numpy as np
 import json
@@ -61,12 +61,12 @@ class RiskManager:
         self.circuit_breaker_triggered_at: Optional[datetime] = None
 
         self.daily_pnl = 0.0
-        self.daily_reset_time = datetime.now().date()
+        self.daily_reset_time = datetime.now(timezone.utc).date()
         self.active_positions = {}
 
     def reset_daily_counters(self):
         """Reset daily counters."""
-        today = datetime.now().date()
+        today = datetime.now(timezone.utc).date()
         if today > self.daily_reset_time:
             self.daily_pnl = 0.0
             self.daily_reset_time = today
@@ -83,7 +83,7 @@ class RiskManager:
 
         # Check if cooldown period has elapsed
         if self.circuit_breaker_triggered_at:
-            elapsed_hours = (datetime.now() - self.circuit_breaker_triggered_at).total_seconds() / 3600
+            elapsed_hours = (datetime.now(timezone.utc) - self.circuit_breaker_triggered_at).total_seconds() / 3600
             if elapsed_hours >= self.circuit_breaker_cooldown_hours:
                 # Reset circuit breaker after cooldown
                 self.circuit_breaker_active = False
@@ -132,7 +132,7 @@ class RiskManager:
         """Add a position to tracking."""
         self.active_positions[market_id] = {
             'size': size,
-            'entry_time': datetime.now()
+            'entry_time': datetime.now(timezone.utc)
         }
 
     def remove_position(self, market_id: str, pnl: float):
@@ -151,7 +151,7 @@ class RiskManager:
             # Trigger circuit breaker if threshold reached
             if self.consecutive_losses >= self.circuit_breaker_losses:
                 self.circuit_breaker_active = True
-                self.circuit_breaker_triggered_at = datetime.now()
+                self.circuit_breaker_triggered_at = datetime.now(timezone.utc)
                 logger.warning(f"⚠️ CIRCUIT BREAKER TRIGGERED: {self.consecutive_losses} consecutive losses. "
                              f"Trading paused for {self.circuit_breaker_cooldown_hours}h.")
         else:
@@ -203,6 +203,7 @@ class PolymarketTrader:
             news_api_key=config.get('news_api_key'),
             twitter_bearer_token=config.get('twitter_bearer_token'),
             rss_feeds=config.get('rss_feeds', []),
+            gdelt_db_path=config.get('gdelt_db_path', 'data/gdelt_news.db'),
             use_embeddings=config.get('use_embeddings', True),
             embedding_model=config.get('embedding_model', 'intfloat/e5-large-v2'),
             embedding_threshold=config.get('embedding_threshold', 0.5)
@@ -342,7 +343,7 @@ class PolymarketTrader:
                 self.process_signal(event, market)
                 signals_processed += 1
             except Exception as e:
-                logger.error(f"Error processing signal for {market_id}: {e}")
+                logger.error(f"Error processing signal for {market_id}: {e}", exc_info=True)
 
         logger.info(f"Processed {signals_processed} signals")
 
@@ -388,7 +389,7 @@ class PolymarketTrader:
             with open(self.paper_balance_file, 'w') as f:
                 json.dump({
                     'balance': balance,
-                    'last_updated': datetime.now().isoformat()
+                    'last_updated': datetime.now(timezone.utc).isoformat()
                 }, f, indent=2)
         except Exception as e:
             logger.error(f"Could not save paper balance: {e}")
@@ -554,7 +555,7 @@ class PolymarketTrader:
 
         # Calculate end date range based on expiry config
         from datetime import datetime, timedelta
-        now = datetime.now()
+        now = datetime.now(timezone.utc)
         min_hours = self.config.get('min_hours_to_expiry', 2)
         max_hours = self.config.get('max_hours_to_expiry', 8760)
 
@@ -671,7 +672,7 @@ class PolymarketTrader:
         # Get historical prices
         historical_prices = self.client.get_historical_prices(
             token_id,
-            start_time=datetime.now() - timedelta(hours=24)
+            start_time=datetime.now(timezone.utc) - timedelta(hours=24)
         )
 
         # Extract features
@@ -816,7 +817,7 @@ class PolymarketTrader:
             self.position_manager.save_position(
                 market_id=market_id,
                 token_id=token_id,
-                entry_time=datetime.now(),
+                entry_time=datetime.now(timezone.utc),
                 entry_price=entry_price,  # Actual token price (YES or NO)
                 side=outcome,  # Store YES or NO
                 size=position_size,
@@ -826,7 +827,7 @@ class PolymarketTrader:
             # Track paper position (in memory)
             self.risk_manager.add_position(market_id, position_size)
             self.position_timers[market_id] = {
-                'entry_time': datetime.now(),
+                'entry_time': datetime.now(timezone.utc),
                 'entry_price': entry_price,  # Actual token price
                 'side': outcome,  # Store YES or NO
                 'size': position_size
@@ -863,7 +864,7 @@ class PolymarketTrader:
     def manage_positions(self):
         """Manage existing positions with SL/TP checks."""
         hold_time = self.config.get('hold_time_hours', 24)
-        current_time = datetime.now()
+        current_time = datetime.now(timezone.utc)
 
         sl_config = self.config.get('stop_loss', {})
         tp_config = self.config.get('take_profit', {})
@@ -1016,7 +1017,7 @@ class PolymarketTrader:
         # Update database (persistence!)
         self.position_manager.close_position(
             market_id=market_id,
-            exit_time=datetime.now(),
+            exit_time=datetime.now(timezone.utc),
             exit_price=exit_price,
             pnl=pnl,
             exit_reason=exit_reason

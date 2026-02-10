@@ -604,6 +604,13 @@ class PriceLevelTrader:
             else:
                 # Market from event slug - apply manual filters
                 days_to_expiry = market.get('days_to_expiry', 0)
+                # Ensure days_to_expiry is an integer (handle string case)
+                try:
+                    days_to_expiry = int(days_to_expiry) if days_to_expiry else 0
+                except (ValueError, TypeError):
+                    logger.warning(f"Invalid days_to_expiry for {market.get('question', '')}: {days_to_expiry}")
+                    continue
+
                 if days_to_expiry < self.config.get('min_days_to_expiry', 1):
                     continue
                 if days_to_expiry > self.config.get('max_days_to_expiry', 365):
