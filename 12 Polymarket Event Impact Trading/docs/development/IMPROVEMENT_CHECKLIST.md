@@ -144,6 +144,23 @@ Key papers that can improve the bots:
     - JSON export of reports and summaries
   - Result: All training paths support CV, 15/15 tests passing, backward compatible
   - Full documentation in `CV_IMPLEMENTATION.md`
+- [ ] **Apply WalkForwardValidator to short-expiry model training** - Use same validation framework as other bots
+  - Files: `train_short_expiry.py`, `train_short_expiry_from_live.py`
+  - Current: Uses basic `TimeSeriesSplit` from sklearn (less rigorous)
+  - Target: Replace with `WalkForwardValidator` for consistency
+  - Benefits:
+    - Expanding window validation (prevents lookahead bias)
+    - Gap/embargo period support
+    - Comprehensive ValidationReport with AUC degradation tracking
+    - Standardized metrics across all models (event, price-level, short-expiry)
+    - Production readiness checks (same as other bots)
+  - Implementation:
+    - Add `entry_date` column to training data (use position entry_time)
+    - Create `run_with_walk_forward()` method (like price_level_model)
+    - Use same parameters: `n_folds=5, val_period_days=30, gap_days=0`
+    - Generate ValidationReport for each bucket (ultra_short, short, medium)
+  - Blocked by: Need 100+ closed positions per bucket for training data
+  - Priority: Do this BEFORE first model training (after live data collection)
 - [ ] Track feature importance over time to detect data drift
 - [ ] Build A/B testing framework to compare model versions in parallel
 
