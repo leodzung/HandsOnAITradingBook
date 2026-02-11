@@ -1,12 +1,54 @@
 # Polymarket Event Impact Trading System
 
-An AI-driven trading system for Polymarket prediction markets that detects breaking news/events and predicts their impact on market prices.
+An AI-driven trading system for Polymarket prediction markets with three specialized trading bots.
+
+## Active Trading Bots
+
+### 1. Short-Expiry Bot (`trader_short_expiry.py`) - **Currently Running**
+Specializes in short-duration markets (0-7 days):
+- **Ultra-short**: 0-24 hours (high urgency, time decay focus)
+- **Short**: 1-3 days (momentum signals)
+- **Medium**: 3-7 days (fundamental analysis)
+
+**Current Status (2026-02-11):**
+- ✅ Running in paper trading mode
+- 📊 10 open positions (ultra_short bucket)
+- ⏳ Collecting training data (need 100+ closed positions)
+- 📅 ETA to ML model: 7-10 days
+
+### 2. Event-Based Bot (`trader.py`)
+Detects breaking news and predicts market impact:
+- News monitoring (GDELT, RSS, NewsAPI)
+- Sentiment analysis with FinBERT
+- Event-to-market matching
+
+### 3. Price-Level Bot (`trader_price_levels.py`)
+Technical price-based trading:
+- Support/resistance levels
+- Volume analysis
+- Order book microstructure
+
+## Data & Training Status
+
+⚠️ **Important:** Before attempting to train models, check current data availability:
+
+```bash
+python3 scripts/check_data_status.py
+```
+
+**Current Historical Data:**
+- ✅ 1,049 markets with trades + outcomes
+- ❌ All are 90+ day markets (long-duration)
+- ❌ Zero short-expiry (≤7 days) historical data
+
+**For Short-Expiry Model Training:**
+- Live data collection in progress via `trader_short_expiry.py`
+- Need 100-150 closed positions (ETA: 7-10 days)
+- See `docs/DATA_STATUS.md` for detailed explanation
 
 ## Strategy Overview
 
-**Strategy #2: Deep Learning Event Impact Forecasting**
-
-This system implements a machine learning approach to trading Polymarket prediction markets:
+This system implements machine learning approaches to trading Polymarket prediction markets:
 
 1. **Event Detection** - Monitors news sources (RSS, NewsAPI, Twitter) for breaking events
 2. **Event Matching** - Matches detected events to relevant Polymarket markets
@@ -150,21 +192,41 @@ Edit `config/config.json` and add your API keys:
 **Optional:**
 - **Twitter API**: For social sentiment (requires approval)
 
-### 3. Train Model
+### 3. Train Models
 
-Open and run the research notebook:
+**Check data availability first:**
+```bash
+python3 scripts/check_data_status.py
+```
 
+**For Event-Based Bot:**
 ```bash
 jupyter notebook src/models/research.ipynb
 ```
 
-This notebook will:
-- Generate synthetic training data (or use your real data)
-- Train multiple ML models
-- Run backtests
-- Save the best model
+**For Short-Expiry Bot:**
+```bash
+# Wait until 100+ positions have closed (7-10 days)
+# Then run:
+python3 scripts/train_short_expiry_from_live.py
+```
 
-### 4. Deployment (IMPORTANT)
+**For Price-Level Bot:**
+```bash
+python3 src/models/train_price_level_model.py
+```
+
+See `docs/DATA_STATUS.md` for detailed data requirements and training readiness.
+
+### 4. Running the Bots
+
+**Short-Expiry Bot (currently collecting training data):**
+```bash
+cd "12 Polymarket Event Impact Trading"
+nohup python3 src/bots/trader_short_expiry.py >> logs/short_expiry.out 2>&1 &
+```
+
+**Or use the deployment script for other bots:**
 
 **Always use the deployment script when starting or restarting bots:**
 

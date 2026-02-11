@@ -1,15 +1,35 @@
 #!/usr/bin/env python3
 """
-Train short-expiry models using existing historical labeling pipeline.
+Train short-expiry models using historical data.
 
-Reuses:
-- historical_labeling_pipeline.py for data extraction
-- Existing databases (alchemy_trades.db, polymarket_history.db)
-- Existing feature extraction infrastructure
+⚠️  DATA REQUIREMENTS:
+This script requires markets with ALL of the following:
+  1. Duration ≤ 7 days (ultra_short, short, or medium bucket)
+  2. On-chain trade history (from alchemy_trades.db)
+  3. Resolved outcomes (from token_mapping.db)
+  4. Minimum 100+ markets per bucket
 
-Adapts for:
+📊 CURRENT STATUS (as of 2026-02-11):
+  - Historical short-expiry data: ❌ 0 markets available
+  - Reason: alchemy_trades.db only contains 90+ day markets
+  - Solution: Wait for live data collection (trader_short_expiry.py)
+
+✅ USE INSTEAD:
+  Run this script AFTER collecting 100+ closed positions from live trading:
+    python3 scripts/train_short_expiry_from_live.py
+
+📖 For detailed data status, see: docs/DATA_STATUS.md
+   Or run: python3 scripts/check_data_status.py
+
+Historical Data Sources:
+- token_mapping.db: Market metadata and outcomes
+- alchemy_trades.db: On-chain trade history
+- Linkage: Via condition_id (created by market mapper)
+
+Features:
 - Short-expiry specific features (0-7 days)
 - Bucket-specific models (ultra_short, short, medium)
+- Time decay, momentum, volatility, microstructure
 """
 
 import sys
