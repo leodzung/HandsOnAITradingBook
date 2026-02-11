@@ -47,7 +47,7 @@ TRAINING_DB = DATA_DIR / "training_history.db"
 
 
 def get_data_collection_stats() -> dict:
-    """Get data collection progress stats."""
+    """Get data collection progress stats from separate collector databases."""
     stats = {
         "on_chain_trades": 0,
         "token_mappings": 0,
@@ -58,54 +58,63 @@ def get_data_collection_stats() -> dict:
         "target_trades": 50_000_000,  # 50M target for 6 months
     }
 
-    if not TRAINING_DB.exists():
-        return stats
-
-    try:
-        conn = sqlite3.connect(TRAINING_DB)
-        cursor = conn.cursor()
-
-        # Count on-chain trades
-        cursor.execute("SELECT COUNT(*) FROM on_chain_trades")
-        stats["on_chain_trades"] = cursor.fetchone()[0]
-
-        # Count token mappings
-        cursor.execute("SELECT COUNT(*) FROM token_condition_map")
-        stats["token_mappings"] = cursor.fetchone()[0]
-
-        # Count markets
-        cursor.execute("SELECT COUNT(*) FROM markets")
-        stats["markets"] = cursor.fetchone()[0]
-
-        # Count news events
+    # Read from Alchemy database
+    if ALCHEMY_DB.exists():
         try:
-            cursor.execute("SELECT COUNT(*) FROM news_events")
-            stats["news_events"] = cursor.fetchone()[0]
-        except:
+            conn = sqlite3.connect(ALCHEMY_DB)
+            cursor = conn.cursor()
+
+            # Count on-chain trades
+            try:
+                cursor.execute("SELECT COUNT(*) FROM on_chain_trades")
+                stats["on_chain_trades"] = cursor.fetchone()[0]
+            except:
+                pass
+
+            # Count token mappings
+            try:
+                cursor.execute("SELECT COUNT(*) FROM token_condition_map")
+                stats["token_mappings"] = cursor.fetchone()[0]
+            except:
+                pass
+
+            # Count markets
+            try:
+                cursor.execute("SELECT COUNT(*) FROM markets")
+                stats["markets"] = cursor.fetchone()[0]
+            except:
+                pass
+
+            # Get last block and trade time
+            try:
+                cursor.execute("SELECT MAX(block_number), MAX(block_timestamp) FROM on_chain_trades")
+                row = cursor.fetchone()
+                if row:
+                    stats["last_block"] = row[0] or 0
+                    stats["last_trade_time"] = row[1]
+            except:
+                pass
+
+            conn.close()
+        except Exception as e:
             pass
 
-        # Get last block from checkpoint
+    # Read from GDELT database
+    if GDELT_DB.exists():
         try:
-            cursor.execute("SELECT last_block, updated_at FROM collection_checkpoints WHERE source='alchemy'")
-            row = cursor.fetchone()
-            if row:
-                stats["last_block"] = row[0]
-                stats["checkpoint_time"] = row[1]
-        except:
-            pass
+            conn = sqlite3.connect(GDELT_DB)
+            cursor = conn.cursor()
 
-        # Get last trade time
-        try:
-            cursor.execute("SELECT MAX(block_timestamp) FROM on_chain_trades")
-            row = cursor.fetchone()
-            if row and row[0]:
-                stats["last_trade_time"] = row[0]
-        except:
-            pass
+            # Count news events
+            try:
+                cursor.execute("SELECT COUNT(*) FROM news_events")
+                stats["news_events"] = cursor.fetchone()[0]
+            except:
+                pass
 
-        conn.close()
-    except Exception as e:
-        pass
+            conn.close()
+        except Exception as e:
+            pass
 
     return stats
 
@@ -833,7 +842,7 @@ with tab2:
     else:
         st.info("No closed positions yet")
 
-with tab6:
+with tab3:
     st.subheader("Performance Analytics")
 
     if not pl_closed.empty and 'pnl' in pl_closed.columns:
@@ -868,7 +877,7 @@ with tab6:
     else:
         st.info("No closed trades yet for performance analysis")
 
-with tab6:
+with tab4:
     st.subheader("Arbitrage Monitor")
 
     arb_df = load_arbitrage_opportunities()
@@ -900,7 +909,7 @@ with tab6:
         st.info("No arbitrage opportunities logged yet")
         st.write("The arbitrage bot logs opportunities to `data/arbitrage/`")
 
-with tab6:
+with tab5:
     st.subheader("Data Collection Progress")
 
     dc_stats = get_data_collection_stats()
