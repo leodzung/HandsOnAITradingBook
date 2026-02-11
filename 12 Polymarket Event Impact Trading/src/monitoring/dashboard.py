@@ -402,6 +402,22 @@ def get_current_prices(market_id: str) -> dict:
         return result
 
 
+@st.cache_data(ttl=300)  # Cache for 5 minutes
+def get_market_name(market_id: str) -> str:
+    """Fetch market name/question from Polymarket CLOB API."""
+    try:
+        url = f"https://clob.polymarket.com/markets/{market_id}"
+        response = requests.get(url, timeout=5)
+        if response.status_code == 200:
+            data = response.json()
+            # Try question first, fall back to description
+            question = data.get('question', data.get('description', 'Unknown Market'))
+            return str(question) if question else 'Unknown Market'
+        return 'Unknown Market'
+    except:
+        return 'Unknown Market'
+
+
 def get_current_price(market_id: str) -> float:
     """Fetch current YES price from Polymarket CLOB API (legacy wrapper)."""
     prices = get_current_prices(market_id)
@@ -795,10 +811,23 @@ with tab2:
             bucket_emoji = {"ultra_short": "⚡", "short": "🔥", "medium": "📊"}
             bucket = row.get('bucket', 'unknown')
 
-            with st.expander(f"{bucket_emoji.get(bucket, '📈')} {bucket.replace('_', '-').title()} | {row.get('outcome', 'N/A')} | Entry: ${row.get('entry_price', 0):.3f}"):
+            # Get market name - for short expiry positions, fetch from API
+            market_id = row.get('market_id', '')
+            if 'question' in row and pd.notna(row.get('question')) and row.get('question'):
+                # Use cached question from load_positions if available
+                market_name = str(row.get('question'))[:80]
+            else:
+                # Fetch from API for short expiry positions
+                market_name = get_market_name(market_id)
+                if market_name and market_name != 'Unknown Market':
+                    market_name = market_name[:80]
+
+            # Create expander title with market name
+            expander_title = f"{bucket_emoji.get(bucket, '📈')} {market_name[:50]} | {row.get('outcome', 'N/A')} @ ${row.get('entry_price', 0):.3f}"
+            with st.expander(expander_title):
                 col1, col2 = st.columns(2)
                 with col1:
-                    st.write(f"**Market ID:** {row.get('market_id', 'N/A')[:20]}...")
+                    st.write(f"**Market:** {market_name}")
                     st.write(f"**Outcome:** {row.get('outcome', 'N/A')}")
                     st.write(f"**Entry Price:** ${row.get('entry_price', 0):.4f}")
                     st.write(f"**Size:** ${row.get('size', 0):.2f}")
@@ -830,10 +859,21 @@ with tab2:
             bucket_emoji = {"ultra_short": "⚡", "short": "🔥", "medium": "📊"}
             bucket = row.get('bucket', 'unknown')
 
+            # Get market name - for short expiry positions, fetch from API
+            market_id = row.get('market_id', '')
+            if 'question' in row and pd.notna(row.get('question')) and row.get('question'):
+                # Use cached question from load_positions if available
+                market_name = str(row.get('question'))[:60]
+            else:
+                # Fetch from API for short expiry positions
+                market_name = get_market_name(market_id)
+                if market_name and market_name != 'Unknown Market':
+                    market_name = market_name[:60]
+
             st.markdown(f"""
             <div style='padding: 10px; margin: 5px 0; background-color: rgba(0,0,0,0.1); border-radius: 5px; border-left: 3px solid {color};'>
-                <b>{bucket_emoji.get(bucket, '📈')} {bucket.replace('_', '-').title()}</b> |
-                {row.get('outcome', 'N/A')} |
+                <b>{bucket_emoji.get(bucket, '📈')} {market_name}</b><br/>
+                {bucket.replace('_', '-').title()} | {row.get('outcome', 'N/A')} |
                 Entry: ${row.get('entry_price', 0):.3f} → Exit: ${row.get('exit_price', 0):.3f}<br/>
                 P&L: <span style='color: {color};'>${pnl:.2f} ({pnl_pct:.1f}%)</span> |
                 Reason: {row.get('exit_reason', 'N/A').replace('_', ' ').title()}

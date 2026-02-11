@@ -137,3 +137,42 @@ There are no formal test suites. Validation is done through:
 - **Object Store**: Used extensively for sharing data between `main.py` and `research.ipynb`
 - **Parameters**: Algorithms often use `self.get_parameter()` for configurable values
 - **Live Mode**: Many algorithms check `self.live_mode` to load pre-trained models instead of training from scratch
+
+---
+
+## 12 Polymarket Event Impact Trading
+
+This is an active project with two trading bots for Polymarket prediction markets.
+
+### Key Documentation
+- **`IMPROVEMENT_CHECKLIST.md`** - Master checklist with prioritized tasks, progress log, and lessons learned
+- **`IMPROVEMENT_ROADMAP.md`** - Detailed implementation guide with code examples
+- **`ROADMAP_TO_LIVE.md`** - Production readiness criteria
+
+### Running the Bots
+```bash
+cd "12 Polymarket Event Impact Trading"
+nohup python3 trader.py >> trading.out 2>&1 &
+nohup python3 trader_price_levels.py >> trading_price_levels.out 2>&1 &
+```
+
+### Current Status (as of 2026-01-23)
+- Two bots running: event-based (`trader.py`) and price-level (`trader_price_levels.py`)
+- Paper trading mode with ~$13 balance
+- Price tracking fixed (was recording 0.5 for all prices)
+- Known issues: Only finding 2 markets (expiry filter too strict), low event matching
+
+### Key Files
+| Component | File |
+|-----------|------|
+| Event trader | `trader.py` |
+| Price-level trader | `trader_price_levels.py` |
+| Polymarket API client | `polymarket_client.py` |
+| Price tracking | `price_tracker.py` |
+| Feature extraction | `feature_extractor.py` |
+| Config | `config.json`, `config_price_levels.json` |
+
+### Databases
+- `data/price_tracking.db` - Event-price outcome tracking
+- `data/positions.db` - Event trader positions
+- `data/positions_price_level.db` - Price-level trader positions
