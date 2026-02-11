@@ -1,0 +1,681 @@
+"""
+Short-Expiry Polymarket Trading Bot
+
+This bot specializes in short-expiry prediction markets (2 hours to 7 days),
+with a focus on crypto markets. It uses a 3-bucket architecture with horizon-specific
+strategies and risk management.
+
+Buckets:
+- Ultra-short: 2-24 hours (high urgency, time decay dominates)
+- Short: 1-3 days (moderate urgency, momentum signals)
+- Medium: 3-7 days (lower urgency, fundamental analysis)
+
+Phase 1: Simple rule-based trading (arbitrage, mean reversion, momentum)
+Phase 2: ML model integration (GBM with walk-forward validation)
+Phase 3: Ensemble with cross-market signals
+"""
+
+import json
+import logging
+import time
+import sys
+import os
+from datetime import datetime, timezone, timedelta
+from typing import Dict, List, Optional, Tuple
+import pandas as pd
+import sqlite3
+
+# Add parent directory to path
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+from features.short_expiry_features import ShortExpiryFeatureExtractor
+from core.polymarket_client import PolymarketClient
+from monitoring.telegram_notifier import TelegramNotifier
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.StreamHandler(),
+        logging.FileHandler('logs/short_expiry.log')
+    ]
+)
+logger = logging.getLogger(__name__)
+
+
+class ShortExpiryPositionManager:
+    """Manage positions for short-expiry trading."""
+
+    def __init__(self, db_path: str):
+        self.db_path = db_path
+        self._init_db()
+
+    def _init_db(self):
+        """Initialize database schema."""
+        with sqlite3.connect(self.db_path) as conn:
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS positions (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    market_id TEXT NOT NULL,
+                    token_id TEXT NOT NULL,
+                    outcome TEXT NOT NULL,
+                    entry_price REAL NOT NULL,
+                    current_price REAL,
+                    size REAL NOT NULL,
+                    entry_time TEXT NOT NULL,
+                    exit_time TEXT,
+                    exit_price REAL,
+                    pnl REAL,
+                    pnl_pct REAL,
+                    bucket TEXT NOT NULL,
+                    hours_to_expiry_at_entry REAL,
+                    edge REAL,
+                    confidence REAL,
+                    signal_reason TEXT,
+                    exit_reason TEXT,
+                    status TEXT DEFAULT 'open',
+                    features_json TEXT,
+                    UNIQUE(market_id, outcome)
+                )
+            """)
+            conn.commit()
+
+    def has_position(self, market_id: str) -> bool:
+        """Check if we have an open position for this market."""
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.execute(
+                "SELECT COUNT(*) FROM positions WHERE market_id = ? AND status = 'open'",
+                (market_id,)
+            )
+            return cursor.fetchone()[0] > 0
+
+    def get_open_positions(self) -> List[Dict]:
+        """Get all open positions."""
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.execute(
+                "SELECT * FROM positions WHERE status = 'open'"
+            )
+            columns = [desc[0] for desc in cursor.description]
+            rows = cursor.fetchall()
+            return [dict(zip(columns, row)) for row in rows]
+
+    def count_positions_by_bucket(self, bucket: str) -> int:
+        """Count open positions in a specific bucket."""
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.execute(
+                "SELECT COUNT(*) FROM positions WHERE bucket = ? AND status = 'open'",
+                (bucket,)
+            )
+            return cursor.fetchone()[0]
+
+    def add_position(self, position: Dict):
+        """Add a new position."""
+        with sqlite3.connect(self.db_path) as conn:
+            conn.execute("""
+                INSERT INTO positions (
+                    market_id, token_id, outcome, entry_price, current_price,
+                    size, entry_time, bucket, hours_to_expiry_at_entry,
+                    edge, confidence, signal_reason, features_json
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (
+                position['market_id'],
+                position['token_id'],
+                position['outcome'],
+                position['entry_price'],
+                position['entry_price'],
+                position['size'],
+                position['entry_time'],
+                position['bucket'],
+                position.get('hours_to_expiry', 0),
+                position.get('edge', 0),
+                position.get('confidence', 0),
+                position.get('signal_reason', ''),
+                position.get('features_json', '{}')
+            ))
+            conn.commit()
+
+    def update_position_price(self, market_id: str, outcome: str, current_price: float):
+        """Update current price for a position."""
+        with sqlite3.connect(self.db_path) as conn:
+            conn.execute("""
+                UPDATE positions
+                SET current_price = ?
+                WHERE market_id = ? AND outcome = ? AND status = 'open'
+            """, (current_price, market_id, outcome))
+            conn.commit()
+
+    def close_position(self, market_id: str, outcome: str, exit_price: float,
+                      exit_reason: str):
+        """Close a position."""
+        with sqlite3.connect(self.db_path) as conn:
+            # Get entry price
+            cursor = conn.execute("""
+                SELECT entry_price, size FROM positions
+                WHERE market_id = ? AND outcome = ? AND status = 'open'
+            """, (market_id, outcome))
+            row = cursor.fetchone()
+            if not row:
+                logger.warning(f"Position not found: {market_id} {outcome}")
+                return
+
+            entry_price, size = row
+            pnl = (exit_price - entry_price) * size
+            pnl_pct = ((exit_price - entry_price) / entry_price) * 100 if entry_price > 0 else 0
+
+            # Update position
+            conn.execute("""
+                UPDATE positions
+                SET exit_price = ?, exit_time = ?, pnl = ?, pnl_pct = ?,
+                    exit_reason = ?, status = 'closed'
+                WHERE market_id = ? AND outcome = ? AND status = 'open'
+            """, (
+                exit_price,
+                datetime.now(timezone.utc).isoformat(),
+                pnl,
+                pnl_pct,
+                exit_reason,
+                market_id,
+                outcome
+            ))
+            conn.commit()
+
+            logger.info(f"Closed position: {market_id} {outcome} | "
+                       f"Entry: {entry_price:.4f} | Exit: {exit_price:.4f} | "
+                       f"P&L: {pnl:.2f} ({pnl_pct:.2f}%) | Reason: {exit_reason}")
+
+
+class ShortExpiryRiskManager:
+    """Risk management for short-expiry trading."""
+
+    def __init__(self, config: Dict):
+        self.config = config
+        self.consecutive_losses = 0
+
+    def can_open_position(self, bucket: str, position_manager: ShortExpiryPositionManager) -> bool:
+        """Check if we can open a new position in this bucket."""
+        # Check total positions
+        total_open = len(position_manager.get_open_positions())
+        if total_open >= self.config['position_limits']['max_total_positions']:
+            return False
+
+        # Check bucket-specific limit
+        bucket_count = position_manager.count_positions_by_bucket(bucket)
+        if bucket_count >= self.config['position_limits']['max_positions_per_bucket'][bucket]:
+            return False
+
+        # Check circuit breaker
+        if self.consecutive_losses >= self.config['risk_management']['circuit_breaker_losses']:
+            logger.warning(f"Circuit breaker triggered: {self.consecutive_losses} consecutive losses")
+            return False
+
+        return True
+
+    def can_execute(self, signal: Dict, balance: float, bucket: str) -> bool:
+        """Check if we can execute this signal."""
+        # Check minimum edge
+        if signal.get('edge', 0) < self.config['risk_management']['min_edge']:
+            return False
+
+        # Check minimum confidence
+        if signal.get('confidence', 0) < self.config['risk_management']['min_confidence']:
+            return False
+
+        # Check balance
+        max_size = self.config['position_limits']['max_position_size'][bucket]
+        if max_size > balance:
+            return False
+
+        return True
+
+    def calculate_position_size(self, edge: float, confidence: float, bucket: str) -> float:
+        """Calculate position size based on edge and confidence."""
+        max_size = self.config['position_limits']['max_position_size'][bucket]
+
+        # Simple sizing: use max size if high confidence, otherwise scale down
+        size_multiplier = min(confidence, 1.0)
+        size = max_size * size_multiplier
+
+        # Ensure minimum size
+        min_size = self.config['position_limits']['min_position_size']
+        return max(size, min_size)
+
+    def should_exit(self, position: Dict, current_price: float, bucket: str) -> Optional[str]:
+        """Check if we should exit this position."""
+        entry_price = position['entry_price']
+        pnl_pct = ((current_price - entry_price) / entry_price) * 100 if entry_price > 0 else 0
+
+        # Stop-loss
+        stop_loss_pct = self.config['risk_management']['stop_loss_pct'][bucket]
+        if pnl_pct <= -stop_loss_pct:
+            return 'stop_loss'
+
+        # Take-profit
+        take_profit_pct = self.config['risk_management']['take_profit_pct'][bucket]
+        if pnl_pct >= take_profit_pct:
+            return 'take_profit'
+
+        # Pre-expiry exit
+        if position['hours_to_expiry_at_entry'] < self.config['risk_management']['pre_expiry_exit_hours']:
+            return 'pre_expiry_exit'
+
+        return None
+
+    def update_consecutive_losses(self, is_loss: bool):
+        """Update consecutive loss counter."""
+        if is_loss:
+            self.consecutive_losses += 1
+        else:
+            self.consecutive_losses = 0
+
+
+class ShortExpiryTrader:
+    """Main trading bot for short-expiry markets."""
+
+    def __init__(self, config_path: str):
+        # Load config
+        with open(config_path, 'r') as f:
+            self.config = json.load(f)
+
+        # Initialize components
+        self.client = PolymarketClient()  # No auth needed for read-only
+        self.position_manager = ShortExpiryPositionManager(
+            self.config['database']['positions_db']
+        )
+        self.feature_extractor = ShortExpiryFeatureExtractor()
+        self.risk_manager = ShortExpiryRiskManager(self.config)
+
+        # Telegram notifications
+        telegram_config = self.config.get('telegram', {})
+        self.telegram = TelegramNotifier(
+            bot_token=telegram_config.get('bot_token', ''),
+            chat_id=telegram_config.get('chat_id', ''),
+            enabled=telegram_config.get('enabled', False)
+        )
+
+        # Paper trading
+        self.paper_trading = self.config['paper_trading']
+        self.balance = self._load_balance()
+
+        # Market cache
+        self.market_cache = {}
+        self.cache_time = {}
+        self.cache_ttl = self.config['discovery']['api_cache_ttl_seconds']
+
+        logger.info(f"ShortExpiryTrader initialized | Paper trading: {self.paper_trading} | "
+                   f"Balance: ${self.balance:.2f}")
+
+        # Send startup notification
+        self.telegram.send_message(
+            f"🚀 <b>Short-Expiry Bot Started</b>\n\n"
+            f"Paper Trading: {'Yes' if self.paper_trading else 'No'}\n"
+            f"Initial Balance: ${self.balance:.2f}\n"
+            f"Max Positions: {self.config['position_limits']['max_total_positions']}"
+        )
+
+    def _load_balance(self) -> float:
+        """Load paper trading balance."""
+        balance_file = self.config.get('paper_trading_balance_file',
+                                       'data/paper_trading_balance_short_expiry.json')
+        try:
+            with open(balance_file, 'r') as f:
+                data = json.load(f)
+                return data['balance']
+        except:
+            # Initialize with default
+            balance = self.config['paper_trading_balance']
+            self._save_balance(balance)
+            return balance
+
+    def _save_balance(self, balance: float):
+        """Save paper trading balance."""
+        balance_file = self.config.get('paper_trading_balance_file',
+                                       'data/paper_trading_balance_short_expiry.json')
+        os.makedirs(os.path.dirname(balance_file), exist_ok=True)
+        with open(balance_file, 'w') as f:
+            json.dump({'balance': balance, 'updated': datetime.now(timezone.utc).isoformat()}, f)
+
+    def run(self):
+        """Main loop."""
+        logger.info("Starting main trading loop")
+
+        while True:
+            try:
+                # Discover markets (3 buckets)
+                markets = self.discover_markets()
+
+                logger.info(f"Markets discovered | Ultra-short: {len(markets['ultra_short'])} | "
+                           f"Short: {len(markets['short'])} | Medium: {len(markets['medium'])}")
+
+                # Process each bucket
+                for bucket, bucket_markets in markets.items():
+                    self._process_bucket(bucket, bucket_markets)
+
+                # Check existing positions for exits
+                self._check_positions()
+
+                # Wait for next cycle
+                time.sleep(self.config['execution']['cycle_interval_seconds'])
+
+            except KeyboardInterrupt:
+                logger.info("Shutting down...")
+                break
+            except Exception as e:
+                logger.error(f"Error in main loop: {e}", exc_info=True)
+                time.sleep(60)
+
+    def discover_markets(self) -> Dict[str, List[Dict]]:
+        """Discover markets in 3 buckets."""
+        now = datetime.now(timezone.utc)
+        config = self.config['discovery']
+
+        markets = {}
+
+        # Bucket 1: Ultra-short (0-24h)
+        try:
+            ultra_short_markets = self.client.get_markets(
+                limit=100,
+                active=True,
+                end_date_min=(now + timedelta(hours=config['ultra_short_hours'][0])).isoformat(),
+                end_date_max=(now + timedelta(hours=config['ultra_short_hours'][1])).isoformat(),
+                volume_num_min=config['min_volume']['ultra_short']
+            )
+            markets['ultra_short'] = self._filter_tradeable(ultra_short_markets, 'ultra_short')
+        except Exception as e:
+            logger.error(f"Error discovering ultra_short markets: {e}")
+            markets['ultra_short'] = []
+
+        # Bucket 2: Short (24-72h)
+        try:
+            short_markets = self.client.get_markets(
+                limit=100,
+                active=True,
+                end_date_min=(now + timedelta(hours=config['short_hours'][0])).isoformat(),
+                end_date_max=(now + timedelta(hours=config['short_hours'][1])).isoformat(),
+                volume_num_min=config['min_volume']['short']
+            )
+            markets['short'] = self._filter_tradeable(short_markets, 'short')
+        except Exception as e:
+            logger.error(f"Error discovering short markets: {e}")
+            markets['short'] = []
+
+        # Bucket 3: Medium (72-168h = 3-7d)
+        try:
+            medium_markets = self.client.get_markets(
+                limit=100,
+                active=True,
+                end_date_min=(now + timedelta(hours=config['medium_hours'][0])).isoformat(),
+                end_date_max=(now + timedelta(hours=config['medium_hours'][1])).isoformat(),
+                volume_num_min=config['min_volume']['medium']
+            )
+            markets['medium'] = self._filter_tradeable(medium_markets, 'medium')
+        except Exception as e:
+            logger.error(f"Error discovering medium markets: {e}")
+            markets['medium'] = []
+
+        return markets
+
+    def _is_crypto_market(self, market: Dict) -> bool:
+        """Check if market is crypto-related."""
+        question = market.get('question', '').lower()
+        crypto_keywords = ['bitcoin', 'btc', 'ethereum', 'eth', 'crypto', 'cryptocurrency']
+        return any(kw in question for kw in crypto_keywords)
+
+    def _get_prices(self, market: Dict) -> Dict[str, float]:
+        """Extract YES/NO prices from market."""
+        # Get last trade price (represents YES price for first outcome)
+        yes_price = market.get('lastTradePrice', 0.5)
+        if isinstance(yes_price, str):
+            yes_price = float(yes_price)
+
+        no_price = 1.0 - yes_price
+
+        return {'yes': yes_price, 'no': no_price}
+
+    def _get_spread_pct(self, market: Dict) -> float:
+        """Calculate spread percentage."""
+        best_bid = market.get('bestBid', 0.45)
+        best_ask = market.get('bestAsk', 0.55)
+
+        if isinstance(best_bid, str):
+            best_bid = float(best_bid)
+        if isinstance(best_ask, str):
+            best_ask = float(best_ask)
+
+        spread = best_ask - best_bid
+        mid_price = (best_bid + best_ask) / 2.0
+
+        return (spread / mid_price * 100) if mid_price > 0 else 0
+
+    def _filter_tradeable(self, markets: List[Dict], bucket: str) -> List[Dict]:
+        """Apply quality filters."""
+        filtered = []
+        config = self.config['discovery']
+
+        for m in markets:
+            # Check crypto category (if enabled)
+            if config.get('crypto_only', False) and not self._is_crypto_market(m):
+                continue
+
+            # Check spread
+            spread_pct = self._get_spread_pct(m)
+            if spread_pct > config['max_spread_pct'][bucket]:
+                continue
+
+            # Check price range (avoid extremes)
+            prices = self._get_prices(m)
+            if prices['yes'] < config['min_price'] or prices['yes'] > config['max_price']:
+                continue
+
+            # Check that we have pricing data
+            if m.get('lastTradePrice') is None:
+                continue
+
+            filtered.append(m)
+
+        return filtered
+
+    def _process_bucket(self, bucket: str, markets: List[Dict]):
+        """Process markets in a bucket."""
+        # Check position limits
+        if not self.risk_manager.can_open_position(bucket, self.position_manager):
+            return
+
+        for market in markets:
+            # Skip if already have position
+            market_id = market.get('conditionId', '')
+            if self.position_manager.has_position(market_id):
+                continue
+
+            # Extract features
+            features = self.feature_extractor.extract_all_features(market, bucket)
+
+            # Generate signal
+            signal = self._generate_signal(features, market, bucket)
+
+            if signal['action'] == 'HOLD':
+                continue
+
+            # Risk checks
+            if not self.risk_manager.can_execute(signal, self.balance, bucket):
+                continue
+
+            # Execute trade (paper trading)
+            self._execute_trade(market, signal, bucket, features)
+
+    def _generate_signal(self, features: pd.DataFrame, market: Dict,
+                         bucket: str) -> Dict:
+        """Generate trading signal using rule-based strategies."""
+        market_price = features['market_probability'].iloc[0]
+        rules_config = self.config['rules']
+
+        # Rule 1: Arbitrage (YES + NO < 0.98)
+        if rules_config['arbitrage']['enabled']:
+            yes_price = market_price
+            no_price = 1.0 - market_price
+            total = yes_price + no_price
+
+            if total < rules_config['arbitrage']['max_total_price']:
+                edge = rules_config['arbitrage']['max_total_price'] - total
+                if edge >= rules_config['arbitrage']['min_edge']:
+                    # Buy cheaper side
+                    if yes_price < no_price:
+                        return {
+                            'action': 'BUY',
+                            'outcome': 'YES',
+                            'edge': edge,
+                            'confidence': 0.95,
+                            'reason': 'arbitrage'
+                        }
+                    else:
+                        return {
+                            'action': 'BUY',
+                            'outcome': 'NO',
+                            'edge': edge,
+                            'confidence': 0.95,
+                            'reason': 'arbitrage'
+                        }
+
+        # Rule 2: Wide spread mean reversion (ultra_short only)
+        if (bucket == rules_config['mean_reversion']['bucket'] and
+            rules_config['mean_reversion']['enabled']):
+
+            spread_pct = features.get('spread_pct', pd.Series([0])).iloc[0]
+            volume_24h = features.get('volume_24h', pd.Series([0])).iloc[0]
+
+            if (spread_pct > rules_config['mean_reversion']['min_spread_pct'] and
+                volume_24h > rules_config['mean_reversion']['min_volume_24h']):
+
+                if market_price < rules_config['mean_reversion']['price_threshold_low']:
+                    return {
+                        'action': 'BUY',
+                        'outcome': 'YES',
+                        'edge': 0.05,
+                        'confidence': 0.6,
+                        'reason': 'mean_reversion'
+                    }
+                elif market_price > rules_config['mean_reversion']['price_threshold_high']:
+                    return {
+                        'action': 'BUY',
+                        'outcome': 'NO',
+                        'edge': 0.05,
+                        'confidence': 0.6,
+                        'reason': 'mean_reversion'
+                    }
+
+        # Rule 3: Crypto momentum (price change > 2% in 1h)
+        if rules_config['momentum']['enabled']:
+            price_change_1h = features.get('price_change_1h', pd.Series([0])).iloc[0]
+            volume_24h = features.get('volume_24h', pd.Series([0])).iloc[0]
+
+            if (abs(price_change_1h) > rules_config['momentum']['min_price_change_1h'] and
+                volume_24h > rules_config['momentum']['min_volume_24h']):
+
+                # Follow momentum
+                if price_change_1h > 0:
+                    return {
+                        'action': 'BUY',
+                        'outcome': 'YES',
+                        'edge': 0.08,
+                        'confidence': 0.65,
+                        'reason': 'momentum'
+                    }
+                else:
+                    return {
+                        'action': 'BUY',
+                        'outcome': 'NO',
+                        'edge': 0.08,
+                        'confidence': 0.65,
+                        'reason': 'momentum'
+                    }
+
+        return {'action': 'HOLD', 'reason': 'no_signal'}
+
+    def _execute_trade(self, market: Dict, signal: Dict, bucket: str,
+                       features: pd.DataFrame):
+        """Execute trade (paper trading)."""
+        market_id = market.get('conditionId', '')
+        outcome = signal['outcome']
+
+        # Calculate position size
+        size = self.risk_manager.calculate_position_size(
+            signal['edge'],
+            signal['confidence'],
+            bucket
+        )
+
+        # Get entry price
+        prices = self._get_prices(market)
+        entry_price = prices['yes'] if outcome == 'YES' else prices['no']
+
+        # Paper trading: update balance
+        if self.paper_trading:
+            self.balance -= size
+            self._save_balance(self.balance)
+
+        # Record position
+        position = {
+            'market_id': market_id,
+            'token_id': f"{market_id}_{outcome}",
+            'outcome': outcome,
+            'entry_price': entry_price,
+            'size': size,
+            'entry_time': datetime.now(timezone.utc).isoformat(),
+            'bucket': bucket,
+            'hours_to_expiry': features['hours_to_expiry'].iloc[0],
+            'edge': signal['edge'],
+            'confidence': signal['confidence'],
+            'signal_reason': signal['reason'],
+            'features_json': features.to_json()
+        }
+
+        self.position_manager.add_position(position)
+
+        logger.info(f"TRADE OPENED | Market: {market.get('question', '')[:50]} | "
+                   f"Bucket: {bucket} | Outcome: {outcome} | Size: ${size:.2f} | "
+                   f"Entry: {entry_price:.4f} | Reason: {signal['reason']} | "
+                   f"Balance: ${self.balance:.2f}")
+
+        # Send Telegram notification
+        bucket_emoji = {"ultra_short": "⚡", "short": "🔥", "medium": "📊"}
+        self.telegram.send_message(
+            f"{bucket_emoji.get(bucket, '📈')} <b>POSITION OPENED - Short Expiry</b>\n\n"
+            f"<b>Bucket:</b> {bucket.replace('_', '-').title()}\n"
+            f"<b>Side:</b> {outcome}\n"
+            f"<b>Size:</b> ${size:.2f}\n"
+            f"<b>Entry:</b> {entry_price:.3f}\n"
+            f"<b>Edge:</b> {signal['edge']:.1%}\n"
+            f"<b>Confidence:</b> {signal['confidence']:.1%}\n"
+            f"<b>Strategy:</b> {signal['reason'].replace('_', ' ').title()}\n\n"
+            f"<i>{market.get('question', '')[:80]}</i>\n\n"
+            f"💰 Balance: ${self.balance:.2f}"
+        )
+
+    def _check_positions(self):
+        """Check open positions for exit conditions."""
+        positions = self.position_manager.get_open_positions()
+
+        for pos in positions:
+            # For now, skip actual price fetching (will integrate with API)
+            # In Phase 1, we'll just log position checks
+            logger.debug(f"Checking position: {pos['market_id']} | "
+                        f"Outcome: {pos['outcome']} | Entry: {pos['entry_price']}")
+
+
+def main():
+    """Entry point."""
+    config_path = 'config/config_short_expiry.json'
+
+    # Create logs directory
+    os.makedirs('logs', exist_ok=True)
+    os.makedirs('data', exist_ok=True)
+
+    # Initialize trader
+    trader = ShortExpiryTrader(config_path)
+
+    # Run
+    trader.run()
+
+
+if __name__ == '__main__':
+    main()

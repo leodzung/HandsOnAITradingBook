@@ -309,3 +309,77 @@ def sample_training_data():
 def reset_random_state():
     """Reset random state before each test for reproducibility."""
     np.random.seed(42)
+
+# Short-Expiry Bot Specific Fixtures
+
+@pytest.fixture
+def sample_market_short_expiry():
+    """Sample short-expiry market."""
+    now = datetime.now(timezone.utc)
+    return {
+        'conditionId': 'test_se_market_123',
+        'question': 'Will Bitcoin price be above $60,000 by end of day?',
+        'endDate': (now + timedelta(hours=12)).isoformat(),
+        'volume24hr': '5000.0',
+        'liquidity': '2500.0',
+        'lastTradePrice': 0.65,
+        'bestBid': 0.63,
+        'bestAsk': 0.67,
+        'outcomes': ['Yes', 'No'],
+        'active': True
+    }
+
+
+@pytest.fixture
+def short_expiry_config():
+    """Configuration for short-expiry bot."""
+    with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
+        config = {
+            "paper_trading": True,
+            "paper_trading_balance": 500.0,
+            "paper_trading_balance_file": "data/test_balance_se.json",
+            "discovery": {
+                "ultra_short_hours": [0, 24],
+                "short_hours": [24, 72],
+                "medium_hours": [72, 168],
+                "min_volume": {"ultra_short": 100, "short": 200, "medium": 300},
+                "min_liquidity": {"ultra_short": 50, "short": 100, "medium": 150},
+                "max_spread_pct": {"ultra_short": 10.0, "short": 8.0, "medium": 6.0},
+                "min_price": 0.05,
+                "max_price": 0.95,
+                "crypto_only": False
+            },
+            "position_limits": {
+                "max_total_positions": 15,
+                "max_positions_per_bucket": {"ultra_short": 5, "short": 7, "medium": 8},
+                "max_position_size": {"ultra_short": 50, "short": 75, "medium": 100},
+                "min_position_size": 10
+            },
+            "risk_management": {
+                "stop_loss_pct": {"ultra_short": 10, "short": 15, "medium": 20},
+                "take_profit_pct": {"ultra_short": 30, "short": 50, "medium": 75},
+                "pre_expiry_exit_hours": 2,
+                "circuit_breaker_losses": 4,
+                "min_edge": 0.03,
+                "min_confidence": 0.55
+            },
+            "rules": {
+                "arbitrage": {"enabled": True, "max_total_price": 0.98, "min_edge": 0.02},
+                "mean_reversion": {"enabled": True, "min_spread_pct": 5.0, "min_volume_24h": 1000},
+                "momentum": {"enabled": True, "min_price_change_1h": 0.02}
+            },
+            "telegram": {"enabled": False},
+            "database": {"positions_db": "data/test_positions_se.db"}
+        }
+        json.dump(config, f)
+        path = f.name
+    
+    yield path
+    
+    # Cleanup
+    try:
+        os.unlink(path)
+        os.unlink("data/test_balance_se.json")
+        os.unlink("data/test_positions_se.db")
+    except:
+        pass

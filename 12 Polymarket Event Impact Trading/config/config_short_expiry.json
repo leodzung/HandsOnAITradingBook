@@ -1,0 +1,118 @@
+{
+  "paper_trading": true,
+  "paper_trading_balance": 500.0,
+  "paper_trading_balance_file": "data/paper_trading_balance_short_expiry.json",
+
+  "discovery": {
+    "ultra_short_hours": [0, 24],
+    "short_hours": [24, 72],
+    "medium_hours": [72, 168],
+    "category_filter": "crypto",
+    "min_volume": {
+      "ultra_short": 100,
+      "short": 200,
+      "medium": 300
+    },
+    "min_liquidity": {
+      "ultra_short": 50,
+      "short": 100,
+      "medium": 150
+    },
+    "max_spread_pct": {
+      "ultra_short": 10.0,
+      "short": 8.0,
+      "medium": 6.0
+    },
+    "min_price": 0.05,
+    "max_price": 0.95,
+    "api_cache_ttl_seconds": 300,
+    "crypto_only": false
+  },
+
+  "position_limits": {
+    "max_total_positions": 15,
+    "max_positions_per_bucket": {
+      "ultra_short": 5,
+      "short": 7,
+      "medium": 8
+    },
+    "max_position_size": {
+      "ultra_short": 50,
+      "short": 75,
+      "medium": 100
+    },
+    "min_position_size": 10
+  },
+
+  "risk_management": {
+    "stop_loss_pct": {
+      "ultra_short": 10,
+      "short": 15,
+      "medium": 20
+    },
+    "take_profit_pct": {
+      "ultra_short": 30,
+      "short": 50,
+      "medium": 75
+    },
+    "pre_expiry_exit_hours": 2,
+    "circuit_breaker_losses": 4,
+    "max_slippage_bps": 150,
+    "min_edge": 0.03,
+    "min_confidence": 0.55
+  },
+
+  "execution": {
+    "cycle_interval_seconds": 300,
+    "position_check_interval_seconds": 60,
+    "order_timeout_seconds": 30
+  },
+
+  "rules": {
+    "arbitrage": {
+      "enabled": true,
+      "max_total_price": 0.98,
+      "min_edge": 0.02
+    },
+    "mean_reversion": {
+      "enabled": true,
+      "min_spread_pct": 5.0,
+      "min_volume_24h": 1000,
+      "price_threshold_low": 0.45,
+      "price_threshold_high": 0.55,
+      "bucket": "ultra_short"
+    },
+    "momentum": {
+      "enabled": true,
+      "min_price_change_1h": 0.02,
+      "min_volume_24h": 500
+    }
+  },
+
+  "features": {
+    "enable_time_decay": true,
+    "enable_momentum": true,
+    "enable_microstructure": true,
+    "enable_volatility": true,
+    "enable_technical": true,
+    "enable_event_velocity": true
+  },
+
+  "logging": {
+    "level": "INFO",
+    "log_file": "logs/short_expiry.log",
+    "log_trades": true,
+    "log_features": true
+  },
+
+  "telegram": {
+    "enabled": true,
+    "bot_token": "8068515860:AAEiKpTK0RtHo5dURsbu7ey8Xa8r3A2xEHA",
+    "chat_id": "6690408994"
+  },
+
+  "database": {
+    "positions_db": "data/positions_short_expiry.db",
+    "tracking_db": "data/tracking_short_expiry.db"
+  }
+}

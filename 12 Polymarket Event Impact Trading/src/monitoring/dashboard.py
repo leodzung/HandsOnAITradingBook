@@ -34,8 +34,10 @@ st.set_page_config(
 DATA_DIR = Path("data")
 POSITIONS_DB = DATA_DIR / "positions_price_level.db"
 EVENT_POSITIONS_DB = DATA_DIR / "positions.db"
+SHORT_EXPIRY_POSITIONS_DB = DATA_DIR / "positions_short_expiry.db"
 PRICE_LEVEL_BALANCE = DATA_DIR / "paper_trading_balance_price_level.json"
 EVENT_BALANCE = DATA_DIR / "paper_trading_balance.json"
+SHORT_EXPIRY_BALANCE = DATA_DIR / "paper_trading_balance_short_expiry.json"
 ARBITRAGE_LOG_DIR = DATA_DIR / "arbitrage"
 # Separate databases for collectors (to avoid corruption from concurrent writes)
 GDELT_DB = DATA_DIR / "gdelt_news.db"
@@ -110,7 +112,7 @@ def get_data_collection_stats() -> dict:
 
 def get_bot_status():
     """Check which bots are running (supports both Docker and direct processes)."""
-    status = {"event_trader": False, "price_level": False, "arbitrage": False}
+    status = {"event_trader": False, "price_level": False, "arbitrage": False, "short_expiry": False}
 
     # First check Docker containers
     try:
@@ -128,6 +130,8 @@ def get_bot_status():
                     status["price_level"] = True
                 if 'polymarket-arbitrage' in line and 'Up' in line:
                     status["arbitrage"] = True
+                if 'polymarket-short-expiry' in line and 'Up' in line:
+                    status["short_expiry"] = True
             # If any Docker container found, return Docker status
             if any(status.values()):
                 return status
@@ -142,10 +146,12 @@ def get_bot_status():
         output = result.stdout
         # Check each line individually to properly distinguish processes
         for line in output.split('\n'):
-            if 'trader.py' in line and 'price_levels' not in line:
+            if 'trader.py' in line and 'price_levels' not in line and 'short_expiry' not in line:
                 status["event_trader"] = True
             if 'trader_price_levels.py' in line:
                 status["price_level"] = True
+            if 'trader_short_expiry.py' in line:
+                status["short_expiry"] = True
             if 'arbitrage_bot.py' in line:
                 status["arbitrage"] = True
     except:
@@ -449,8 +455,10 @@ col1, col2, col3, col4 = st.columns(4)
 # Load data
 price_level_balance = load_balance(PRICE_LEVEL_BALANCE)
 event_balance = load_balance(EVENT_BALANCE)
+short_expiry_balance = load_balance(SHORT_EXPIRY_BALANCE)
 price_level_positions = load_positions(POSITIONS_DB)
 event_positions = load_positions(EVENT_POSITIONS_DB)
+short_expiry_positions = load_positions(SHORT_EXPIRY_POSITIONS_DB)
 
 # Calculate metrics
 pl_open = price_level_positions[price_level_positions['status'] == 'OPEN'].copy() if not price_level_positions.empty else pd.DataFrame()
@@ -490,7 +498,7 @@ with col4:
 st.divider()
 
 # Tabs for different views
-tab1, tab2, tab3, tab4, tab5 = st.tabs(["📊 Positions", "📈 Performance", "🔄 Arbitrage", "📦 Data Collection", "⚙️ Settings"])
+tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(["📊 Positions", "⚡ Short Expiry", "📈 Performance", "🔄 Arbitrage", "📦 Data Collection", "⚙️ Settings"])
 
 with tab1:
     st.subheader("Open Positions")
@@ -732,6 +740,100 @@ with tab1:
         st.info("No closed positions")
 
 with tab2:
+    st.subheader("⚡ Short Expiry Bot (2h-7d Markets)")
+
+    # Bot status
+    bot_status = get_bot_status()
+    if bot_status.get("short_expiry"):
+        st.success("✅ Short Expiry Bot: RUNNING")
+    else:
+        st.warning("⚠️ Short Expiry Bot: STOPPED")
+
+    # Balance
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        st.metric("Balance", format_currency(short_expiry_balance.get('balance', 0)))
+    with col2:
+        open_positions = short_expiry_positions[short_expiry_positions['status'] == 'open'] if not short_expiry_positions.empty else pd.DataFrame()
+        st.metric("Open Positions", len(open_positions))
+    with col3:
+        closed_positions = short_expiry_positions[short_expiry_positions['status'] == 'closed'] if not short_expiry_positions.empty else pd.DataFrame()
+        total_pnl_se = closed_positions['pnl'].sum() if not closed_positions.empty and 'pnl' in closed_positions.columns else 0
+        st.metric("Total P&L", format_currency(total_pnl_se))
+
+    st.divider()
+
+    # Bucket breakdown
+    if not open_positions.empty and 'bucket' in open_positions.columns:
+        st.subheader("Positions by Time Bucket")
+        bucket_counts = open_positions['bucket'].value_counts()
+
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            ultra_count = bucket_counts.get('ultra_short', 0)
+            st.metric("⚡ Ultra-Short (0-24h)", ultra_count)
+        with col2:
+            short_count = bucket_counts.get('short', 0)
+            st.metric("🔥 Short (24-72h)", short_count)
+        with col3:
+            medium_count = bucket_counts.get('medium', 0)
+            st.metric("📊 Medium (72-168h)", medium_count)
+
+    # Show positions
+    st.subheader("Open Positions")
+    if not open_positions.empty:
+        for idx, row in open_positions.iterrows():
+            bucket_emoji = {"ultra_short": "⚡", "short": "🔥", "medium": "📊"}
+            bucket = row.get('bucket', 'unknown')
+
+            with st.expander(f"{bucket_emoji.get(bucket, '📈')} {bucket.replace('_', '-').title()} | {row.get('outcome', 'N/A')} | Entry: ${row.get('entry_price', 0):.3f}"):
+                col1, col2 = st.columns(2)
+                with col1:
+                    st.write(f"**Market ID:** {row.get('market_id', 'N/A')[:20]}...")
+                    st.write(f"**Outcome:** {row.get('outcome', 'N/A')}")
+                    st.write(f"**Entry Price:** ${row.get('entry_price', 0):.4f}")
+                    st.write(f"**Size:** ${row.get('size', 0):.2f}")
+                with col2:
+                    st.write(f"**Bucket:** {bucket.replace('_', ' ').title()}")
+                    st.write(f"**Entry Time:** {row.get('entry_time', 'N/A')}")
+                    st.write(f"**Hours to Expiry:** {row.get('hours_to_expiry_at_entry', 0):.1f}h")
+                    st.write(f"**Signal:** {row.get('signal_reason', 'N/A').replace('_', ' ').title()}")
+
+                # Show edge and confidence if available
+                if 'edge' in row and pd.notna(row.get('edge')):
+                    st.write(f"**Edge:** {row.get('edge', 0):.1%}")
+                if 'confidence' in row and pd.notna(row.get('confidence')):
+                    st.write(f"**Confidence:** {row.get('confidence', 0):.1%}")
+    else:
+        st.info("No open positions")
+
+    # Show recent closed positions
+    st.subheader("Recent Closed Positions")
+    if not closed_positions.empty:
+        # Show last 5
+        recent_closed = closed_positions.tail(5).sort_values('exit_time', ascending=False) if 'exit_time' in closed_positions.columns else closed_positions.tail(5)
+
+        for idx, row in recent_closed.iterrows():
+            pnl = row.get('pnl', 0)
+            pnl_pct = row.get('pnl_pct', 0)
+            color = "green" if pnl > 0 else "red"
+
+            bucket_emoji = {"ultra_short": "⚡", "short": "🔥", "medium": "📊"}
+            bucket = row.get('bucket', 'unknown')
+
+            st.markdown(f"""
+            <div style='padding: 10px; margin: 5px 0; background-color: rgba(0,0,0,0.1); border-radius: 5px; border-left: 3px solid {color};'>
+                <b>{bucket_emoji.get(bucket, '📈')} {bucket.replace('_', '-').title()}</b> |
+                {row.get('outcome', 'N/A')} |
+                Entry: ${row.get('entry_price', 0):.3f} → Exit: ${row.get('exit_price', 0):.3f}<br/>
+                P&L: <span style='color: {color};'>${pnl:.2f} ({pnl_pct:.1f}%)</span> |
+                Reason: {row.get('exit_reason', 'N/A').replace('_', ' ').title()}
+            </div>
+            """, unsafe_allow_html=True)
+    else:
+        st.info("No closed positions yet")
+
+with tab6:
     st.subheader("Performance Analytics")
 
     if not pl_closed.empty and 'pnl' in pl_closed.columns:
@@ -766,7 +868,7 @@ with tab2:
     else:
         st.info("No closed trades yet for performance analysis")
 
-with tab3:
+with tab6:
     st.subheader("Arbitrage Monitor")
 
     arb_df = load_arbitrage_opportunities()
@@ -798,7 +900,7 @@ with tab3:
         st.info("No arbitrage opportunities logged yet")
         st.write("The arbitrage bot logs opportunities to `data/arbitrage/`")
 
-with tab4:
+with tab6:
     st.subheader("Data Collection Progress")
 
     dc_stats = get_data_collection_stats()
@@ -915,7 +1017,7 @@ with tab4:
     except Exception as e:
         st.warning(f"Could not fetch logs: {e}")
 
-with tab5:
+with tab6:
     st.subheader("Configuration")
 
     # Load configs
