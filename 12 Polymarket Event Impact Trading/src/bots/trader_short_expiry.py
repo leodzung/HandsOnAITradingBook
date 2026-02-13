@@ -392,61 +392,75 @@ class ShortExpiryTrader:
                 time.sleep(60)
 
     def discover_markets(self) -> Dict[str, List[Dict]]:
-        """Discover markets in 3 buckets."""
-        now = datetime.now(timezone.utc)
-        config = self.config['discovery']
+        """
+        Discover markets in 3 buckets using consolidated discovery logic.
 
+        Uses MarketFilter.discover_markets() for consistent discovery across all bots.
+        """
+        from core.polymarket_client import MarketFilter
+
+        config = self.config['discovery']
         markets = {}
+        category = 'crypto' if config.get('crypto_only', False) else None
 
         # Bucket 1: Ultra-short (0-24h)
         try:
-            ultra_short_markets = self.client.get_markets(
-                limit=100,
-                active=True,
-                end_date_min=(now + timedelta(hours=config['ultra_short_hours'][0])).isoformat(),
-                end_date_max=(now + timedelta(hours=config['ultra_short_hours'][1])).isoformat(),
-                volume_num_min=config['min_volume']['ultra_short']
+            ultra_short_markets = MarketFilter.discover_markets(
+                client=self.client,
+                category=category,
+                min_hours_to_expiry=config['ultra_short_hours'][0],
+                max_hours_to_expiry=config['ultra_short_hours'][1],
+                min_volume=config['min_volume']['ultra_short'],
+                min_liquidity=config['min_liquidity']['ultra_short'],
+                max_pages=3,
+                include_crypto_events=True,
+                crypto_event_days_ahead=1,
+                logger=logger
             )
             markets['ultra_short'] = self._filter_tradeable(ultra_short_markets, 'ultra_short')
         except Exception as e:
-            logger.error(f"Error discovering ultra_short markets: {e}")
+            logger.error(f"Error discovering ultra_short markets: {e}", exc_info=True)
             markets['ultra_short'] = []
 
         # Bucket 2: Short (24-72h)
         try:
-            short_markets = self.client.get_markets(
-                limit=100,
-                active=True,
-                end_date_min=(now + timedelta(hours=config['short_hours'][0])).isoformat(),
-                end_date_max=(now + timedelta(hours=config['short_hours'][1])).isoformat(),
-                volume_num_min=config['min_volume']['short']
+            short_markets = MarketFilter.discover_markets(
+                client=self.client,
+                category=category,
+                min_hours_to_expiry=config['short_hours'][0],
+                max_hours_to_expiry=config['short_hours'][1],
+                min_volume=config['min_volume']['short'],
+                min_liquidity=config['min_liquidity']['short'],
+                max_pages=3,
+                include_crypto_events=True,
+                crypto_event_days_ahead=3,
+                logger=logger
             )
             markets['short'] = self._filter_tradeable(short_markets, 'short')
         except Exception as e:
-            logger.error(f"Error discovering short markets: {e}")
+            logger.error(f"Error discovering short markets: {e}", exc_info=True)
             markets['short'] = []
 
         # Bucket 3: Medium (72-168h = 3-7d)
         try:
-            medium_markets = self.client.get_markets(
-                limit=100,
-                active=True,
-                end_date_min=(now + timedelta(hours=config['medium_hours'][0])).isoformat(),
-                end_date_max=(now + timedelta(hours=config['medium_hours'][1])).isoformat(),
-                volume_num_min=config['min_volume']['medium']
+            medium_markets = MarketFilter.discover_markets(
+                client=self.client,
+                category=category,
+                min_hours_to_expiry=config['medium_hours'][0],
+                max_hours_to_expiry=config['medium_hours'][1],
+                min_volume=config['min_volume']['medium'],
+                min_liquidity=config['min_liquidity']['medium'],
+                max_pages=3,
+                include_crypto_events=True,
+                crypto_event_days_ahead=7,
+                logger=logger
             )
             markets['medium'] = self._filter_tradeable(medium_markets, 'medium')
         except Exception as e:
-            logger.error(f"Error discovering medium markets: {e}")
+            logger.error(f"Error discovering medium markets: {e}", exc_info=True)
             markets['medium'] = []
 
         return markets
-
-    def _is_crypto_market(self, market: Dict) -> bool:
-        """Check if market is crypto-related."""
-        question = market.get('question', '').lower()
-        crypto_keywords = ['bitcoin', 'btc', 'ethereum', 'eth', 'crypto', 'cryptocurrency']
-        return any(kw in question for kw in crypto_keywords)
 
     def _get_prices(self, market: Dict) -> Dict[str, float]:
         """Extract YES/NO prices from market."""
@@ -475,15 +489,16 @@ class ShortExpiryTrader:
         return (spread / mid_price * 100) if mid_price > 0 else 0
 
     def _filter_tradeable(self, markets: List[Dict], bucket: str) -> List[Dict]:
-        """Apply quality filters."""
+        """
+        Apply quality filters.
+
+        Note: Crypto filtering is now handled by MarketFilter.discover_markets().
+        This method only applies spread and price range filters.
+        """
         filtered = []
         config = self.config['discovery']
 
         for m in markets:
-            # Check crypto category (if enabled)
-            if config.get('crypto_only', False) and not self._is_crypto_market(m):
-                continue
-
             # Check spread
             spread_pct = self._get_spread_pct(m)
             if spread_pct > config['max_spread_pct'][bucket]:

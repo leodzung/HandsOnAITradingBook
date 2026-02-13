@@ -26,7 +26,7 @@
     "min_price": 0.05,
     "max_price": 0.95,
     "api_cache_ttl_seconds": 300,
-    "crypto_only": false
+    "crypto_only": true
   },
 
   "position_limits": {

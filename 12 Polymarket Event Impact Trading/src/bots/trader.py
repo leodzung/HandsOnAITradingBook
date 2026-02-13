@@ -587,17 +587,23 @@ class PolymarketTrader:
                    f"(volume>=${min_volume}, expiry: {min_hours}h-{max_hours}h)")
 
         # IMPORTANT: Also fetch markets from known crypto events (these don't appear in /markets)
+        # Use consolidated discovery logic from MarketFilter
         if self.config.get('market_category_filter') == 'crypto':
             event_markets = []
             event_start = time_module.time()
-            for slug in MarketFilter.CRYPTO_EVENT_SLUGS:
+
+            # Get all crypto event slugs (both long-term and daily)
+            event_slugs = MarketFilter.get_all_crypto_event_slugs(days_ahead=7)
+            logger.info(f"Fetching markets from {len(event_slugs)} crypto events...")
+
+            for slug in event_slugs:
                 try:
                     event_batch = self.client.get_markets_from_event(slug)
                     if event_batch:
                         event_markets.extend(event_batch)
-                        logger.info(f"  + {len(event_batch)} markets from event '{slug}'")
+                        logger.debug(f"  + {len(event_batch)} markets from event '{slug}'")
                 except Exception as e:
-                    logger.warning(f"Failed to fetch event {slug}: {e}")
+                    logger.debug(f"Event {slug} not found or error: {e}")
             event_duration = time_module.time() - event_start
 
             # De-duplicate by conditionId

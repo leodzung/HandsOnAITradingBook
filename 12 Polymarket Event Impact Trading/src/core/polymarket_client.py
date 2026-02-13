@@ -895,10 +895,55 @@ class MarketFilter:
 
     # Known crypto event slugs that contain price-level markets
     # These events have markets that don't appear in the standard /markets endpoint
-    CRYPTO_EVENT_SLUGS = [
+    CRYPTO_EVENT_SLUGS_LONG_TERM = [
         'what-price-will-bitcoin-hit-before-2027',  # 32 BTC price markets
         'what-price-will-ethereum-hit-before-2027',  # 16 ETH price markets
     ]
+
+    @staticmethod
+    def get_daily_crypto_event_slugs(days_ahead: int = 7) -> List[str]:
+        """
+        Generate daily crypto price prediction event slugs.
+
+        These daily events (e.g., "ethereum-above-on-february-13") contain
+        restricted markets that don't appear in the standard /markets endpoint.
+
+        Args:
+            days_ahead: Number of days to generate slugs for (default: 7)
+
+        Returns:
+            List of event slugs
+        """
+        from datetime import datetime, timedelta, timezone
+
+        slugs = []
+        assets = ['ethereum', 'bitcoin', 'solana', 'xrp']
+
+        for days in range(days_ahead):
+            date = datetime.now(timezone.utc) + timedelta(days=days)
+            month = date.strftime('%B').lower()  # 'february'
+            day = date.day
+
+            for asset in assets:
+                slug = f"{asset}-above-on-{month}-{day}"
+                slugs.append(slug)
+
+        return slugs
+
+    @staticmethod
+    def get_all_crypto_event_slugs(days_ahead: int = 7) -> List[str]:
+        """
+        Get all crypto event slugs (both long-term and daily).
+
+        Args:
+            days_ahead: Number of days for daily events (default: 7)
+
+        Returns:
+            List of all crypto event slugs
+        """
+        slugs = MarketFilter.CRYPTO_EVENT_SLUGS_LONG_TERM.copy()
+        slugs.extend(MarketFilter.get_daily_crypto_event_slugs(days_ahead))
+        return slugs
 
     @staticmethod
     def get_market_category(market: Dict) -> str:
@@ -944,3 +989,135 @@ class MarketFilter:
             return 'economics'
 
         return 'other'
+
+    @staticmethod
+    def discover_markets(client,
+                        category: Optional[str] = None,
+                        min_hours_to_expiry: float = 2,
+                        max_hours_to_expiry: float = 8760,
+                        min_volume: float = 0,
+                        min_liquidity: float = 0,
+                        max_pages: int = 10,
+                        include_crypto_events: bool = True,
+                        crypto_event_days_ahead: int = 7,
+                        logger=None) -> List[Dict]:
+        """
+        Unified market discovery for all bots.
+
+        This method combines:
+        1. Standard API /markets endpoint with filters
+        2. Event-based fetching for restricted markets (crypto daily events)
+        3. Client-side category filtering
+
+        Args:
+            client: PolymarketClient instance
+            category: Filter by category ('crypto', 'politics', 'sports', etc.)
+            min_hours_to_expiry: Minimum hours until market expiry
+            max_hours_to_expiry: Maximum hours until market expiry
+            min_volume: Minimum market volume
+            min_liquidity: Minimum market liquidity
+            max_pages: Maximum pages to fetch from API (100 markets per page)
+            include_crypto_events: Fetch markets from crypto events (recommended for crypto)
+            crypto_event_days_ahead: Number of days for daily crypto events
+            logger: Optional logger instance
+
+        Returns:
+            List of market dictionaries
+        """
+        from datetime import datetime, timedelta, timezone
+        import time as time_module
+
+        if logger:
+            logger.info(f"Starting market discovery: category={category}, "
+                       f"expiry={min_hours_to_expiry}-{max_hours_to_expiry}h, "
+                       f"min_volume=${min_volume:,.0f}")
+
+        # Calculate date range for API filters
+        now = datetime.now(timezone.utc)
+        end_date_min = (now + timedelta(hours=min_hours_to_expiry)).strftime("%Y-%m-%dT%H:%M:%SZ")
+        end_date_max = (now + timedelta(hours=max_hours_to_expiry)).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+        # Step 1: Fetch from /markets endpoint with API-level filters
+        markets = []
+        pagination_start = time_module.time()
+
+        for page in range(max_pages):
+            offset = page * 100
+            batch = client.get_markets(
+                limit=100,
+                offset=offset,
+                active=True,
+                closed=False,
+                end_date_min=end_date_min,
+                end_date_max=end_date_max,
+                volume_num_min=min_volume if min_volume > 0 else None,
+                liquidity_num_min=min_liquidity if min_liquidity > 0 else None
+            )
+            if not batch:
+                break
+            markets.extend(batch)
+
+        pagination_duration = time_module.time() - pagination_start
+
+        if logger:
+            logger.info(f"Retrieved {len(markets)} markets from API in {pagination_duration:.2f}s "
+                       f"({len(markets)/pagination_duration:.1f} markets/sec)")
+
+        # Step 2: Fetch from crypto events (these don't appear in /markets)
+        if category == 'crypto' and include_crypto_events:
+            event_markets = []
+            event_start = time_module.time()
+
+            # Get all crypto event slugs
+            event_slugs = MarketFilter.get_all_crypto_event_slugs(crypto_event_days_ahead)
+
+            if logger:
+                logger.info(f"Fetching markets from {len(event_slugs)} crypto events...")
+
+            for slug in event_slugs:
+                try:
+                    event_batch = client.get_markets_from_event(slug)
+                    if event_batch:
+                        event_markets.extend(event_batch)
+                        if logger:
+                            logger.debug(f"  + {len(event_batch)} markets from '{slug}'")
+                except Exception as e:
+                    if logger:
+                        logger.debug(f"Event {slug} not found or error: {e}")
+
+            event_duration = time_module.time() - event_start
+
+            # De-duplicate by conditionId
+            seen_ids = {m.get('conditionId') for m in markets if m.get('conditionId')}
+            new_markets = [m for m in event_markets if m.get('conditionId') not in seen_ids]
+            markets.extend(new_markets)
+
+            if logger:
+                logger.info(f"Added {len(new_markets)} unique event-based crypto markets "
+                           f"in {event_duration:.2f}s")
+
+        # Step 3: Apply client-side filters
+        # Filter by active status and expiry
+        markets = MarketFilter.filter_active_only(markets)
+        markets = MarketFilter.filter_by_time_to_expiry(
+            markets,
+            min_hours=min_hours_to_expiry,
+            max_hours=max_hours_to_expiry
+        )
+
+        # Filter by category
+        if category == 'crypto':
+            markets = MarketFilter.filter_crypto_markets(markets)
+            if logger:
+                logger.info(f"Filtered to {len(markets)} crypto markets")
+        elif category:
+            # Filter by category using keyword matching
+            markets = [m for m in markets
+                      if MarketFilter.get_market_category(m) == category]
+            if logger:
+                logger.info(f"Filtered to {len(markets)} {category} markets")
+
+        if logger:
+            logger.info(f"Final market count: {len(markets)}")
+
+        return markets
