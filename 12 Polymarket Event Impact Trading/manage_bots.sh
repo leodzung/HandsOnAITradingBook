@@ -21,8 +21,8 @@ info() { echo -e "${BLUE}[INFO]${NC} $1"; }
 # Bot configuration helper functions
 get_bot_script() {
     case "$1" in
-        event) echo "trader.py" ;;
-        price-level) echo "trader_price_levels.py" ;;
+        event) echo "src/bots/trader.py" ;;
+        price-level) echo "src/bots/trader_price_levels.py" ;;
         short-expiry) echo "src/bots/trader_short_expiry.py" ;;
     esac
 }
@@ -37,9 +37,9 @@ get_bot_name() {
 
 get_bot_log() {
     case "$1" in
-        event) echo "logs/trading.out" ;;
-        price-level) echo "logs/trading_price_levels.out" ;;
-        short-expiry) echo "logs/short_expiry.out" ;;
+        event) echo "trading.out" ;;
+        price-level) echo "trading_price_levels.out" ;;
+        short-expiry) echo "trading_short_expiry.out" ;;
     esac
 }
 

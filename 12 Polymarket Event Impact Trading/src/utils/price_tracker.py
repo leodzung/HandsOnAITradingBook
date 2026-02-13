@@ -12,7 +12,7 @@ import logging
 from pathlib import Path
 import numpy as np
 
-from polymarket_client import PolymarketClient
+from core.polymarket_client import PolymarketClient
 
 # Set up logging
 logging.basicConfig(

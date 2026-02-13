@@ -5,20 +5,26 @@ Executes trades on Polymarket based on model predictions.
 
 import time
 import logging
+import sys
+import os
 from typing import Dict, List, Optional
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 import pandas as pd
 import numpy as np
 import json
 
-from polymarket_client import PolymarketClient, MarketFilter
-from price_fetcher import PriceFetcher
-from event_detector import EventDetector
-from feature_extractor import FeatureEngineering
-from models import PriceMovementPredictor, TradingSignalGenerator, ModelPerformanceTracker
-from price_tracker import PriceTracker
-from position_manager import PositionManager
-from telegram_notifier import TelegramNotifier
+# Add parent directory to path
+sys.path.insert(0, str(Path(__file__).parent.parent))
+
+from core.polymarket_client import PolymarketClient, MarketFilter
+from core.price_fetcher import PriceFetcher
+from utils.event_detector import EventDetector
+from features.feature_extractor import FeatureEngineering
+from models.models import PriceMovementPredictor, TradingSignalGenerator, ModelPerformanceTracker
+from utils.price_tracker import PriceTracker
+from core.position_manager import PositionManager
+from monitoring.telegram_notifier import TelegramNotifier
 
 
 # Setup logging
