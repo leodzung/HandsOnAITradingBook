@@ -435,6 +435,50 @@ def get_market_info(market_id: str) -> dict:
         return {'name': 'Unknown Market', 'slug': None}
 
 
+def build_polymarket_url(market_id: str = None, asset: str = None,
+                         market_slug: str = None, question: str = None) -> str:
+    """
+    Build Polymarket URL with fallback chain.
+
+    Priority order:
+    1. Parent event slug (for BTC/ETH price-level markets)
+    2. Individual market slug (for short-expiry and other markets)
+    3. Search query (fallback)
+
+    Args:
+        market_id: Market condition ID (optional, used to fetch slug if needed)
+        asset: Asset name (BTC, ETH) for parent event lookup
+        market_slug: Individual market slug from API
+        question: Market question for search fallback
+
+    Returns:
+        Polymarket URL string
+    """
+    # Priority 1: Parent event slugs for known assets (BTC/ETH price-level markets)
+    PARENT_EVENT_SLUGS = {
+        'BTC': 'what-price-will-bitcoin-hit-before-2027',
+        'ETH': 'what-price-will-ethereum-hit-before-2027',
+    }
+
+    if asset and asset in PARENT_EVENT_SLUGS:
+        return f"https://polymarket.com/event/{PARENT_EVENT_SLUGS[asset]}"
+
+    # Priority 2: Individual market slug (for short-expiry, sports, politics, etc.)
+    if market_slug:
+        return f"https://polymarket.com/market/{market_slug}"
+
+    # Priority 3: Fetch slug from API if we have market_id
+    if market_id and not market_slug:
+        market_info = get_market_info(market_id)
+        fetched_slug = market_info.get('slug')
+        if fetched_slug:
+            return f"https://polymarket.com/market/{fetched_slug}"
+
+    # Fallback: Search query
+    search_term = question[:30] if question else 'polymarket'
+    return f"https://polymarket.com/markets?_q={quote(search_term)}"
+
+
 def get_current_price(market_id: str) -> float:
     """Fetch current YES price from Polymarket CLOB API (legacy wrapper)."""
     prices = get_current_prices(market_id)
@@ -589,20 +633,8 @@ with tab1:
             else:
                 entry_date = 'N/A'
 
-            # Use pre-built URL from load_positions()
-            if pd.notna(row.get('polymarket_url')) and row.get('polymarket_url'):
-                poly_url = row['polymarket_url']
-            else:
-                # Fallback: use parent event slug based on asset
-                EVENT_SLUGS = {
-                    'BTC': 'what-price-will-bitcoin-hit-before-2027',
-                    'ETH': 'what-price-will-ethereum-hit-before-2027',
-                }
-                if asset in EVENT_SLUGS:
-                    poly_url = f"https://polymarket.com/event/{EVENT_SLUGS[asset]}"
-                else:
-                    search_term = quote(str(question)[:30])
-                    poly_url = f"https://polymarket.com/markets?_q={search_term}"
+            # Build Polymarket URL using centralized function
+            poly_url = build_polymarket_url(asset=asset, question=question)
 
             # Fetch current prices (both YES and NO)
             prices = get_current_prices(market_id)
@@ -740,20 +772,8 @@ with tab1:
             else:
                 exit_date = 'N/A'
 
-            # Use pre-built URL from load_positions()
-            if pd.notna(row.get('polymarket_url')) and row.get('polymarket_url'):
-                poly_url = row['polymarket_url']
-            else:
-                # Fallback: use parent event slug based on asset
-                EVENT_SLUGS = {
-                    'BTC': 'what-price-will-bitcoin-hit-before-2027',
-                    'ETH': 'what-price-will-ethereum-hit-before-2027',
-                }
-                if asset in EVENT_SLUGS:
-                    poly_url = f"https://polymarket.com/event/{EVENT_SLUGS[asset]}"
-                else:
-                    search_term = quote(str(question)[:30])
-                    poly_url = f"https://polymarket.com/markets?_q={search_term}"
+            # Build Polymarket URL using centralized function
+            poly_url = build_polymarket_url(asset=asset, question=question)
 
             # Color code P&L
             pnl_color = "🟢" if pnl and pnl > 0 else "🔴"
@@ -855,16 +875,12 @@ with tab2:
             entry_time = row.get('entry_time', '')
             hours_to_expiry = row.get('hours_to_expiry_at_entry', 0) or 0
 
-            # Get market name and slug for direct link
+            # Get market name
             if 'question' in row and pd.notna(row.get('question')) and row.get('question'):
                 market_name = str(row.get('question'))[:60]
-                # Try to fetch slug for direct link
-                market_info = get_market_info(market_id)
-                market_slug = market_info.get('slug')
             else:
                 market_info = get_market_info(market_id)
                 market_name = market_info.get('name', 'Unknown Market')[:60]
-                market_slug = market_info.get('slug')
 
             # Format entry date
             if pd.notna(entry_time):
@@ -875,12 +891,8 @@ with tab2:
             else:
                 entry_date = 'N/A'
 
-            # Create Polymarket URL - use direct link if slug available
-            if market_slug:
-                poly_url = f"https://polymarket.com/event/{market_slug}"
-            else:
-                # Fallback to search if no slug
-                poly_url = f"https://polymarket.com/markets?_q={quote(str(market_name)[:30])}"
+            # Build Polymarket URL using centralized function
+            poly_url = build_polymarket_url(market_id=market_id, question=market_name)
 
             # Get current price
             prices = get_current_prices(market_id)
@@ -1000,16 +1012,12 @@ with tab2:
             entry_time = row.get('entry_time', '')
             exit_time = row.get('exit_time', '')
 
-            # Get market name and slug for direct link
+            # Get market name
             if 'question' in row and pd.notna(row.get('question')) and row.get('question'):
                 market_name = str(row.get('question'))[:50]
-                # Try to fetch slug for direct link
-                market_info = get_market_info(market_id)
-                market_slug = market_info.get('slug')
             else:
                 market_info = get_market_info(market_id)
                 market_name = market_info.get('name', 'Unknown Market')[:50]
-                market_slug = market_info.get('slug')
 
             # Format dates
             if pd.notna(entry_time):
@@ -1028,12 +1036,8 @@ with tab2:
             else:
                 exit_date = 'N/A'
 
-            # Create Polymarket URL - use direct link if slug available
-            if market_slug:
-                poly_url = f"https://polymarket.com/event/{market_slug}"
-            else:
-                # Fallback to search if no slug
-                poly_url = f"https://polymarket.com/markets?_q={quote(str(market_name)[:30])}"
+            # Build Polymarket URL using centralized function
+            poly_url = build_polymarket_url(market_id=market_id, question=market_name)
 
             # Color code P&L
             pnl_color = "🟢" if pnl and pnl > 0 else "🔴"
