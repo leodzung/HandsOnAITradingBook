@@ -3,6 +3,8 @@
   "paper_trading_balance": 500.0,
   "paper_trading_balance_file": "data/paper_trading_balance_short_expiry.json",
 
+  "max_entry_price": 0.90,
+
   "discovery": {
     "ultra_short_hours": [0, 24],
     "short_hours": [24, 72],
@@ -57,9 +59,31 @@
     },
     "pre_expiry_exit_hours": 2,
     "circuit_breaker_losses": 4,
-    "max_slippage_bps": 150,
     "min_edge": 0.03,
     "min_confidence": 0.55
+  },
+
+  "slippage_estimation": {
+    "enabled": true,
+    "max_slippage_bps": {
+      "ultra_short": 3000,
+      "short": 2000,
+      "medium": 1500
+    },
+    "max_slippage_dollars": {
+      "ultra_short": 15.0,
+      "short": 20.0,
+      "medium": 25.0
+    },
+    "orderbook_staleness_seconds": 10,
+    "depth_buffer_pct": 0.10,
+    "volatility_adjustment": false,
+    "volume_limit_pct": 0.02,
+    "warn_threshold_bps": {
+      "ultra_short": 2000,
+      "short": 1500,
+      "medium": 1000
+    }
   },
 
   "execution": {

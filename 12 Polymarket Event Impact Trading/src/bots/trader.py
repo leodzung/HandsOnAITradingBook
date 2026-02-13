@@ -889,8 +889,8 @@ class PolymarketTrader:
                 positions_to_close.append((market_id, exit_reason))
                 continue
 
-            # Get current price for SL/TP checks using CLOB API
-            current_price = self.client.get_market_yes_price(market_id)
+            # Get current price for SL/TP checks using CLOB API (use SELL prices - what we'd get)
+            current_price = self.client.get_market_yes_price(market_id, side='SELL')
             if current_price is None:
                 continue
 
@@ -951,8 +951,8 @@ class PolymarketTrader:
 
         position = self.position_timers[market_id]
 
-        # Get exit prices from CLOB API (both YES and NO)
-        prices = self.client.get_market_prices(market_id)
+        # Get exit prices from CLOB API (both YES and NO) - use SELL prices
+        prices = self.client.get_market_prices(market_id, side='SELL')
         yes_exit_price = prices.get('yes')
         no_exit_price = prices.get('no')
 

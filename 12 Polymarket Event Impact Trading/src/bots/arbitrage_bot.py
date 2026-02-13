@@ -22,6 +22,11 @@ Real-Time Mode:
 - REST API only shows mid-prices (YES + NO always = $1)
 """
 
+import sys
+import os
+# Add src directory to path for imports
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
+
 import json
 import time
 import logging
@@ -33,7 +38,7 @@ from pathlib import Path
 from collections import defaultdict
 import numpy as np
 
-from polymarket_client import PolymarketClient
+from core.polymarket_client import PolymarketClient
 
 # Try to import WebSocket support
 try:

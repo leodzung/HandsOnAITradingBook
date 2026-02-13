@@ -30,6 +30,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from features.short_expiry_features import ShortExpiryFeatureExtractor
 from core.polymarket_client import PolymarketClient
+from core.slippage_estimator import SlippageEstimator
 from monitoring.telegram_notifier import TelegramNotifier
 
 # Configure logging
@@ -311,6 +312,11 @@ class ShortExpiryTrader:
         )
         self.feature_extractor = ShortExpiryFeatureExtractor()
         self.risk_manager = ShortExpiryRiskManager(self.config)
+
+        # Initialize slippage estimator
+        self.slippage_estimator = SlippageEstimator(
+            config=self.config.get('slippage_estimation', {})
+        )
 
         # Telegram notifications
         telegram_config = self.config.get('telegram', {})
@@ -650,6 +656,58 @@ class ShortExpiryTrader:
         prices = self._get_prices(market)
         entry_price = prices['yes'] if outcome == 'YES' else prices['no']
 
+        # Estimate slippage
+        slippage_config = self.config.get('slippage_estimation', {})
+        if slippage_config.get('enabled', True):
+            # Get bucket-specific limits
+            max_slippage_bps = slippage_config.get('max_slippage_bps', {}).get(bucket, 2000)
+            max_slippage_dollars = slippage_config.get('max_slippage_dollars', {}).get(bucket, 20.0)
+            warn_threshold_bps = slippage_config.get('warn_threshold_bps', {}).get(bucket, 1000)
+
+            # Override config with bucket-specific limits for estimation
+            bucket_slippage_config = slippage_config.copy()
+            bucket_slippage_config['max_slippage_bps'] = max_slippage_bps
+            bucket_slippage_config['max_slippage_dollars'] = max_slippage_dollars
+            bucket_slippage_config['warn_threshold_bps'] = warn_threshold_bps
+
+            # Create temporary estimator with bucket-specific config
+            estimator = SlippageEstimator(config=bucket_slippage_config)
+
+            # Estimate slippage
+            result = estimator.estimate(
+                market=market,
+                side='BUY',  # Always buying YES or NO tokens
+                size_usd=size,
+                client=self.client
+            )
+
+            if not result['can_trade']:
+                logger.warning(
+                    f"TRADE REJECTED - Slippage | Bucket: {bucket} | "
+                    f"Market: {market.get('question', '')[:50]} | "
+                    f"Reason: {result['reason']} | "
+                    f"Slippage: {result.get('slippage_bps', 0):.0f} bps (${result.get('slippage_dollars', 0):.2f}) | "
+                    f"Limit: {max_slippage_bps} bps (${max_slippage_dollars})"
+                )
+                return  # Don't execute trade
+
+            # Log slippage info
+            slippage_bps = result.get('slippage_bps', 0)
+            slippage_dollars = result.get('slippage_dollars', 0)
+
+            if slippage_bps > warn_threshold_bps:
+                logger.warning(
+                    f"HIGH SLIPPAGE WARNING | Bucket: {bucket} | "
+                    f"Slippage: {slippage_bps:.0f} bps (${slippage_dollars:.2f}) | "
+                    f"Threshold: {warn_threshold_bps} bps | "
+                    f"Market: {market.get('question', '')[:50]}"
+                )
+            else:
+                logger.info(
+                    f"Slippage check passed | Bucket: {bucket} | "
+                    f"Slippage: {slippage_bps:.0f} bps (${slippage_dollars:.2f})"
+                )
+
         # Paper trading: update balance
         if self.paper_trading:
             self.balance -= size
@@ -739,8 +797,8 @@ class ShortExpiryTrader:
                     )
                     continue
 
-                # Get current price for this outcome
-                prices = self.client.get_market_prices(market_id)
+                # Get current price for this outcome (use SELL prices - what we'd get for selling)
+                prices = self.client.get_market_prices(market_id, side='SELL')
                 current_price = prices.get(outcome.lower())
 
                 if current_price is None:

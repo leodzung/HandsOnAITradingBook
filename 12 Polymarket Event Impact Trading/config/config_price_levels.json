@@ -16,6 +16,8 @@
   "min_days_to_expiry": 30,
   "max_days_to_expiry": 150,
 
+  "max_entry_price": 0.90,
+
   "max_position_size": 100,
   "max_positions": 10,
   "max_daily_loss": 500,
@@ -57,13 +59,13 @@
 
   "slippage_estimation": {
     "enabled": true,
-    "max_slippage_bps": 100,
-    "max_slippage_dollars": 5.0,
+    "max_slippage_bps": 6000,
+    "max_slippage_dollars": 50.0,
     "orderbook_staleness_seconds": 10,
     "depth_buffer_pct": 0.10,
-    "volatility_adjustment": true,
+    "volatility_adjustment": false,
     "volume_limit_pct": 0.01,
-    "warn_threshold_bps": 50
+    "warn_threshold_bps": 3000
   },
 
   "telegram": {

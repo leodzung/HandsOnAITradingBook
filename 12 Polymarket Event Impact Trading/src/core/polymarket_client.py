@@ -72,23 +72,35 @@ class PolymarketClient:
             >>> build_market_url(market={'slug': 'my-market-slug'})
             'https://polymarket.com/market/my-market-slug'
         """
-        # Priority 1: Event slug (for multi-market events like BTC/ETH/GOLD)
+        # Priority 1: Event slug (explicit multi-market event)
         if event_slug:
             return f"{cls.WEB_URL}/event/{event_slug}"
 
-        # Priority 2: Asset symbol (lookup event slug)
-        if asset and asset in cls.EVENT_SLUGS:
-            return f"{cls.WEB_URL}/event/{cls.EVENT_SLUGS[asset]}"
-
-        # Priority 3: Market dict (extract slug)
+        # Priority 2: Market dict with slug (standalone markets)
         if market:
             slug = market.get('slug')
             if slug:
-                return f"{cls.WEB_URL}/market/{slug}"
+                # Check if this slug is in our known event slugs
+                # If not, it's a standalone market
+                if slug not in cls.EVENT_SLUGS.values():
+                    return f"{cls.WEB_URL}/market/{slug}"
 
-        # Priority 4: Direct market slug
+        # Priority 3: Direct market slug (standalone markets)
         if market_slug:
-            return f"{cls.WEB_URL}/market/{market_slug}"
+            # Check if this is a known event slug
+            if market_slug not in cls.EVENT_SLUGS.values():
+                return f"{cls.WEB_URL}/market/{market_slug}"
+
+        # Priority 4: Asset symbol (lookup multi-market event slug)
+        # Only use this if no market slug was provided
+        if asset and asset in cls.EVENT_SLUGS:
+            return f"{cls.WEB_URL}/event/{cls.EVENT_SLUGS[asset]}"
+
+        # Priority 5: Market dict that IS in event slugs
+        if market:
+            slug = market.get('slug')
+            if slug and slug in cls.EVENT_SLUGS.values():
+                return f"{cls.WEB_URL}/event/{slug}"
 
         # Fallback: markets homepage
         return f"{cls.WEB_URL}/markets"
@@ -279,35 +291,24 @@ class PolymarketClient:
             print(f"Error fetching market {condition_id}: {e}")
             return None
 
-    def get_market_prices(self, condition_id: str) -> Dict[str, Optional[float]]:
+    def get_market_prices(self, condition_id: str, side: str = 'BUY') -> Dict[str, Optional[float]]:
         """
-        Get both YES and NO prices from CLOB API.
+        Get both YES and NO prices from CLOB orderbook.
+
+        IMPORTANT: This now uses actual CLOB orderbook prices (best ask or bid),
+        not Gamma API estimates. This ensures consistency across all operations.
 
         Args:
             condition_id: Market condition ID
+            side: 'BUY' (ask prices) or 'SELL' (bid prices)
 
         Returns:
-            Dict with 'yes' and 'no' prices, e.g. {'yes': 0.3, 'no': 0.7}
+            Dict with 'yes' and 'no' prices from orderbook, e.g. {'yes': 0.99, 'no': 0.01}
         """
-        result = {'yes': None, 'no': None}
-        market = self.get_market(condition_id)
-        if not market:
-            return result
+        # Use centralized CLOB price fetching
+        return self.get_clob_prices(condition_id, side=side)
 
-        tokens = market.get('tokens', [])
-        for token in tokens:
-            outcome = token.get('outcome', '').lower()
-            if outcome in ('yes', 'no'):
-                try:
-                    price = token.get('price')
-                    if price is not None:  # Don't default to 0 - that's a real price!
-                        result[outcome] = float(price)
-                except (ValueError, TypeError):
-                    pass
-
-        return result
-
-    def get_market_yes_price(self, condition_id: str, event_slug: str = None) -> Optional[float]:
+    def get_market_yes_price(self, condition_id: str, event_slug: str = None, side: str = 'BUY') -> Optional[float]:
         """
         Get YES outcome price from CLOB API.
 
@@ -317,11 +318,12 @@ class PolymarketClient:
         Args:
             condition_id: Market condition ID (not token_id)
             event_slug: Unused (kept for backward compatibility)
+            side: 'BUY' (ask price) or 'SELL' (bid price) - default 'BUY'
 
         Returns:
             YES price (0-1) or None
         """
-        prices = self.get_market_prices(condition_id)
+        prices = self.get_market_prices(condition_id, side=side)
         return prices.get('yes')
 
     def get_market_outcome_price(self, condition_id: str, outcome: str) -> Optional[float]:
@@ -578,6 +580,67 @@ class PolymarketClient:
         except Exception as e:
             print(f"Error fetching orderbook for {token_id}: {e}")
             return {'bids': [], 'asks': []}
+
+    def get_clob_prices(self, condition_id: str, side: str = 'BUY') -> Dict[str, Optional[float]]:
+        """
+        Get YES and NO prices from CLOB orderbook (not Gamma API estimates).
+
+        This is the SINGLE SOURCE OF TRUTH for all price operations:
+        - Signal generation (side='BUY' - use ask prices)
+        - Trade execution (side='BUY' - use ask prices)
+        - Position monitoring (side='SELL' - use bid prices)
+
+        Uses best bid/ask from the actual CLOB orderbook, not Gamma API estimates.
+
+        Args:
+            condition_id: Market condition ID
+            side: 'BUY' (use ask prices) or 'SELL' (use bid prices)
+                  - BUY: Returns ask prices (what you'd pay to buy tokens)
+                  - SELL: Returns bid prices (what you'd get selling tokens)
+
+        Returns:
+            Dict with 'yes' and 'no' prices from orderbook, e.g. {'yes': 0.99, 'no': 0.01}
+            Returns None for prices if orderbook unavailable
+        """
+        result = {'yes': None, 'no': None}
+
+        # Get token IDs
+        token_ids = self.get_token_ids(condition_id)
+        yes_token_id = token_ids.get('yes_token_id')
+        no_token_id = token_ids.get('no_token_id')
+
+        if not yes_token_id or not no_token_id:
+            return result
+
+        # Get YES token orderbook
+        yes_orderbook = self.get_orderbook(yes_token_id)
+
+        if side == 'BUY':
+            # Best ask = price to BUY YES tokens
+            yes_asks = yes_orderbook.get('asks', [])
+            if yes_asks:
+                result['yes'] = float(yes_asks[0]['price'])
+        else:  # SELL
+            # Best bid = price to SELL YES tokens
+            yes_bids = yes_orderbook.get('bids', [])
+            if yes_bids:
+                result['yes'] = float(yes_bids[0]['price'])
+
+        # Get NO token orderbook
+        no_orderbook = self.get_orderbook(no_token_id)
+
+        if side == 'BUY':
+            # Best ask = price to BUY NO tokens
+            no_asks = no_orderbook.get('asks', [])
+            if no_asks:
+                result['no'] = float(no_asks[0]['price'])
+        else:  # SELL
+            # Best bid = price to SELL NO tokens
+            no_bids = no_orderbook.get('bids', [])
+            if no_bids:
+                result['no'] = float(no_bids[0]['price'])
+
+        return result
 
     def get_trades(self, token_id: str, limit: int = 100) -> List[Dict]:
         """

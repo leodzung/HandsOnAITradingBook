@@ -10,6 +10,7 @@
 
   "paper_trading": true,
   "max_position_size": 100,
+  "max_entry_price": 0.90,
 
   "gas_estimate_usd": 0.001,
 

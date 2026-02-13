@@ -23,6 +23,7 @@
   "paper_trading_balance": 1000.0,
   "min_confidence": 0.60,
   "min_expected_return": 0.03,
+  "max_entry_price": 0.90,
   "max_position_size": 100,
   "max_positions": 10,
   "max_daily_loss": 500,

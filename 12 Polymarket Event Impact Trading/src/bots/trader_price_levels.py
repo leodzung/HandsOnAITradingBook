@@ -24,6 +24,7 @@ from utils.market_parser import PriceLevelMarketParser
 from utils.external_data import SpotPriceDataSource
 from features.price_level_features import PriceLevelFeatureExtractor
 from core.position_manager import PositionManager
+from core.trade_executor import TradeExecutor, TradeRequest
 from utils.conditional_resolution import ConditionalResolutionAnalyzer
 from core.exposure_manager import ExposureManager
 from monitoring.telegram_notifier import TelegramNotifier
@@ -219,6 +220,15 @@ class PriceLevelTrader:
         self.position_manager = PositionManager(db_path='data/positions_price_level.db')
         logger.info("✓ Position manager initialized")
 
+        # Initialize trade executor (centralized execution logic)
+        self.trade_executor = TradeExecutor(
+            client=self.client,
+            position_manager=self.position_manager,
+            config=self.config,
+            paper_trading=self.config.get('paper_trading', True)
+        )
+        logger.info("✓ Trade executor initialized")
+
         # Initialize conditional resolution analyzer (for 50-50 markets)
         self.conditional_analyzer = ConditionalResolutionAnalyzer()
         logger.info("✓ Conditional resolution analyzer initialized")
@@ -377,9 +387,13 @@ class PriceLevelTrader:
                         positions_to_close.append((market_id, 'expiry'))
                         continue
 
-                # Get current price
+                # Get current price for monitoring (use BID prices - what we could sell for)
                 event_slug = position.get('slug')
-                current_price = self.client.get_market_yes_price(market_id, event_slug=event_slug)
+                current_price = self.client.get_market_yes_price(
+                    market_id,
+                    event_slug=event_slug,
+                    side='SELL'  # Use bid prices for position monitoring
+                )
                 if current_price is None:
                     continue
 
@@ -946,127 +960,84 @@ class PriceLevelTrader:
             logger.warning(f"  ⚠️ BLOCKED by exposure limits: {reason}")
             return
 
-        # Get quoted price based on outcome
+        # Determine entry price based on outcome
         if outcome == 'YES':
-            quoted_price = signal['market_price']
+            entry_price = signal['market_price']
         else:
-            quoted_price = signal.get('no_price', 1.0 - signal['market_price'])
+            entry_price = signal.get('no_price', 1.0 - signal['market_price'])
 
-        # Get orderbook for slippage estimation
-        orderbook = self.client.get_orderbook(token_id)
-
-        # Estimate slippage
-        from core.slippage_estimator import SlippageEstimator
-
-        estimator = SlippageEstimator(config=self.config.get('slippage_estimation', {}))
-
-        # Get market volume from original market data
+        # Get slug from original market data (for restricted market price lookups)
         orig_market = parsed_market.get('original_market', {})
-        market_volume_24h = orig_market.get('volume', 0)
+        slug = orig_market.get('slug', '')
 
-        slippage_est = estimator.estimate_slippage(
-            order_side='BUY',  # Always BUY for opening positions
-            order_size=position_size,
-            orderbook=orderbook,
-            quoted_price=quoted_price,
-            market_volume_24h=market_volume_24h
-        )
+        # Prepare expiry date string
+        expiry = parsed_market.get('expiry_date')
+        if expiry:
+            expiry_str = expiry.isoformat() if hasattr(expiry, 'isoformat') else str(expiry)
+        else:
+            expiry_str = None
 
-        # Check if slippage is acceptable
-        if not slippage_est.is_acceptable:
-            logger.warning(f"  ⚠️ Trade REJECTED: {slippage_est.rejection_reason}")
-            return
-
-        # Log slippage estimate
-        logger.info(f"  Slippage: ${slippage_est.slippage_dollars:.3f} "
-                   f"({slippage_est.slippage_bps:.0f} bps), "
-                   f"depth: {slippage_est.levels_consumed} levels")
-
-        # Log warnings if any
-        for warning in slippage_est.warnings:
-            logger.warning(f"  ⚠️ Slippage warning: {warning}")
-
-        # Use adjusted execution price
-        entry_price = slippage_est.expected_execution_price
-
-        # Execute trade
-        if self.config.get('paper_trading', True):
-            logger.info(f"\n  💰 [PAPER TRADE] BUY {outcome} ${position_size:.2f}")
-            logger.info(f"     Market: {parsed_market.get('question', '')[:50]}")
-            logger.info(f"     {outcome} Price: ${entry_price:.3f}")
-            logger.info(f"     Edge: {signal['edge']:+.2%}")
-            logger.info(f"     Kelly: {signal.get('kelly_fraction', 0):.2%}")
-
-            # Deduct from balance
-            self.balance -= position_size
-            self._save_balance(self.balance)
-            logger.info(f"     Balance: ${self.balance:.2f} (spent ${position_size:.2f})")
-
-            # Get slug from original market data (for restricted market price lookups)
-            orig_market = parsed_market.get('original_market', {})
-            slug = orig_market.get('slug', '')
-
-            # Track position in memory
-            self.active_positions[market_id] = {
-                'market_id': market_id,
-                'token_id': token_id,
-                'asset': parsed_market['asset'],
-                'question': parsed_market.get('question', ''),
-                'outcome': outcome,  # Store YES or NO
-                'entry_price': entry_price,  # Actual token price (YES or NO)
-                'position_size': position_size,
-                'entry_time': datetime.now(),
-                'expiry_date': parsed_market.get('expiry_date'),
-                'strike_price': parsed_market.get('strike_price'),
-                'slug': slug  # For restricted market price lookups
-            }
-
-            # Persist to database
-            expiry = parsed_market.get('expiry_date')
-            # Handle both datetime objects and strings
-            if expiry:
-                expiry_str = expiry.isoformat() if hasattr(expiry, 'isoformat') else str(expiry)
-            else:
-                expiry_str = None
-
-            metadata = {
-                'asset': parsed_market['asset'],
-                'question': parsed_market.get('question', ''),
-                'strike_price': parsed_market.get('strike_price'),
-                'expiry_date': expiry_str,
-                'edge': signal['edge'],
-                'model_prob': signal.get('model_prob'),
+        # Build trade request
+        request = TradeRequest(
+            market_id=market_id,
+            token_id=token_id,
+            outcome=outcome,
+            entry_price=entry_price,
+            position_size=position_size,
+            question=parsed_market.get('question', ''),
+            asset=parsed_market['asset'],
+            strike_price=parsed_market.get('strike_price'),
+            expiry_date=expiry_str,
+            edge=signal['edge'],
+            confidence=signal.get('model_prob'),
+            signal_reason='price_level_strategy',
+            metadata={
                 'kelly_fraction': signal.get('kelly_fraction'),
                 'slug': slug
             }
+        )
 
-            self.position_manager.save_position(
-                market_id=market_id,
-                token_id=token_id,
-                entry_time=datetime.now(),
-                entry_price=entry_price,  # Actual token price (YES or NO)
-                side=outcome,  # Store YES or NO
-                size=position_size,
-                metadata=metadata
+        # Execute trade with centralized executor (handles all validation)
+        result = self.trade_executor.execute_trade(request)
+
+        if not result.success:
+            logger.warning(
+                f"  ⚠️ Trade REJECTED ({result.rejection_stage}): "
+                f"{result.rejection_reason}"
             )
+            return
 
-            logger.info(f"  ✓ Position tracked and persisted")
+        # Trade successful - update balance and track in memory
+        self.balance -= position_size
+        self._save_balance(self.balance)
+        logger.info(f"     Balance: ${self.balance:.2f} (spent ${position_size:.2f})")
 
-            # Send Telegram notification
-            self.telegram.notify_position_opened(
-                market_id=market_id,
-                asset=parsed_market['asset'],
-                outcome=outcome,
-                entry_price=entry_price,  # Actual token price
-                position_size=position_size,
-                question=parsed_market.get('question', ''),
-                edge=signal['edge'],
-                bot_name="Price-Level Trader"
-            )
+        # Track position in memory for quick lookups
+        self.active_positions[market_id] = {
+            'market_id': market_id,
+            'token_id': token_id,
+            'asset': parsed_market['asset'],
+            'question': parsed_market.get('question', ''),
+            'outcome': outcome,
+            'entry_price': result.entry_price,
+            'position_size': position_size,
+            'entry_time': datetime.now(),
+            'expiry_date': parsed_market.get('expiry_date'),
+            'strike_price': parsed_market.get('strike_price'),
+            'slug': slug
+        }
 
-        else:
-            # TODO: Implement real trading via CLOB API
-            logger.info("  Live trading not implemented yet")
+        # Send Telegram notification
+        self.telegram.notify_position_opened(
+            market_id=market_id,
+            asset=parsed_market['asset'],
+            outcome=outcome,
+            entry_price=result.entry_price,  # Use actual execution price from result
+            position_size=position_size,
+            question=parsed_market.get('question', ''),
+            edge=signal['edge'],
+            bot_name="Price-Level Trader"
+        )
 
     def log_position_status(self):
         """
@@ -1157,7 +1128,8 @@ class PriceLevelTrader:
 
             if exit_price is None:
                 event_slug = position.get('slug')  # May be None
-                prices = self.client.get_market_prices(market_id)
+                # Use SELL prices (bid) - what we'd actually get for selling our tokens
+                prices = self.client.get_market_prices(market_id, side='SELL')
                 yes_exit_price = prices.get('yes')
                 no_exit_price = prices.get('no')
 
