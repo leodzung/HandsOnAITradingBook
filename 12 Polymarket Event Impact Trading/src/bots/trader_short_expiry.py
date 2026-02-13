@@ -30,6 +30,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from features.short_expiry_features import ShortExpiryFeatureExtractor
 from core.polymarket_client import PolymarketClient
+from core.price_fetcher import PriceFetcher
 from core.slippage_estimator import SlippageEstimator
 from monitoring.telegram_notifier import TelegramNotifier
 
@@ -307,6 +308,7 @@ class ShortExpiryTrader:
 
         # Initialize components
         self.client = PolymarketClient()  # No auth needed for read-only
+        self.price_fetcher = PriceFetcher(self.client)
         self.position_manager = ShortExpiryPositionManager(
             self.config['database']['positions_db']
         )
@@ -469,15 +471,19 @@ class ShortExpiryTrader:
         return markets
 
     def _get_prices(self, market: Dict) -> Dict[str, float]:
-        """Extract YES/NO prices from market."""
-        # Get last trade price (represents YES price for first outcome)
-        yes_price = market.get('lastTradePrice', 0.5)
-        if isinstance(yes_price, str):
-            yes_price = float(yes_price)
+        """Get entry prices (ASK) from CLOB orderbook via PriceFetcher."""
+        market_id = market.get('conditionId') or market.get('condition_id')
+        if not market_id:
+            logger.warning("No condition_id available for price fetching")
+            return {'yes': None, 'no': None}
 
-        no_price = 1.0 - yes_price
+        # Use PriceFetcher to get entry prices (ASK prices from CLOB)
+        entry_prices = self.price_fetcher.get_entry_prices(market_id)
+        if entry_prices is None:
+            logger.warning(f"No entry prices available for {market_id[:16]}...")
+            return {'yes': None, 'no': None}
 
-        return {'yes': yes_price, 'no': no_price}
+        return {'yes': entry_prices.yes_price, 'no': entry_prices.no_price}
 
     def _get_spread_pct(self, market: Dict) -> float:
         """Calculate spread percentage."""
@@ -652,9 +658,14 @@ class ShortExpiryTrader:
             bucket
         )
 
-        # Get entry price
+        # Get entry price using PriceFetcher
         prices = self._get_prices(market)
         entry_price = prices['yes'] if outcome == 'YES' else prices['no']
+
+        # Validate price is available
+        if entry_price is None:
+            logger.warning(f"No entry price available for {outcome} - skipping trade")
+            return
 
         # Estimate slippage
         slippage_config = self.config.get('slippage_estimation', {})
@@ -797,13 +808,14 @@ class ShortExpiryTrader:
                     )
                     continue
 
-                # Get current price for this outcome (use SELL prices - what we'd get for selling)
-                prices = self.client.get_market_prices(market_id, side='SELL')
-                current_price = prices.get(outcome.lower())
-
-                if current_price is None:
-                    logger.warning(f"Could not get price for {market_id[:16]}... {outcome}")
+                # Get current price using PriceFetcher (exit prices - BID)
+                exit_prices = self.price_fetcher.get_exit_prices(market_id)
+                if exit_prices is None:
+                    logger.warning(f"Could not get exit prices for {market_id[:16]}... {outcome}")
                     continue
+
+                # Get price for the specific outcome
+                current_price = exit_prices.get_outcome_price(outcome)
 
                 # Check exit conditions (stop-loss, take-profit, trailing stop)
                 exit_reason = self.risk_manager.should_exit(pos, current_price, bucket)
