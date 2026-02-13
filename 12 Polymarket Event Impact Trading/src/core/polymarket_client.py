@@ -17,6 +17,14 @@ class PolymarketClient:
 
     BASE_URL = "https://clob.polymarket.com"
     GAMMA_URL = "https://gamma-api.polymarket.com"
+    WEB_URL = "https://polymarket.com"
+
+    # Known multi-market event slugs
+    EVENT_SLUGS = {
+        'BTC': 'what-price-will-bitcoin-hit-before-2027',
+        'ETH': 'what-price-will-ethereum-hit-before-2027',
+        'GOLD': 'what-will-gold-gc-hit-by-end-of-february',
+    }
 
     def __init__(self, api_key: Optional[str] = None, api_secret: Optional[str] = None,
                  private_key: Optional[str] = None):
@@ -32,6 +40,58 @@ class PolymarketClient:
         self.api_secret = api_secret
         self.private_key = private_key
         self.session = requests.Session()
+
+    @classmethod
+    def build_market_url(cls, market: Dict = None, event_slug: str = None,
+                        market_slug: str = None, asset: str = None) -> str:
+        """
+        Build a Polymarket web URL for a market.
+
+        For multi-market events (BTC/ETH/GOLD price levels), returns event-level URL.
+        For standalone markets, returns individual market URL.
+
+        Args:
+            market: Market dict from API (optional, contains slug and other metadata)
+            event_slug: Event slug for multi-market events (e.g., 'what-price-will-bitcoin-hit-before-2027')
+            market_slug: Individual market slug for standalone markets
+            asset: Asset symbol (BTC/ETH/GOLD) to look up event slug
+
+        Returns:
+            Polymarket web URL string
+
+        Examples:
+            # Using asset symbol
+            >>> build_market_url(asset='BTC')
+            'https://polymarket.com/event/what-price-will-bitcoin-hit-before-2027'
+
+            # Using event slug directly
+            >>> build_market_url(event_slug='my-event-slug')
+            'https://polymarket.com/event/my-event-slug'
+
+            # Using market dict
+            >>> build_market_url(market={'slug': 'my-market-slug'})
+            'https://polymarket.com/market/my-market-slug'
+        """
+        # Priority 1: Event slug (for multi-market events like BTC/ETH/GOLD)
+        if event_slug:
+            return f"{cls.WEB_URL}/event/{event_slug}"
+
+        # Priority 2: Asset symbol (lookup event slug)
+        if asset and asset in cls.EVENT_SLUGS:
+            return f"{cls.WEB_URL}/event/{cls.EVENT_SLUGS[asset]}"
+
+        # Priority 3: Market dict (extract slug)
+        if market:
+            slug = market.get('slug')
+            if slug:
+                return f"{cls.WEB_URL}/market/{slug}"
+
+        # Priority 4: Direct market slug
+        if market_slug:
+            return f"{cls.WEB_URL}/market/{market_slug}"
+
+        # Fallback: markets homepage
+        return f"{cls.WEB_URL}/markets"
 
     def _get_headers(self, signature: Optional[str] = None) -> Dict:
         """Generate request headers."""
