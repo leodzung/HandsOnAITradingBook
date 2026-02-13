@@ -807,78 +807,232 @@ with tab2:
     # Show positions
     st.subheader("Open Positions")
     if not open_positions.empty:
+        st.markdown("*Click 🔗 to view on Polymarket*")
+
+        # Column headers
+        hcol1, hcol2, hcol3, hcol4, hcol5, hcol6, hcol7, hcol8 = st.columns([2, 0.5, 0.6, 0.7, 0.7, 0.6, 0.9, 0.9])
+        with hcol1:
+            st.markdown("**Market**")
+        with hcol2:
+            st.markdown("**Bucket**")
+        with hcol3:
+            st.markdown("**Side**")
+        with hcol4:
+            st.markdown("**Entry**")
+        with hcol5:
+            st.markdown("**Current**")
+        with hcol6:
+            st.markdown("**Size**")
+        with hcol7:
+            st.markdown("**Entry Date**")
+        with hcol8:
+            st.markdown("**P&L / Expiry**")
+
         for idx, row in open_positions.iterrows():
             bucket_emoji = {"ultra_short": "⚡", "short": "🔥", "medium": "📊"}
             bucket = row.get('bucket', 'unknown')
-
-            # Get market name - for short expiry positions, fetch from API
             market_id = row.get('market_id', '')
+            outcome = row.get('outcome', 'N/A')
+            entry_price = row.get('entry_price', 0) or 0
+            size = row.get('size', 0) or 0
+            entry_time = row.get('entry_time', '')
+            hours_to_expiry = row.get('hours_to_expiry_at_entry', 0) or 0
+
+            # Get market name
             if 'question' in row and pd.notna(row.get('question')) and row.get('question'):
-                # Use cached question from load_positions if available
-                market_name = str(row.get('question'))[:80]
-            else:
-                # Fetch from API for short expiry positions
-                market_name = get_market_name(market_id)
-                if market_name and market_name != 'Unknown Market':
-                    market_name = market_name[:80]
-
-            # Create expander title with market name
-            expander_title = f"{bucket_emoji.get(bucket, '📈')} {market_name[:50]} | {row.get('outcome', 'N/A')} @ ${row.get('entry_price', 0):.3f}"
-            with st.expander(expander_title):
-                col1, col2 = st.columns(2)
-                with col1:
-                    st.write(f"**Market:** {market_name}")
-                    st.write(f"**Outcome:** {row.get('outcome', 'N/A')}")
-                    st.write(f"**Entry Price:** ${row.get('entry_price', 0):.4f}")
-                    st.write(f"**Size:** ${row.get('size', 0):.2f}")
-                with col2:
-                    st.write(f"**Bucket:** {bucket.replace('_', ' ').title()}")
-                    st.write(f"**Entry Time:** {row.get('entry_time', 'N/A')}")
-                    st.write(f"**Hours to Expiry:** {row.get('hours_to_expiry_at_entry', 0):.1f}h")
-                    st.write(f"**Signal:** {row.get('signal_reason', 'N/A').replace('_', ' ').title()}")
-
-                # Show edge and confidence if available
-                if 'edge' in row and pd.notna(row.get('edge')):
-                    st.write(f"**Edge:** {row.get('edge', 0):.1%}")
-                if 'confidence' in row and pd.notna(row.get('confidence')):
-                    st.write(f"**Confidence:** {row.get('confidence', 0):.1%}")
-    else:
-        st.info("No open positions")
-
-    # Show recent closed positions
-    st.subheader("Recent Closed Positions")
-    if not closed_positions.empty:
-        # Show last 5
-        recent_closed = closed_positions.tail(5).sort_values('exit_time', ascending=False) if 'exit_time' in closed_positions.columns else closed_positions.tail(5)
-
-        for idx, row in recent_closed.iterrows():
-            pnl = row.get('pnl', 0)
-            pnl_pct = row.get('pnl_pct', 0)
-            color = "green" if pnl > 0 else "red"
-
-            bucket_emoji = {"ultra_short": "⚡", "short": "🔥", "medium": "📊"}
-            bucket = row.get('bucket', 'unknown')
-
-            # Get market name - for short expiry positions, fetch from API
-            market_id = row.get('market_id', '')
-            if 'question' in row and pd.notna(row.get('question')) and row.get('question'):
-                # Use cached question from load_positions if available
                 market_name = str(row.get('question'))[:60]
             else:
-                # Fetch from API for short expiry positions
                 market_name = get_market_name(market_id)
                 if market_name and market_name != 'Unknown Market':
                     market_name = market_name[:60]
+                else:
+                    market_name = 'Unknown Market'
 
-            st.markdown(f"""
-            <div style='padding: 10px; margin: 5px 0; background-color: rgba(0,0,0,0.1); border-radius: 5px; border-left: 3px solid {color};'>
-                <b>{bucket_emoji.get(bucket, '📈')} {market_name}</b><br/>
-                {bucket.replace('_', '-').title()} | {row.get('outcome', 'N/A')} |
-                Entry: ${row.get('entry_price', 0):.3f} → Exit: ${row.get('exit_price', 0):.3f}<br/>
-                P&L: <span style='color: {color};'>${pnl:.2f} ({pnl_pct:.1f}%)</span> |
-                Reason: {row.get('exit_reason', 'N/A').replace('_', ' ').title()}
-            </div>
-            """, unsafe_allow_html=True)
+            # Format entry date
+            if pd.notna(entry_time):
+                try:
+                    entry_date = pd.to_datetime(entry_time, format='mixed').strftime('%m/%d %H:%M')
+                except:
+                    entry_date = str(entry_time)[:16] if entry_time else 'N/A'
+            else:
+                entry_date = 'N/A'
+
+            # Create Polymarket URL (use search for short-expiry markets)
+            poly_url = f"https://polymarket.com/markets?_q={quote(str(market_name)[:30])}"
+
+            # Get current price
+            prices = get_current_prices(market_id)
+            if outcome.upper() == "YES":
+                current_price = prices.get('yes')
+            else:
+                current_price = prices.get('no')
+                if current_price is None and prices.get('yes') is not None:
+                    current_price = 1.0 - prices.get('yes')
+
+            # Calculate unrealized P&L
+            if current_price is not None and entry_price > 0:
+                tokens = size / entry_price
+                payout = tokens * current_price
+                unrealized_pnl = payout - size
+                pnl_pct = (unrealized_pnl / size) * 100 if size > 0 else 0
+            else:
+                unrealized_pnl = None
+                pnl_pct = None
+
+            col1, col2, col3, col4, col5, col6, col7, col8 = st.columns([2, 0.5, 0.6, 0.7, 0.7, 0.6, 0.9, 0.9])
+            with col1:
+                st.markdown(f"**{market_name}** [🔗]({poly_url})")
+            with col2:
+                st.write(f"{bucket_emoji.get(bucket, '📈')}")
+            with col3:
+                color = "🟢" if outcome.upper() == "YES" else "🔴"
+                st.write(f"{color} {outcome}")
+            with col4:
+                st.write(f"${entry_price:.3f}")
+            with col5:
+                if current_price is not None:
+                    st.write(f"${current_price:.3f}")
+                else:
+                    st.write("N/A")
+            with col6:
+                st.write(f"${size:.2f}")
+            with col7:
+                st.write(f"{entry_date}")
+            with col8:
+                if unrealized_pnl is not None:
+                    pnl_color = "🟢" if unrealized_pnl >= 0 else "🔴"
+                    st.write(f"{pnl_color} ${unrealized_pnl:+.2f}")
+                else:
+                    st.write(f"⏱️ {hours_to_expiry:.1f}h")
+
+        st.divider()
+
+        # Table view
+        with st.expander("📋 Table View"):
+            display_cols = ['bucket', 'outcome', 'entry_price', 'size', 'hours_to_expiry_at_entry', 'entry_time', 'signal_reason']
+            if all(col in open_positions.columns for col in display_cols):
+                display_df = open_positions[display_cols].copy()
+                display_df.columns = ['Bucket', 'Side', 'Entry', 'Size', 'Expiry (h)', 'Entry Time', 'Signal']
+                display_df['Bucket'] = display_df['Bucket'].apply(lambda x: x.replace('_', ' ').title() if pd.notna(x) else 'N/A')
+                display_df['Entry'] = display_df['Entry'].apply(lambda x: f"${x:.3f}" if pd.notna(x) else 'N/A')
+                display_df['Size'] = display_df['Size'].apply(lambda x: f"${x:.2f}" if pd.notna(x) else 'N/A')
+                display_df['Expiry (h)'] = display_df['Expiry (h)'].apply(lambda x: f"{x:.1f}h" if pd.notna(x) else 'N/A')
+                display_df['Entry Time'] = pd.to_datetime(display_df['Entry Time'], format='mixed').dt.strftime('%Y-%m-%d %H:%M')
+                display_df['Signal'] = display_df['Signal'].apply(lambda x: x.replace('_', ' ').title() if pd.notna(x) else 'N/A')
+                st.dataframe(display_df, width='stretch', hide_index=True)
+    else:
+        st.info("No open positions")
+
+    # Closed positions
+    st.subheader("Recent Closed Positions")
+    if not closed_positions.empty:
+        # Show last 10
+        closed_sorted = closed_positions.sort_values('exit_time', ascending=False).head(10) if 'exit_time' in closed_positions.columns else closed_positions.head(10)
+
+        # Exit reason emoji mapping
+        exit_reason_icons = {
+            'stop_loss': '🛑',
+            'take_profit': '💰',
+            'trailing_stop': '📉',
+            'time_exit': '⏰',
+            'expiry': '📅',
+            'expiry_time': '⏱️',
+            'expiry_closed': '🔒',
+            'market_closed': '🔒',
+            'manual': '✋',
+            None: '—'
+        }
+
+        # Column headers
+        st.markdown("---")
+        hcol1, hcol2, hcol3, hcol4, hcol5, hcol6, hcol7, hcol8, hcol9 = st.columns([2, 0.5, 0.6, 0.9, 0.6, 0.9, 0.9, 0.9, 0.5])
+        with hcol1:
+            st.markdown("**Market**")
+        with hcol2:
+            st.markdown("**Bucket**")
+        with hcol3:
+            st.markdown("**Side**")
+        with hcol4:
+            st.markdown("**Entry→Exit**")
+        with hcol5:
+            st.markdown("**Size**")
+        with hcol6:
+            st.markdown("**Entry Date**")
+        with hcol7:
+            st.markdown("**Exit Date**")
+        with hcol8:
+            st.markdown("**P&L**")
+        with hcol9:
+            st.markdown("**Reason**")
+
+        for idx, row in closed_sorted.iterrows():
+            bucket_emoji = {"ultra_short": "⚡", "short": "🔥", "medium": "📊"}
+            bucket = row.get('bucket', 'unknown')
+            market_id = row.get('market_id', '')
+            outcome = row.get('outcome', 'N/A')
+            entry_price = row.get('entry_price', 0) or 0
+            exit_price = row.get('exit_price', 0) or 0
+            size = row.get('size', 0) or 0
+            pnl = row.get('pnl', 0) or 0
+            exit_reason = row.get('exit_reason', None)
+            entry_time = row.get('entry_time', '')
+            exit_time = row.get('exit_time', '')
+
+            # Get market name
+            if 'question' in row and pd.notna(row.get('question')) and row.get('question'):
+                market_name = str(row.get('question'))[:50]
+            else:
+                market_name = get_market_name(market_id)
+                if market_name and market_name != 'Unknown Market':
+                    market_name = market_name[:50]
+                else:
+                    market_name = 'Unknown Market'
+
+            # Format dates
+            if pd.notna(entry_time):
+                try:
+                    entry_date = pd.to_datetime(entry_time, format='mixed').strftime('%m/%d %H:%M')
+                except:
+                    entry_date = str(entry_time)[:16] if entry_time else 'N/A'
+            else:
+                entry_date = 'N/A'
+
+            if pd.notna(exit_time):
+                try:
+                    exit_date = pd.to_datetime(exit_time, format='mixed').strftime('%m/%d %H:%M')
+                except:
+                    exit_date = str(exit_time)[:16] if exit_time else 'N/A'
+            else:
+                exit_date = 'N/A'
+
+            # Create Polymarket URL
+            poly_url = f"https://polymarket.com/markets?_q={quote(str(market_name)[:30])}"
+
+            # Color code P&L
+            pnl_color = "🟢" if pnl and pnl > 0 else "🔴"
+
+            # Exit reason icon
+            exit_icon = exit_reason_icons.get(exit_reason, '—')
+
+            col1, col2, col3, col4, col5, col6, col7, col8, col9 = st.columns([2, 0.5, 0.6, 0.9, 0.6, 0.9, 0.9, 0.9, 0.5])
+            with col1:
+                st.markdown(f"{market_name} [🔗]({poly_url})")
+            with col2:
+                st.write(f"{bucket_emoji.get(bucket, '📈')}")
+            with col3:
+                st.write(f"{outcome}")
+            with col4:
+                st.write(f"${entry_price:.3f}→${exit_price:.3f}" if exit_price else f"${entry_price:.3f}")
+            with col5:
+                st.write(f"${size:.2f}")
+            with col6:
+                st.write(f"{entry_date}")
+            with col7:
+                st.write(f"{exit_date}")
+            with col8:
+                st.write(f"{pnl_color} ${pnl:+.2f}" if pnl else "N/A")
+            with col9:
+                st.write(f"{exit_icon}")
     else:
         st.info("No closed positions yet")
 
