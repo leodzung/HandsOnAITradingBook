@@ -58,6 +58,22 @@ class PolymarketClient:
         ).hexdigest()
         return signature
 
+    @staticmethod
+    def filter_closed_markets(markets: List[Dict]) -> List[Dict]:
+        """
+        Filter out closed/resolved markets from a list of markets.
+
+        This is a defensive utility to prevent bots from trading on resolved markets.
+        Closed markets have no CLOB orderbooks and will cause "No liquidity" errors.
+
+        Args:
+            markets: List of market dictionaries
+
+        Returns:
+            List of markets with closed=False
+        """
+        return [m for m in markets if not m.get('closed', False)]
+
     def get_markets(self, limit: int = 100, offset: int = 0,
                    active: bool = True, closed: bool = False,
                    end_date_min: Optional[str] = None,
@@ -116,7 +132,14 @@ class PolymarketClient:
                 headers=self._get_headers()
             )
             response.raise_for_status()
-            return response.json()
+            markets = response.json()
+
+            # Defensive filtering: Even if closed=False, the API might return closed markets
+            # Apply client-side filtering to ensure we never trade on resolved markets
+            if not closed and markets:
+                markets = self.filter_closed_markets(markets)
+
+            return markets
         except Exception as e:
             print(f"Error fetching markets: {e}")
             return []
@@ -144,7 +167,7 @@ class PolymarketClient:
             print(f"Error fetching event {slug}: {e}")
             return None
 
-    def get_markets_from_event(self, slug: str) -> List[Dict]:
+    def get_markets_from_event(self, slug: str, exclude_closed: bool = True) -> List[Dict]:
         """
         Get all markets from an event (includes restricted markets).
 
@@ -153,14 +176,22 @@ class PolymarketClient:
 
         Args:
             slug: Event slug
+            exclude_closed: If True, filter out closed/resolved markets (default: True)
 
         Returns:
-            List of market dictionaries
+            List of market dictionaries (excluding closed markets by default)
         """
         event = self.get_event(slug)
         if not event:
             return []
-        return event.get('markets', [])
+
+        markets = event.get('markets', [])
+
+        # Filter out closed markets by default to prevent trading on resolved markets
+        if exclude_closed:
+            markets = [m for m in markets if not m.get('closed', False)]
+
+        return markets
 
     def get_market(self, condition_id: str) -> Optional[Dict]:
         """

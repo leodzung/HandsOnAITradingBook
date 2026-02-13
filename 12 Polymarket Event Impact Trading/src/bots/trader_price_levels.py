@@ -572,6 +572,7 @@ class PriceLevelTrader:
                    f"expiry: {min_days}-{max_days} days)")
 
         # Also fetch markets from specific event slugs (includes restricted markets)
+        # Note: get_markets_from_event() automatically filters out closed markets
         event_slugs = self.config.get('event_slugs', {})
         existing_ids = {m.get('conditionId') for m in all_markets}
         event_markets_added = 0
@@ -579,6 +580,8 @@ class PriceLevelTrader:
         for asset, slugs in event_slugs.items():
             for slug in slugs:
                 event_markets = self.client.get_markets_from_event(slug)
+                # Defensive: Filter out closed markets even though client should do this
+                event_markets = [m for m in event_markets if not m.get('closed', False)]
                 for m in event_markets:
                     if m.get('conditionId') not in existing_ids:
                         all_markets.append(m)
@@ -586,7 +589,7 @@ class PriceLevelTrader:
                         event_markets_added += 1
 
         if event_markets_added > 0:
-            logger.info(f"Added {event_markets_added} markets from event slugs (includes restricted)")
+            logger.info(f"Added {event_markets_added} active markets from event slugs (closed markets filtered out)")
 
         logger.info(f"Total markets to scan: {len(all_markets)}")
 

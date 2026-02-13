@@ -599,9 +599,11 @@ class PolymarketTrader:
             for slug in event_slugs:
                 try:
                     event_batch = self.client.get_markets_from_event(slug)
+                    # Defensive: Filter out closed markets even though client should do this
+                    event_batch = [m for m in event_batch if not m.get('closed', False)]
                     if event_batch:
                         event_markets.extend(event_batch)
-                        logger.debug(f"  + {len(event_batch)} markets from event '{slug}'")
+                        logger.debug(f"  + {len(event_batch)} active markets from event '{slug}'")
                 except Exception as e:
                     logger.debug(f"Event {slug} not found or error: {e}")
             event_duration = time_module.time() - event_start
@@ -610,7 +612,7 @@ class PolymarketTrader:
             seen_ids = {m.get('conditionId') for m in markets if m.get('conditionId')}
             new_markets = [m for m in event_markets if m.get('conditionId') not in seen_ids]
             markets.extend(new_markets)
-            logger.info(f"Added {len(new_markets)} unique event-based markets in {event_duration:.2f}s")
+            logger.info(f"Added {len(new_markets)} unique active event markets in {event_duration:.2f}s (closed filtered)")
 
         logger.info(f"Total markets after API filtering: {len(markets)}")
 
