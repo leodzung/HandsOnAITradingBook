@@ -452,8 +452,18 @@ class PolymarketTrader:
         Returns:
             Dictionary with model-compatible features
         """
-        # Get current price from market
-        current_price = self.client.get_price_from_market(market, outcome_index=0) or 0.5
+        # Get current price from CLOB orderbook (not Gamma API)
+        condition_id = market.get('conditionId') or market.get('condition_id')
+        if not condition_id:
+            logger.warning("No condition_id available for price fetching")
+            return {}  # Return empty features - cannot proceed without price
+
+        prices = self.client.get_market_prices(condition_id, side='BUY')
+        current_price = prices.get('yes')
+
+        if current_price is None:
+            logger.warning("No YES price available from CLOB")
+            return {}  # Return empty features - cannot proceed without price
 
         # Get market volume - try multiple sources
         market_volume = features.get('market_volume', 0.0)
@@ -654,18 +664,19 @@ class PolymarketTrader:
             return
 
         # Get current prices (both YES and NO)
+        # Get prices from CLOB orderbook ONLY (not Gamma API)
         condition_id = market.get('conditionId') or market.get('condition_id')
-        prices = self.client.get_market_prices(condition_id) if condition_id else {'yes': None, 'no': None}
+        if not condition_id:
+            logger.warning(f"No condition_id for market - skipping")
+            return
+
+        prices = self.client.get_market_prices(condition_id, side='BUY')
         yes_price = prices.get('yes')
         no_price = prices.get('no')
 
-        # Fallback to old method if new method fails
-        if yes_price is None:
-            yes_price = self.client.get_price_from_market(market, outcome_index=0)
-        if yes_price is None:
-            yes_price = self.client.get_market_price(token_id)
-        if no_price is None and yes_price is not None:
-            no_price = 1.0 - yes_price
+        if yes_price is None or no_price is None:
+            logger.warning(f"No CLOB prices available for market - skipping")
+            return
 
         if yes_price is None:
             logger.warning(f"No price data for {market_id}")

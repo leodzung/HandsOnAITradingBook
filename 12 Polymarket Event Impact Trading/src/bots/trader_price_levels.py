@@ -729,35 +729,21 @@ class PriceLevelTrader:
             return None
 
         try:
-            # Get prices from Gamma API (outcomePrices) - consistent source
-            orig_market = parsed_market.get('original_market', {})
-            outcome_prices = orig_market.get('outcomePrices', '[]')
-
-            market_price = None
-            no_price = None
-
-            if isinstance(outcome_prices, str):
-                try:
-                    import json as json_mod
-                    prices = json_mod.loads(outcome_prices)
-                    if len(prices) >= 2:
-                        market_price = float(prices[0])  # YES price
-                        no_price = float(prices[1])      # NO price
-                except:
-                    pass
-
-            # Fallback to Gamma API if outcomePrices not in parsed_market
-            if market_price is None:
-                condition_id = parsed_market.get('conditionId')
-                if condition_id:
-                    market_price = self.client.get_market_yes_price(condition_id)
-
-            if market_price is None:
-                logger.warning("  No market price available (Gamma API)")
+            # Get prices EXCLUSIVELY from CLOB API (not Gamma)
+            # This ensures we're using actual orderbook ask prices for entry
+            condition_id = parsed_market.get('conditionId')
+            if not condition_id:
+                logger.warning("  No condition_id available")
                 return None
 
-            if no_price is None:
-                no_price = 1.0 - market_price  # Approximate
+            # Get both YES and NO prices directly from CLOB orderbook (use BUY side for entry)
+            prices = self.client.get_market_prices(condition_id, side='BUY')
+            market_price = prices.get('yes')  # YES ask price (cost to buy YES tokens)
+            no_price = prices.get('no')        # NO ask price (cost to buy NO tokens)
+
+            if market_price is None or no_price is None:
+                logger.warning("  No market prices available from CLOB orderbook")
+                return None
 
             # Orderbook is still useful for liquidity/spread analysis (optional)
             orderbook = self.client.get_orderbook(token_id)

@@ -149,7 +149,24 @@ class TradeExecutor:
 
             # Use slippage estimator's recommended price if available
             if slippage_check.get('recommended_price'):
-                request.entry_price = slippage_check['recommended_price']
+                recommended_price = slippage_check['recommended_price']
+
+                # Validate the recommended price before accepting it
+                if recommended_price > self.max_entry_price:
+                    logger.warning(
+                        f"⚠️ Trade rejected - Recommended price too high | "
+                        f"{request.outcome} @ ${recommended_price:.3f} | "
+                        f"Max: ${self.max_entry_price:.2f} | "
+                        f"Market: {request.question[:50]}"
+                    )
+                    return TradeResult(
+                        success=False,
+                        reason=f"Recommended price ${recommended_price:.3f} exceeds max ${self.max_entry_price:.2f}",
+                        rejection_reason=f"Recommended price ${recommended_price:.3f} exceeds max ${self.max_entry_price:.2f}",
+                        rejection_stage='price'
+                    )
+
+                request.entry_price = recommended_price
 
         # Stage 3: Execute trade
         execution_result = self._execute_position(request)
