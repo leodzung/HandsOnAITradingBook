@@ -20,6 +20,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from core.polymarket_client import PolymarketClient
+from core.price_fetcher import PriceFetcher
 from utils.market_parser import PriceLevelMarketParser
 from utils.external_data import SpotPriceDataSource
 from features.price_level_features import PriceLevelFeatureExtractor
@@ -202,6 +203,7 @@ class PriceLevelTrader:
 
         # Initialize components
         self.client = PolymarketClient()
+        self.price_fetcher = PriceFetcher(self.client)
         self.parser = PriceLevelMarketParser()
         self.data_source = SpotPriceDataSource(
             cache_minutes=self.config.get('spot_price_cache_minutes', 5)
@@ -388,30 +390,25 @@ class PriceLevelTrader:
                         continue
 
                 # Get current price for monitoring (use BID prices - what we could sell for)
-                event_slug = position.get('slug')
-                current_price = self.client.get_market_yes_price(
-                    market_id,
-                    event_slug=event_slug,
-                    side='SELL'  # Use bid prices for position monitoring
-                )
-                if current_price is None:
+                exit_prices = self.price_fetcher.get_exit_prices(market_id)
+                if exit_prices is None:
                     continue
+
+                # Get current price based on position outcome
+                outcome = position.get('outcome', 'YES')
+                current_token_price = exit_prices.get_outcome_price(outcome)
+                current_yes_price = exit_prices.yes_price  # For trailing stop tracking
 
                 entry_price = position['entry_price']
                 if entry_price <= 0:
                     continue
 
                 # Calculate P&L % based on position type
-                # entry_price is the actual token price (YES price for YES, NO price for NO)
-                outcome = position.get('outcome', 'YES')
-                if outcome == 'YES':
-                    current_token_price = current_price  # YES price
-                else:
-                    current_token_price = 1.0 - current_price  # NO price
+                # entry_price and current_token_price are both actual token prices (YES or NO)
                 pnl_pct = ((current_token_price - entry_price) / entry_price) * 100
 
-                # Update price extremes for trailing stop
-                extremes = self.position_manager.update_price_extremes(market_id, current_price)
+                # Update price extremes for trailing stop (always use YES price)
+                extremes = self.position_manager.update_price_extremes(market_id, current_yes_price)
 
                 # Check stop-loss
                 if sl_config.get('enabled') and pnl_pct <= -sl_config.get('pct', 20):
@@ -432,10 +429,10 @@ class PriceLevelTrader:
                 elif sl_config.get('trailing') and pnl_pct > 0:
                     highest = extremes.get('highest_price_seen')
                     trailing_dist = sl_config.get('trailing_distance_pct', 10)
-                    if highest and current_price <= highest * (1 - trailing_dist / 100):
+                    if highest and current_yes_price <= highest * (1 - trailing_dist / 100):
                         exit_reason = 'trailing_stop'
                         logger.info(f"[Monitor] Trailing stop for {position['asset']}: "
-                                   f"peak ${highest:.3f} → ${current_price:.3f}")
+                                   f"peak ${highest:.3f} → ${current_yes_price:.3f}")
 
                 if exit_reason:
                     positions_to_close.append((market_id, exit_reason))
@@ -729,21 +726,20 @@ class PriceLevelTrader:
             return None
 
         try:
-            # Get prices EXCLUSIVELY from CLOB API (not Gamma)
-            # This ensures we're using actual orderbook ask prices for entry
+            # Get entry prices using centralized PriceFetcher
             condition_id = parsed_market.get('conditionId')
             if not condition_id:
                 logger.warning("  No condition_id available")
                 return None
 
-            # Get both YES and NO prices directly from CLOB orderbook (use BUY side for entry)
-            prices = self.client.get_market_prices(condition_id, side='BUY')
-            market_price = prices.get('yes')  # YES ask price (cost to buy YES tokens)
-            no_price = prices.get('no')        # NO ask price (cost to buy NO tokens)
-
-            if market_price is None or no_price is None:
-                logger.warning("  No market prices available from CLOB orderbook")
+            # Get entry prices (ASK prices from CLOB orderbook)
+            entry_prices = self.price_fetcher.get_entry_prices(condition_id)
+            if entry_prices is None:
+                logger.warning("  No entry prices available from CLOB orderbook")
                 return None
+
+            market_price = entry_prices.yes_price
+            no_price = entry_prices.no_price
 
             # Orderbook is still useful for liquidity/spread analysis (optional)
             orderbook = self.client.get_orderbook(token_id)
@@ -1048,22 +1044,19 @@ class PriceLevelTrader:
                 position_size = position['position_size']
                 total_deployed += position_size
 
-                # Get current price
-                event_slug = position.get('slug')
-                current_price = self.client.get_market_yes_price(market_id, event_slug=event_slug)
+                # Get current price using PriceFetcher (exit prices - bid)
+                exit_prices = self.price_fetcher.get_exit_prices(market_id)
 
-                if current_price is None or entry_price <= 0:
+                if exit_prices is None or entry_price <= 0:
                     logger.info(f"  {asset}: ${position_size:.0f} @ ${entry_price:.3f} (price unavailable)")
                     continue
 
                 # Calculate unrealized P&L
-                # entry_price is the actual token price (YES or NO)
+                # entry_price and current_token_price are both actual token prices (YES or NO)
                 outcome = position.get('outcome', 'YES')
+                current_token_price = exit_prices.get_outcome_price(outcome)
                 tokens = position_size / entry_price
-                if outcome == 'YES':
-                    current_value = tokens * current_price
-                else:  # NO position
-                    current_value = tokens * (1.0 - current_price)
+                current_value = tokens * current_token_price
                 unrealized_pnl = current_value - position_size
                 pnl_pct = (unrealized_pnl / position_size) * 100
                 total_unrealized_pnl += unrealized_pnl
@@ -1113,33 +1106,23 @@ class PriceLevelTrader:
                 return
 
             if exit_price is None:
-                event_slug = position.get('slug')  # May be None
-                # Use SELL prices (bid) - what we'd actually get for selling our tokens
-                prices = self.client.get_market_prices(market_id, side='SELL')
-                yes_exit_price = prices.get('yes')
-                no_exit_price = prices.get('no')
+                # Get exit prices using centralized PriceFetcher (bid prices)
+                exit_prices = self.price_fetcher.get_exit_prices(market_id)
 
-                # Log both prices for debugging (always log, not just debug mode)
-                logger.info(f"  API returned: YES=${yes_exit_price}, NO=${no_exit_price}")
+                if exit_prices is not None:
+                    yes_exit_price = exit_prices.yes_price
+                    no_exit_price = exit_prices.no_price
 
-                # SAFETY: Verify API prices are reasonable
-                if yes_exit_price is not None and no_exit_price is not None:
-                    price_sum = yes_exit_price + no_exit_price
-                    if abs(price_sum - 1.0) > 0.05:  # Prices should sum to ~1.0
-                        logger.warning(f"  ⚠️ API prices don't sum to 1.0: YES+NO={price_sum:.3f}")
+                    # Log both prices for debugging (always log, not just debug mode)
+                    logger.info(f"  PriceFetcher returned: YES=${yes_exit_price:.3f}, NO=${no_exit_price:.3f}")
 
-                # Use actual token price based on outcome
-                if outcome == 'YES':
-                    exit_price = yes_exit_price
-                else:  # NO position
-                    exit_price = no_exit_price
-                    if exit_price is None and yes_exit_price is not None:
-                        # Fallback to inferred price only if API doesn't return NO price
-                        exit_price = 1.0 - yes_exit_price
-                        logger.debug(f"  Using inferred NO price: {exit_price:.3f}")
-
-                if exit_price is not None:
+                    # Use actual token price based on outcome
+                    exit_price = exit_prices.get_outcome_price(outcome)
                     logger.info(f"  Fetched exit price for {outcome} position: ${exit_price:.3f}")
+                else:
+                    logger.warning(f"  PriceFetcher returned None for market {market_id}")
+                    yes_exit_price = None
+                    no_exit_price = None
 
             # SAFETY: Do NOT close if we can't verify the exit price
             # Exception: expiry-based closes where we should use last known price

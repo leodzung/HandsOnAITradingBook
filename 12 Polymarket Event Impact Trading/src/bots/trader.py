@@ -12,6 +12,7 @@ import numpy as np
 import json
 
 from polymarket_client import PolymarketClient, MarketFilter
+from price_fetcher import PriceFetcher
 from event_detector import EventDetector
 from feature_extractor import FeatureEngineering
 from models import PriceMovementPredictor, TradingSignalGenerator, ModelPerformanceTracker
@@ -198,6 +199,10 @@ class PolymarketTrader:
             api_secret=config.get('polymarket_api_secret'),
             private_key=config.get('polymarket_private_key')
         )
+
+        # Initialize centralized price fetcher
+        self.price_fetcher = PriceFetcher(self.client)
+        logger.info("✓ Price fetcher initialized")
 
         self.event_detector = EventDetector(
             news_api_key=config.get('news_api_key'),
@@ -452,18 +457,18 @@ class PolymarketTrader:
         Returns:
             Dictionary with model-compatible features
         """
-        # Get current price from CLOB orderbook (not Gamma API)
+        # Get current price using PriceFetcher (entry prices)
         condition_id = market.get('conditionId') or market.get('condition_id')
         if not condition_id:
             logger.warning("No condition_id available for price fetching")
             return {}  # Return empty features - cannot proceed without price
 
-        prices = self.client.get_market_prices(condition_id, side='BUY')
-        current_price = prices.get('yes')
-
-        if current_price is None:
-            logger.warning("No YES price available from CLOB")
+        entry_prices = self.price_fetcher.get_entry_prices(condition_id)
+        if entry_prices is None:
+            logger.warning("No entry prices available from CLOB")
             return {}  # Return empty features - cannot proceed without price
+
+        current_price = entry_prices.yes_price
 
         # Get market volume - try multiple sources
         market_volume = features.get('market_volume', 0.0)
@@ -663,27 +668,20 @@ class PolymarketTrader:
             logger.warning(f"No token_id for market {market_id}")
             return
 
-        # Get current prices (both YES and NO)
-        # Get prices from CLOB orderbook ONLY (not Gamma API)
+        # Get current prices using PriceFetcher (entry prices)
         condition_id = market.get('conditionId') or market.get('condition_id')
         if not condition_id:
             logger.warning(f"No condition_id for market - skipping")
             return
 
-        prices = self.client.get_market_prices(condition_id, side='BUY')
-        yes_price = prices.get('yes')
-        no_price = prices.get('no')
-
-        if yes_price is None or no_price is None:
-            logger.warning(f"No CLOB prices available for market - skipping")
+        entry_prices = self.price_fetcher.get_entry_prices(condition_id)
+        if entry_prices is None:
+            logger.warning(f"No entry prices available from CLOB - skipping")
             return
 
-        if yes_price is None:
-            logger.warning(f"No price data for {market_id}")
-            return
-
-        # Use YES price for general operations (current_price is YES price)
-        current_price = yes_price
+        yes_price = entry_prices.yes_price
+        no_price = entry_prices.no_price
+        current_price = yes_price  # Use YES price for general operations
 
         # Get orderbook for features
         orderbook = self.client.get_orderbook(token_id)
@@ -900,10 +898,12 @@ class PolymarketTrader:
                 positions_to_close.append((market_id, exit_reason))
                 continue
 
-            # Get current price for SL/TP checks using CLOB API (use SELL prices - what we'd get)
-            current_price = self.client.get_market_yes_price(market_id, side='SELL')
-            if current_price is None:
+            # Get current price for SL/TP checks using PriceFetcher (exit prices - bid)
+            exit_prices = self.price_fetcher.get_exit_prices(market_id)
+            if exit_prices is None:
                 continue
+
+            current_yes_price = exit_prices.yes_price
 
             # Calculate P&L percentage
             entry_price = position['entry_price']
@@ -911,17 +911,19 @@ class PolymarketTrader:
                 continue
 
             # Calculate P&L % based on position type
-            # entry_price is the actual token price (YES or NO)
-            if position['side'] == 'BUY':
-                # YES position: profit when YES price goes up
-                current_token_price = current_price
+            # Get current token price based on outcome (YES or NO tokens)
+            outcome = position['side']  # This stores the outcome (YES or NO)
+            if outcome == 'YES':
+                current_token_price = exit_prices.yes_price
+            elif outcome == 'NO':
+                current_token_price = exit_prices.no_price
             else:
-                # NO position: current token price is 1 - YES price
-                current_token_price = 1.0 - current_price
+                logger.error(f"Invalid outcome '{outcome}' in position {market_id}")
+                continue
             pnl_pct = ((current_token_price - entry_price) / entry_price) * 100
 
-            # Update price extremes for trailing stop
-            extremes = self.position_manager.update_price_extremes(market_id, current_price)
+            # Update price extremes for trailing stop (always use YES price)
+            extremes = self.position_manager.update_price_extremes(market_id, current_yes_price)
 
             # Check stop-loss
             if sl_config.get('enabled') and pnl_pct <= -sl_config.get('pct', 15):
@@ -937,10 +939,10 @@ class PolymarketTrader:
             elif sl_config.get('trailing') and pnl_pct > 0:
                 highest = extremes.get('highest_price_seen')
                 trailing_dist = sl_config.get('trailing_distance_pct', 10)
-                if highest and current_price <= highest * (1 - trailing_dist / 100):
+                if highest and current_yes_price <= highest * (1 - trailing_dist / 100):
                     exit_reason = 'trailing_stop'
                     logger.info(f"  Trailing stop triggered for {market_id}: "
-                               f"peak ${highest:.3f} → ${current_price:.3f}")
+                               f"peak ${highest:.3f} → ${current_yes_price:.3f}")
 
             if exit_reason:
                 positions_to_close.append((market_id, exit_reason))
@@ -962,30 +964,27 @@ class PolymarketTrader:
 
         position = self.position_timers[market_id]
 
-        # Get exit prices from CLOB API (both YES and NO) - use SELL prices
-        prices = self.client.get_market_prices(market_id, side='SELL')
-        yes_exit_price = prices.get('yes')
-        no_exit_price = prices.get('no')
-
-        if yes_exit_price is None and no_exit_price is None:
+        # Get exit prices using PriceFetcher (bid prices)
+        exit_prices = self.price_fetcher.get_exit_prices(market_id)
+        if exit_prices is None:
             logger.warning(f"Cannot get exit prices for {market_id} - skipping close")
             return
 
-        # Use actual token price based on side
-        if position['side'] == 'BUY':  # YES position
-            exit_price = yes_exit_price
-            if exit_price is None:
-                logger.warning(f"Cannot get YES exit price for {market_id} - skipping close")
-                return
-        else:  # NO position
-            exit_price = no_exit_price
-            if exit_price is None:
-                # Fallback to inferred price only if API doesn't return NO price
-                exit_price = 1.0 - yes_exit_price if yes_exit_price else None
-                if exit_price is None:
-                    logger.warning(f"Cannot get NO exit price for {market_id} - skipping close")
-                    return
-                logger.debug(f"Using inferred NO price: {exit_price:.3f}")
+        # Use actual token price based on outcome (YES or NO tokens)
+        outcome = position['side']  # This stores the outcome (YES or NO)
+        if outcome == 'YES':
+            exit_price = exit_prices.yes_price
+        elif outcome == 'NO':
+            exit_price = exit_prices.no_price
+        else:
+            logger.error(f"Invalid outcome '{outcome}' in position {market_id} - skipping close")
+            return
+
+        if exit_price is None:
+            logger.warning(f"Cannot get exit price for {outcome} position {market_id} - skipping close")
+            return
+
+        logger.info(f"  Fetched exit price for {outcome} position: ${exit_price:.3f}")
 
         entry_price = position['entry_price']
 
