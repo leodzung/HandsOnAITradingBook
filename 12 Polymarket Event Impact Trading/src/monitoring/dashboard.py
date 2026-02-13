@@ -418,6 +418,23 @@ def get_market_name(market_id: str) -> str:
         return 'Unknown Market'
 
 
+@st.cache_data(ttl=300)  # Cache for 5 minutes
+def get_market_info(market_id: str) -> dict:
+    """Fetch market info (name and slug) from Polymarket CLOB API."""
+    try:
+        url = f"https://clob.polymarket.com/markets/{market_id}"
+        response = requests.get(url, timeout=5)
+        if response.status_code == 200:
+            data = response.json()
+            return {
+                'name': data.get('question', data.get('description', 'Unknown Market')),
+                'slug': data.get('market_slug', None)
+            }
+        return {'name': 'Unknown Market', 'slug': None}
+    except:
+        return {'name': 'Unknown Market', 'slug': None}
+
+
 def get_current_price(market_id: str) -> float:
     """Fetch current YES price from Polymarket CLOB API (legacy wrapper)."""
     prices = get_current_prices(market_id)
@@ -838,15 +855,16 @@ with tab2:
             entry_time = row.get('entry_time', '')
             hours_to_expiry = row.get('hours_to_expiry_at_entry', 0) or 0
 
-            # Get market name
+            # Get market name and slug for direct link
             if 'question' in row and pd.notna(row.get('question')) and row.get('question'):
                 market_name = str(row.get('question'))[:60]
+                # Try to fetch slug for direct link
+                market_info = get_market_info(market_id)
+                market_slug = market_info.get('slug')
             else:
-                market_name = get_market_name(market_id)
-                if market_name and market_name != 'Unknown Market':
-                    market_name = market_name[:60]
-                else:
-                    market_name = 'Unknown Market'
+                market_info = get_market_info(market_id)
+                market_name = market_info.get('name', 'Unknown Market')[:60]
+                market_slug = market_info.get('slug')
 
             # Format entry date
             if pd.notna(entry_time):
@@ -857,8 +875,12 @@ with tab2:
             else:
                 entry_date = 'N/A'
 
-            # Create Polymarket URL (use search for short-expiry markets)
-            poly_url = f"https://polymarket.com/markets?_q={quote(str(market_name)[:30])}"
+            # Create Polymarket URL - use direct link if slug available
+            if market_slug:
+                poly_url = f"https://polymarket.com/event/{market_slug}"
+            else:
+                # Fallback to search if no slug
+                poly_url = f"https://polymarket.com/markets?_q={quote(str(market_name)[:30])}"
 
             # Get current price
             prices = get_current_prices(market_id)
@@ -978,15 +1000,16 @@ with tab2:
             entry_time = row.get('entry_time', '')
             exit_time = row.get('exit_time', '')
 
-            # Get market name
+            # Get market name and slug for direct link
             if 'question' in row and pd.notna(row.get('question')) and row.get('question'):
                 market_name = str(row.get('question'))[:50]
+                # Try to fetch slug for direct link
+                market_info = get_market_info(market_id)
+                market_slug = market_info.get('slug')
             else:
-                market_name = get_market_name(market_id)
-                if market_name and market_name != 'Unknown Market':
-                    market_name = market_name[:50]
-                else:
-                    market_name = 'Unknown Market'
+                market_info = get_market_info(market_id)
+                market_name = market_info.get('name', 'Unknown Market')[:50]
+                market_slug = market_info.get('slug')
 
             # Format dates
             if pd.notna(entry_time):
@@ -1005,8 +1028,12 @@ with tab2:
             else:
                 exit_date = 'N/A'
 
-            # Create Polymarket URL
-            poly_url = f"https://polymarket.com/markets?_q={quote(str(market_name)[:30])}"
+            # Create Polymarket URL - use direct link if slug available
+            if market_slug:
+                poly_url = f"https://polymarket.com/event/{market_slug}"
+            else:
+                # Fallback to search if no slug
+                poly_url = f"https://polymarket.com/markets?_q={quote(str(market_name)[:30])}"
 
             # Color code P&L
             pnl_color = "🟢" if pnl and pnl > 0 else "🔴"
