@@ -145,6 +145,33 @@ class ShortExpiryPositionManager:
             """, (current_price, market_id, outcome))
             conn.commit()
 
+    def update_price_extremes(self, market_id: str, outcome: str, current_price: float):
+        """Update highest/lowest prices seen for trailing stop logic."""
+        with sqlite3.connect(self.db_path) as conn:
+            # Get current extremes
+            cursor = conn.execute("""
+                SELECT highest_price_seen, lowest_price_seen
+                FROM positions
+                WHERE market_id = ? AND outcome = ? AND status = 'open'
+            """, (market_id, outcome))
+            row = cursor.fetchone()
+
+            if not row:
+                return
+
+            highest, lowest = row
+
+            # Update if new extreme
+            new_highest = max(highest or current_price, current_price)
+            new_lowest = min(lowest or current_price, current_price)
+
+            conn.execute("""
+                UPDATE positions
+                SET highest_price_seen = ?, lowest_price_seen = ?, current_price = ?
+                WHERE market_id = ? AND outcome = ? AND status = 'open'
+            """, (new_highest, new_lowest, current_price, market_id, outcome))
+            conn.commit()
+
     def close_position(self, market_id: str, outcome: str, exit_price: float,
                       exit_reason: str):
         """Close a position."""
@@ -656,10 +683,72 @@ class ShortExpiryTrader:
         positions = self.position_manager.get_open_positions()
 
         for pos in positions:
-            # For now, skip actual price fetching (will integrate with API)
-            # In Phase 1, we'll just log position checks
-            logger.debug(f"Checking position: {pos['market_id']} | "
-                        f"Outcome: {pos['outcome']} | Entry: {pos['entry_price']}")
+            market_id = pos['market_id']
+            outcome = pos['outcome']
+            entry_price = pos['entry_price']
+            entry_time_str = pos['entry_time']
+            hours_to_expiry = pos.get('hours_to_expiry_at_entry', 0)
+            bucket = pos.get('bucket', 'unknown')
+
+            logger.debug(f"Checking position: {market_id[:16]}... | "
+                        f"Outcome: {outcome} | Entry: {entry_price:.4f}")
+
+            # Check if market has expired based on entry time + hours_to_expiry
+            if hours_to_expiry > 0:
+                entry_time = datetime.fromisoformat(entry_time_str.replace('Z', '+00:00'))
+                expiry_time = entry_time + timedelta(hours=hours_to_expiry)
+                now = datetime.now(timezone.utc)
+
+                if now >= expiry_time:
+                    logger.info(f"Position expired: {market_id[:16]}... | "
+                               f"Expired {(now - expiry_time).total_seconds() / 3600:.1f}h ago")
+                    # Close at entry price (we don't know final outcome)
+                    self.position_manager.close_position(
+                        market_id, outcome, entry_price, 'expiry_time'
+                    )
+                    continue
+
+            # Fetch current market data
+            try:
+                market = self.client.get_market(market_id)
+                if not market:
+                    logger.warning(f"Could not fetch market data for {market_id[:16]}...")
+                    continue
+
+                # Check if market is closed
+                if market.get('closed', False) or not market.get('active', True):
+                    logger.info(f"Market closed: {market_id[:16]}...")
+                    # Close at entry price (we don't know final outcome)
+                    self.position_manager.close_position(
+                        market_id, outcome, entry_price, 'market_closed'
+                    )
+                    continue
+
+                # Get current price for this outcome
+                prices = self.client.get_market_prices(market_id)
+                current_price = prices.get(outcome.lower())
+
+                if current_price is None:
+                    logger.warning(f"Could not get price for {market_id[:16]}... {outcome}")
+                    continue
+
+                # Check exit conditions (stop-loss, take-profit, trailing stop)
+                exit_reason = self.risk_manager.should_exit(pos, current_price, bucket)
+
+                if exit_reason:
+                    logger.info(f"Exit signal: {market_id[:16]}... | {outcome} | "
+                               f"{entry_price:.4f} → {current_price:.4f} | {exit_reason}")
+                    self.position_manager.close_position(
+                        market_id, outcome, current_price, exit_reason
+                    )
+                else:
+                    # Update highest/lowest prices seen (for trailing stop)
+                    self.position_manager.update_price_extremes(
+                        market_id, outcome, current_price
+                    )
+
+            except Exception as e:
+                logger.error(f"Error checking position {market_id[:16]}...: {e}")
 
 
 def main():

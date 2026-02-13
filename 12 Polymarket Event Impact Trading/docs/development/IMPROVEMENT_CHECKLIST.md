@@ -1,6 +1,23 @@
 # Polymarket Trading Bot - Improvement Checklist
 
-> Generated: 2026-01-18 | Last Updated: 2026-02-08 | Status: Active Development
+> Generated: 2026-01-18 | Last Updated: 2026-02-12 | Status: Active Development
+
+---
+
+## Recent Improvements (2026-02-12)
+
+- [x] **Fixed short-expiry bot position monitoring** - Positions stayed "open" forever, even after expiry
+  - Root cause: `_check_positions()` was a stub implementation (only logged, didn't check)
+  - Files: `src/bots/trader_short_expiry.py:654-718`, `scripts/cleanup_expired_positions.py` (NEW)
+  - Fix: Implemented full position monitoring:
+    - Checks expiry time (entry_time + hours_to_expiry_at_entry)
+    - Fetches current market status (closed/active) via API
+    - Gets current prices for YES/NO outcomes
+    - Applies stop-loss and take-profit rules
+    - Tracks highest/lowest prices for trailing stops
+  - Result: Cleaned up 10 expired positions, bot now properly monitors and closes positions
+  - Documentation: `POSITION_MONITORING_FIX.md`, `EXPIRY_FIX_SUMMARY.md`
+  - Database: Added `highest_price_seen`, `lowest_price_seen` columns to positions table
 
 ---
 
@@ -81,6 +98,35 @@ Key papers that can improve the bots:
 - [x] **Reset price tracking database** - Old data corrupted with 0.5 prices. Fresh start with real prices.
 - [x] **Improved `get_market_price()`** - Priority: outcomePrices → last_trade_price → mid-price (only if spread <20%)
 - [x] **Added `get_price_from_market()`** - New method to extract prices from market data
+
+---
+
+## Technical Debt & Refactoring
+
+### Code Architecture Issues
+- [ ] **Consolidate duplicated position management code** - Short-expiry bot duplicates ~100 LOC
+  - Root cause: `ShortExpiryPositionManager` reimplements functionality from shared `PositionManager`
+  - Files affected:
+    - `src/bots/trader_short_expiry.py:47-186` (custom implementation)
+    - `src/core/position_manager.py` (shared framework used by event & price-level traders)
+  - Duplicated functionality:
+    - Database initialization and schema creation
+    - CRUD operations (get, save, close positions)
+    - Price tracking (highest/lowest seen)
+    - Exit reason handling
+  - Unique short-expiry requirements (justifies some customization):
+    - `bucket` field (ultra_short, short, medium)
+    - `hours_to_expiry_at_entry` (critical for time-based expiry)
+    - ML metadata (`edge`, `confidence`, `features_json`)
+    - `outcome` field (YES/NO) instead of `side` (BUY/SELL)
+    - `UNIQUE(market_id, outcome)` constraint
+    - `count_positions_by_bucket()` method
+  - Recommended approach:
+    - **Short-term**: Keep as-is (working, well-tested, unique requirements)
+    - **Medium-term**: Refactor to use inheritance (extend base PositionManager)
+    - **Long-term**: Create unified flexible position manager for all bot types
+  - Documentation: `ARCHITECTURE_ISSUE_POSITION_MANAGERS.md`
+  - Priority: Low (future improvement when adding next bot)
 
 ---
 
