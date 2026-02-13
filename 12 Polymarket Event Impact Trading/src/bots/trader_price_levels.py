@@ -768,6 +768,9 @@ class PriceLevelTrader:
                     'arb_profit_pct': arb_profit
                 }
 
+            # Get original market data for feature extraction
+            orig_market = parsed_market.get('original_market', {})
+
             # Prepare polymarket data structure
             polymarket_data = {
                 'market': orig_market,
@@ -808,7 +811,6 @@ class PriceLevelTrader:
                    f"confidence: {signal['confidence']:.2%})")
 
         # Check for conditional resolution rules (50-50, etc.)
-        orig_market = parsed_market.get('original_market', {})
         if orig_market:
             # Calculate realistic primary event probability based on strike distance
             # For extreme strikes, override ML model which may be miscalibrated
