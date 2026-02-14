@@ -33,6 +33,7 @@ from core.polymarket_client import PolymarketClient
 from core.price_fetcher import PriceFetcher
 from core.slippage_estimator import SlippageEstimator
 from monitoring.telegram_notifier import TelegramNotifier
+from utils.price_tracker import PriceTracker
 
 # Configure logging
 logging.basicConfig(
@@ -319,6 +320,10 @@ class ShortExpiryTrader:
         self.feature_extractor = ShortExpiryFeatureExtractor()
         self.risk_manager = ShortExpiryRiskManager(self.config)
 
+        # Initialize price tracker for historical price data (enables momentum signals)
+        self.price_tracker = PriceTracker(self.config['database']['tracking_db'])
+        logger.info("PriceTracker initialized for momentum feature extraction")
+
         # Initialize slippage estimator
         self.slippage_estimator = SlippageEstimator(
             config=self.config.get('slippage_estimation', {})
@@ -564,8 +569,27 @@ class ShortExpiryTrader:
             if self.position_manager.has_position(market_id):
                 continue
 
-            # Extract features
-            features = self.feature_extractor.extract_all_features(market, bucket)
+            # Track current price for momentum features
+            # Use PriceFetcher to get real-time CLOB prices (WebSocket/REST)
+            try:
+                # Get entry prices (ASK) from CLOB - this uses WebSocket orderbook if available
+                entry_prices = self.price_fetcher.get_entry_prices(market_id)
+                if entry_prices and entry_prices.yes_price is not None:
+                    # Track YES price as the market price proxy
+                    current_price = entry_prices.yes_price
+                    self.price_tracker.track_price(market_id, current_price)
+            except Exception as e:
+                logger.warning(f"Could not track price for {market_id[:16]}...: {e}")
+
+            # Get price history for momentum calculations (last 24 hours)
+            price_history = self.price_tracker.get_price_history(market_id, hours=24)
+
+            # Extract features WITH price history (enables momentum signals)
+            features = self.feature_extractor.extract_all_features(
+                market,
+                bucket,
+                price_history=price_history
+            )
 
             # Generate signal
             signal = self._generate_signal(features, market, bucket)
