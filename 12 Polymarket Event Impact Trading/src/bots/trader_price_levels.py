@@ -202,7 +202,7 @@ class PriceLevelTrader:
         logger.info(f"Config: {config_path}")
 
         # Initialize components
-        self.client = PolymarketClient(config=config)
+        self.client = PolymarketClient(config=self.config)
 
         # Initialize WebSocket orderbook manager for real-time price discovery
         logger.info("Initializing WebSocket orderbook manager...")
