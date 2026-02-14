@@ -31,12 +31,36 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# Initialize session state for timezone
-if 'timezone' not in st.session_state:
-    st.session_state.timezone = 'UTC'
-
-# Constants
+# Constants (needed early for helper functions)
 DATA_DIR = Path("data")
+DASHBOARD_PREFS = DATA_DIR / "dashboard_preferences.json"
+
+# Helper functions for dashboard preferences
+def load_dashboard_preferences() -> dict:
+    """Load dashboard preferences from file."""
+    try:
+        if DASHBOARD_PREFS.exists():
+            with open(DASHBOARD_PREFS, 'r') as f:
+                return json.load(f)
+    except Exception as e:
+        st.warning(f"Could not load dashboard preferences: {e}")
+    return {"timezone": "UTC"}
+
+def save_dashboard_preferences(prefs: dict):
+    """Save dashboard preferences to file."""
+    try:
+        DATA_DIR.mkdir(exist_ok=True)
+        with open(DASHBOARD_PREFS, 'w') as f:
+            json.dump(prefs, f, indent=2)
+    except Exception as e:
+        st.error(f"Could not save dashboard preferences: {e}")
+
+# Initialize session state for timezone from saved preferences
+if 'timezone' not in st.session_state:
+    prefs = load_dashboard_preferences()
+    st.session_state.timezone = prefs.get('timezone', 'UTC')
+
+# Additional constants
 POSITIONS_DB = DATA_DIR / "positions_price_level.db"
 EVENT_POSITIONS_DB = DATA_DIR / "positions.db"
 SHORT_EXPIRY_POSITIONS_DB = DATA_DIR / "positions_short_expiry.db"
@@ -1350,9 +1374,12 @@ with tab6:
             help="All timestamps will be displayed in this timezone"
         )
 
-        # Update session state if changed
+        # Update session state and save to file if changed
         if selected_tz != st.session_state.timezone:
             st.session_state.timezone = selected_tz
+            # Persist to file
+            save_dashboard_preferences({"timezone": selected_tz})
+            st.success(f"Timezone saved: {selected_tz}")
             st.rerun()
 
     with col_tz2:
