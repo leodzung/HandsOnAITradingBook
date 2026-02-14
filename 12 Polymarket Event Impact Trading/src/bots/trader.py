@@ -646,9 +646,22 @@ class PolymarketTrader:
         if category_filter == 'crypto':
             markets = MarketFilter.filter_crypto_markets(markets)
             logger.info(f"Filtered to {len(markets)} crypto markets after category filter")
-        else:
-            logger.info(f"Final market count: {len(markets)}")
 
+        # Apply quality filters (spread, price range, trade activity)
+        quality_config = self.config.get('quality_filters', {})
+        if quality_config.get('enabled', True):
+            markets = MarketFilter.filter_by_quality(
+                markets=markets,
+                price_fetcher=self.price_fetcher,
+                min_price=quality_config.get('min_price', 0.05),
+                max_price=quality_config.get('max_price', 0.95),
+                max_spread_pct=quality_config.get('max_spread_pct', 10.0),
+                check_last_trade=quality_config.get('check_last_trade', True),
+                logger=logger
+            )
+            logger.info(f"Filtered to {len(markets)} markets after quality filter")
+
+        logger.info(f"Final market count: {len(markets)}")
         return markets
 
     def process_signal(self, event, market: Dict):

@@ -502,32 +502,24 @@ class ShortExpiryTrader:
 
     def _filter_tradeable(self, markets: List[Dict], bucket: str) -> List[Dict]:
         """
-        Apply quality filters.
+        Apply quality filters using centralized MarketFilter.filter_by_quality().
 
         Note: Crypto filtering is now handled by MarketFilter.discover_markets().
-        This method only applies spread and price range filters.
+        This method delegates to the centralized quality filter.
         """
-        filtered = []
+        from core.polymarket_client import MarketFilter
+
         config = self.config['discovery']
 
-        for m in markets:
-            # Check spread
-            spread_pct = self._get_spread_pct(m)
-            if spread_pct > config['max_spread_pct'][bucket]:
-                continue
-
-            # Check price range (avoid extremes)
-            prices = self._get_prices(m)
-            if prices['yes'] < config['min_price'] or prices['yes'] > config['max_price']:
-                continue
-
-            # Check that we have pricing data
-            if m.get('lastTradePrice') is None:
-                continue
-
-            filtered.append(m)
-
-        return filtered
+        return MarketFilter.filter_by_quality(
+            markets=markets,
+            price_fetcher=self.price_fetcher,
+            min_price=config['min_price'],
+            max_price=config['max_price'],
+            max_spread_pct=config['max_spread_pct'][bucket],
+            check_last_trade=True,
+            logger=logger
+        )
 
     def _process_bucket(self, bucket: str, markets: List[Dict]):
         """Process markets in a bucket."""
@@ -667,6 +659,14 @@ class ShortExpiryTrader:
             logger.warning(f"No entry price available for {outcome} - skipping trade")
             return
 
+        # Get token_id for the outcome
+        token_ids = self.client.get_token_ids(market_id)
+        token_id = token_ids.get('yes_token_id') if outcome == 'YES' else token_ids.get('no_token_id')
+
+        if not token_id:
+            logger.warning(f"No token_id found for {outcome} - skipping trade")
+            return
+
         # Estimate slippage
         slippage_config = self.config.get('slippage_estimation', {})
         if slippage_config.get('enabled', True):
@@ -684,27 +684,38 @@ class ShortExpiryTrader:
             # Create temporary estimator with bucket-specific config
             estimator = SlippageEstimator(config=bucket_slippage_config)
 
-            # Estimate slippage
-            result = estimator.estimate(
-                market=market,
-                side='BUY',  # Always buying YES or NO tokens
-                size_usd=size,
-                client=self.client
+            # Get orderbook for slippage estimation
+            orderbook = self.client.get_orderbook(token_id)
+            if not orderbook:
+                logger.warning(f"Could not fetch orderbook for slippage estimation - skipping trade")
+                return
+
+            # Get market volume
+            market_data = self.client.get_market(market_id)
+            market_volume_24h = market_data.get('volume_24h', 0) if market_data else 0
+
+            # Estimate slippage using correct API
+            slippage_result = estimator.estimate_slippage(
+                order_side='BUY',
+                order_size=size,
+                orderbook=orderbook,
+                quoted_price=entry_price,
+                market_volume_24h=market_volume_24h
             )
 
-            if not result['can_trade']:
+            if not slippage_result.is_acceptable:
                 logger.warning(
                     f"TRADE REJECTED - Slippage | Bucket: {bucket} | "
                     f"Market: {market.get('question', '')[:50]} | "
-                    f"Reason: {result['reason']} | "
-                    f"Slippage: {result.get('slippage_bps', 0):.0f} bps (${result.get('slippage_dollars', 0):.2f}) | "
+                    f"Reason: {slippage_result.rejection_reason} | "
+                    f"Slippage: {slippage_result.slippage_bps:.0f} bps (${slippage_result.slippage_dollars:.2f}) | "
                     f"Limit: {max_slippage_bps} bps (${max_slippage_dollars})"
                 )
                 return  # Don't execute trade
 
             # Log slippage info
-            slippage_bps = result.get('slippage_bps', 0)
-            slippage_dollars = result.get('slippage_dollars', 0)
+            slippage_bps = slippage_result.slippage_bps
+            slippage_dollars = slippage_result.slippage_dollars
 
             if slippage_bps > warn_threshold_bps:
                 logger.warning(

@@ -17,7 +17,7 @@
   ],
   "market_category_filter": "crypto",
   "model_type": "random_forest",
-  "model_path": "retrained_model_v2.pkl",
+  "model_path": "data/retrained_model_v2.pkl",
   "use_transformers": true,
   "paper_trading": true,
   "paper_trading_balance": 1000.0,
@@ -38,6 +38,13 @@
   "price_history_hours": 24,
   "log_level": "INFO",
   "log_file": "trader.log",
+  "quality_filters": {
+    "enabled": true,
+    "min_price": 0.05,
+    "max_price": 0.95,
+    "max_spread_pct": 10.0,
+    "check_last_trade": true
+  },
   "stop_loss": {
     "enabled": true,
     "pct": 15,

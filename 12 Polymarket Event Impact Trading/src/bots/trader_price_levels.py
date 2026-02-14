@@ -637,7 +637,36 @@ class PriceLevelTrader:
                     continue
                 filtered_markets.append(market)
 
-        logger.info(f"Filtered to {len(filtered_markets)} tradeable price-level markets")
+        logger.info(f"After expiry filter: {len(filtered_markets)} price-level markets")
+
+        # Apply quality filters (spread, price range, trade activity)
+        from core.polymarket_client import MarketFilter
+        quality_config = self.config.get('quality_filters', {})
+        if quality_config.get('enabled', True):
+            # Extract original markets for quality filtering
+            markets_for_quality_check = []
+            for m in filtered_markets:
+                orig = m.get('original_market', m)
+                markets_for_quality_check.append(orig)
+
+            quality_filtered = MarketFilter.filter_by_quality(
+                markets=markets_for_quality_check,
+                price_fetcher=self.price_fetcher,
+                min_price=quality_config.get('min_price', 0.05),
+                max_price=quality_config.get('max_price', 0.95),
+                max_spread_pct=quality_config.get('max_spread_pct', 15.0),
+                check_last_trade=quality_config.get('check_last_trade', True),
+                logger=logger
+            )
+
+            # Keep only markets that passed quality filter
+            quality_ids = {m.get('conditionId') for m in quality_filtered}
+            filtered_markets = [m for m in filtered_markets
+                              if (m.get('original_market', m)).get('conditionId') in quality_ids]
+
+            logger.info(f"After quality filter: {len(filtered_markets)} tradeable price-level markets")
+        else:
+            logger.info(f"Filtered to {len(filtered_markets)} tradeable price-level markets")
 
         return filtered_markets
 

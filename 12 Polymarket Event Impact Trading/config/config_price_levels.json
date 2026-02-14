@@ -26,6 +26,14 @@
   "min_market_volume": 1000,
   "min_liquidity": 500,
 
+  "quality_filters": {
+    "enabled": true,
+    "min_price": 0.05,
+    "max_price": 0.95,
+    "max_spread_pct": 15.0,
+    "check_last_trade": true
+  },
+
   "cycle_interval_seconds": 3600,
 
   "spot_price_cache_minutes": 5,
@@ -59,8 +67,8 @@
 
   "slippage_estimation": {
     "enabled": true,
-    "max_slippage_bps": 6000,
-    "max_slippage_dollars": 50.0,
+    "max_slippage_bps": 12000,
+    "max_slippage_dollars": 100.0,
     "orderbook_staleness_seconds": 10,
     "depth_buffer_pct": 0.10,
     "volatility_adjustment": false,
