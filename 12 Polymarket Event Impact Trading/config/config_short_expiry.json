@@ -63,6 +63,11 @@
     "min_confidence": 0.55
   },
 
+  "orderbook_source": "websocket",
+  "orderbook": {
+    "cache_ttl_seconds": 5
+  },
+
   "slippage_estimation": {
     "enabled": true,
     "max_slippage_bps": {

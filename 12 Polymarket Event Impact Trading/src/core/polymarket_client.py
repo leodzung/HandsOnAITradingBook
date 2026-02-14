@@ -27,7 +27,7 @@ class PolymarketClient:
     }
 
     def __init__(self, api_key: Optional[str] = None, api_secret: Optional[str] = None,
-                 private_key: Optional[str] = None):
+                 private_key: Optional[str] = None, config: Optional[Dict] = None):
         """
         Initialize Polymarket client.
 
@@ -35,11 +35,17 @@ class PolymarketClient:
             api_key: API key for authenticated requests
             api_secret: API secret for signing requests
             private_key: Ethereum private key for order signing
+            config: Optional configuration dict
         """
         self.api_key = api_key
         self.api_secret = api_secret
         self.private_key = private_key
         self.session = requests.Session()
+        self.config = config or {}
+
+        # Orderbook manager for WebSocket/REST switching
+        self._orderbook_manager = None
+        self._orderbook_source = self.config.get('orderbook_source', 'websocket')
 
     @classmethod
     def build_market_url(cls, market: Dict = None, event_slug: str = None,
@@ -563,9 +569,10 @@ class PolymarketClient:
         """
         Get order book for a specific token.
 
-        WARNING: The /book endpoint returns STALE data (0.99/0.01).
-        Do NOT use this for pricing! Use get_token_price() instead.
-        Only use this for orderbook depth analysis.
+        Automatically uses WebSocket (real-time) or REST (synthetic) based on configuration.
+
+        Configuration:
+            orderbook_source: 'websocket' or 'rest' (default: 'websocket')
 
         See: https://github.com/Polymarket/py-clob-client/issues/180
 
@@ -573,18 +580,118 @@ class PolymarketClient:
             token_id: Token ID
 
         Returns:
-            Order book with bids and asks
+            Order book with bids and asks (real from WebSocket or synthetic from /price)
+        """
+        # Use orderbook manager if initialized
+        if self._orderbook_manager:
+            return self._orderbook_manager.get_orderbook(token_id)
+
+        # Fallback to synthetic if manager not initialized
+        return self.get_synthetic_orderbook(token_id)
+
+    def initialize_orderbook_manager(self, source: Optional[str] = None):
+        """
+        Initialize the orderbook manager for WebSocket or REST orderbooks.
+
+        Args:
+            source: 'websocket' or 'rest' (defaults to config setting)
+        """
+        import logging
+        from core.orderbook_manager import OrderbookManager
+
+        logger = logging.getLogger(__name__)
+        source = source or self._orderbook_source
+
+        self._orderbook_manager = OrderbookManager(
+            client=self,
+            source=source,
+            config=self.config.get('orderbook', {})
+        )
+
+        # Start if WebSocket
+        if source == 'websocket':
+            success = self._orderbook_manager.start()
+            if not success:
+                logger.warning("WebSocket failed to start, falling back to REST")
+                self._orderbook_manager = OrderbookManager(
+                    client=self,
+                    source='rest',
+                    config=self.config.get('orderbook', {})
+                )
+
+        logger.info(f"Orderbook manager initialized: {source}")
+        return self._orderbook_manager
+
+    def register_market_for_orderbook(self, condition_id: str, question: str = ""):
+        """
+        Register a market for orderbook tracking (WebSocket subscriptions).
+
+        Args:
+            condition_id: Market condition ID
+            question: Market question (for logging)
+        """
+        if not self._orderbook_manager:
+            return
+
+        # Get token IDs
+        tokens = self.get_token_ids(condition_id)
+        yes_token = tokens.get('yes_token_id')
+        no_token = tokens.get('no_token_id')
+
+        if yes_token and no_token:
+            self._orderbook_manager.register_market(
+                condition_id, yes_token, no_token, question
+            )
+
+    def get_synthetic_orderbook(self, token_id: str, depth_levels: int = 5) -> Dict:
+        """
+        Create a synthetic orderbook using /price endpoint (avoids broken /book).
+
+        Since /book returns stale data, we create a simple orderbook structure
+        using the accurate /price endpoint with assumed spread and depth.
+
+        Args:
+            token_id: Token ID
+            depth_levels: Number of price levels to generate (default 5)
+
+        Returns:
+            Dict with 'bids' and 'asks' in standard orderbook format
         """
         try:
-            response = self.session.get(
-                f"{self.BASE_URL}/book",
-                params={'token_id': token_id},
-                headers=self._get_headers()
-            )
-            response.raise_for_status()
-            return response.json()
+            # Get accurate price from /price endpoint
+            ask_price = self.get_token_price(token_id, side='sell')  # Price to BUY
+            bid_price = self.get_token_price(token_id, side='buy')   # Price to SELL
+
+            if ask_price is None or bid_price is None:
+                return {'bids': [], 'asks': []}
+
+            # Create synthetic orderbook with decreasing liquidity at each level
+            # This simulates a realistic orderbook where best levels have most liquidity
+            asks = []
+            bids = []
+
+            # Assumed liquidity at best level (in shares)
+            base_size = 1000
+
+            for i in range(depth_levels):
+                # Each level is progressively worse price and less liquidity
+                level_multiplier = 1 + (i * 0.01)  # 1%, 2%, 3%, etc. worse price
+                size_multiplier = 1.0 / (1 + i * 0.3)  # Decreasing size
+
+                # ASKs (selling to you = you buying)
+                ask_level_price = min(ask_price * level_multiplier, 0.99)
+                ask_level_size = base_size * size_multiplier
+                asks.append([ask_level_price, ask_level_size])
+
+                # BIDs (buying from you = you selling)
+                bid_level_price = max(bid_price / level_multiplier, 0.01)
+                bid_level_size = base_size * size_multiplier
+                bids.append([bid_level_price, bid_level_size])
+
+            return {'asks': asks, 'bids': bids}
+
         except Exception as e:
-            print(f"Error fetching orderbook for {token_id}: {e}")
+            print(f"Error creating synthetic orderbook for {token_id}: {e}")
             return {'bids': [], 'asks': []}
 
     def get_token_price(self, token_id: str, side: str = 'sell') -> Optional[float]:

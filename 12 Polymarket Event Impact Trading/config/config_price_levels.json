@@ -76,6 +76,11 @@
     "warn_threshold_bps": 3000
   },
 
+  "orderbook_source": "websocket",
+  "orderbook": {
+    "cache_ttl_seconds": 5
+  },
+
   "telegram": {
     "enabled": true,
     "bot_token": "8068515860:AAEiKpTK0RtHo5dURsbu7ey8Xa8r3A2xEHA",
