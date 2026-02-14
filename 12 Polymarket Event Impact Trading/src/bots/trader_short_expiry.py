@@ -32,6 +32,7 @@ from features.short_expiry_features import ShortExpiryFeatureExtractor
 from core.polymarket_client import PolymarketClient
 from core.price_fetcher import PriceFetcher
 from core.slippage_estimator import SlippageEstimator
+from core.position_manager_v2 import PositionManager
 from monitoring.telegram_notifier import TelegramNotifier
 from utils.price_tracker import PriceTracker
 
@@ -47,174 +48,6 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-class ShortExpiryPositionManager:
-    """Manage positions for short-expiry trading."""
-
-    def __init__(self, db_path: str):
-        self.db_path = db_path
-        self._init_db()
-
-    def _init_db(self):
-        """Initialize database schema."""
-        with sqlite3.connect(self.db_path) as conn:
-            conn.execute("""
-                CREATE TABLE IF NOT EXISTS positions (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    market_id TEXT NOT NULL,
-                    token_id TEXT NOT NULL,
-                    outcome TEXT NOT NULL,
-                    entry_price REAL NOT NULL,
-                    current_price REAL,
-                    size REAL NOT NULL,
-                    entry_time TEXT NOT NULL,
-                    exit_time TEXT,
-                    exit_price REAL,
-                    pnl REAL,
-                    pnl_pct REAL,
-                    bucket TEXT NOT NULL,
-                    hours_to_expiry_at_entry REAL,
-                    edge REAL,
-                    confidence REAL,
-                    signal_reason TEXT,
-                    exit_reason TEXT,
-                    status TEXT DEFAULT 'open',
-                    features_json TEXT,
-                    UNIQUE(market_id, outcome)
-                )
-            """)
-            conn.commit()
-
-    def has_position(self, market_id: str) -> bool:
-        """Check if we have an open position for this market."""
-        with sqlite3.connect(self.db_path) as conn:
-            cursor = conn.execute(
-                "SELECT COUNT(*) FROM positions WHERE market_id = ? AND status = 'open'",
-                (market_id,)
-            )
-            return cursor.fetchone()[0] > 0
-
-    def get_open_positions(self) -> List[Dict]:
-        """Get all open positions."""
-        with sqlite3.connect(self.db_path) as conn:
-            cursor = conn.execute(
-                "SELECT * FROM positions WHERE status = 'open'"
-            )
-            columns = [desc[0] for desc in cursor.description]
-            rows = cursor.fetchall()
-            return [dict(zip(columns, row)) for row in rows]
-
-    def count_positions_by_bucket(self, bucket: str) -> int:
-        """Count open positions in a specific bucket."""
-        with sqlite3.connect(self.db_path) as conn:
-            cursor = conn.execute(
-                "SELECT COUNT(*) FROM positions WHERE bucket = ? AND status = 'open'",
-                (bucket,)
-            )
-            return cursor.fetchone()[0]
-
-    def add_position(self, position: Dict):
-        """Add a new position."""
-        with sqlite3.connect(self.db_path) as conn:
-            conn.execute("""
-                INSERT INTO positions (
-                    market_id, token_id, outcome, entry_price, current_price,
-                    size, entry_time, bucket, hours_to_expiry_at_entry,
-                    edge, confidence, signal_reason, features_json
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """, (
-                position['market_id'],
-                position['token_id'],
-                position['outcome'],
-                position['entry_price'],
-                position['entry_price'],
-                position['size'],
-                position['entry_time'],
-                position['bucket'],
-                position.get('hours_to_expiry', 0),
-                position.get('edge', 0),
-                position.get('confidence', 0),
-                position.get('signal_reason', ''),
-                position.get('features_json', '{}')
-            ))
-            conn.commit()
-
-    def update_position_price(self, market_id: str, outcome: str, current_price: float):
-        """Update current price for a position."""
-        with sqlite3.connect(self.db_path) as conn:
-            conn.execute("""
-                UPDATE positions
-                SET current_price = ?
-                WHERE market_id = ? AND outcome = ? AND status = 'open'
-            """, (current_price, market_id, outcome))
-            conn.commit()
-
-    def update_price_extremes(self, market_id: str, outcome: str, current_price: float):
-        """Update highest/lowest prices seen for trailing stop logic."""
-        with sqlite3.connect(self.db_path) as conn:
-            # Get current extremes
-            cursor = conn.execute("""
-                SELECT highest_price_seen, lowest_price_seen
-                FROM positions
-                WHERE market_id = ? AND outcome = ? AND status = 'open'
-            """, (market_id, outcome))
-            row = cursor.fetchone()
-
-            if not row:
-                return
-
-            highest, lowest = row
-
-            # Update if new extreme
-            new_highest = max(highest or current_price, current_price)
-            new_lowest = min(lowest or current_price, current_price)
-
-            conn.execute("""
-                UPDATE positions
-                SET highest_price_seen = ?, lowest_price_seen = ?, current_price = ?
-                WHERE market_id = ? AND outcome = ? AND status = 'open'
-            """, (new_highest, new_lowest, current_price, market_id, outcome))
-            conn.commit()
-
-    def close_position(self, market_id: str, outcome: str, exit_price: float,
-                      exit_reason: str):
-        """Close a position."""
-        with sqlite3.connect(self.db_path) as conn:
-            # Get entry price
-            cursor = conn.execute("""
-                SELECT entry_price, size FROM positions
-                WHERE market_id = ? AND outcome = ? AND status = 'open'
-            """, (market_id, outcome))
-            row = cursor.fetchone()
-            if not row:
-                logger.warning(f"Position not found: {market_id} {outcome}")
-                return
-
-            entry_price, size = row
-            pnl = (exit_price - entry_price) * size
-            pnl_pct = ((exit_price - entry_price) / entry_price) * 100 if entry_price > 0 else 0
-
-            # Update position
-            conn.execute("""
-                UPDATE positions
-                SET exit_price = ?, exit_time = ?, pnl = ?, pnl_pct = ?,
-                    exit_reason = ?, status = 'closed'
-                WHERE market_id = ? AND outcome = ? AND status = 'open'
-            """, (
-                exit_price,
-                datetime.now(timezone.utc).isoformat(),
-                pnl,
-                pnl_pct,
-                exit_reason,
-                market_id,
-                outcome
-            ))
-            conn.commit()
-
-            logger.info(f"Closed position: {market_id} {outcome} | "
-                       f"Entry: {entry_price:.4f} | Exit: {exit_price:.4f} | "
-                       f"P&L: {pnl:.2f} ({pnl_pct:.2f}%) | Reason: {exit_reason}")
-
-
 class ShortExpiryRiskManager:
     """Risk management for short-expiry trading."""
 
@@ -222,7 +55,7 @@ class ShortExpiryRiskManager:
         self.config = config
         self.consecutive_losses = 0
 
-    def can_open_position(self, bucket: str, position_manager: ShortExpiryPositionManager) -> bool:
+    def can_open_position(self, bucket: str, position_manager: PositionManager) -> bool:
         """Check if we can open a new position in this bucket."""
         # Check total positions
         total_open = len(position_manager.get_open_positions())
@@ -230,7 +63,7 @@ class ShortExpiryRiskManager:
             return False
 
         # Check bucket-specific limit
-        bucket_count = position_manager.count_positions_by_bucket(bucket)
+        bucket_count = position_manager.count_positions_by_metadata('bucket', bucket)
         if bucket_count >= self.config['position_limits']['max_positions_per_bucket'][bucket]:
             return False
 
@@ -314,7 +147,9 @@ class ShortExpiryTrader:
         # Initialize WebSocket orderbook manager for real-time price discovery
         logger.info("Initializing WebSocket orderbook manager...")
         self.client.initialize_orderbook_manager()
-        self.position_manager = ShortExpiryPositionManager(
+
+        # Initialize enhanced PositionManager V2 (with analytics fields)
+        self.position_manager = PositionManager(
             self.config['database']['positions_db']
         )
         self.feature_extractor = ShortExpiryFeatureExtractor()
@@ -564,9 +399,8 @@ class ShortExpiryTrader:
             return
 
         for market in markets:
-            # Skip if already have position
             market_id = market.get('conditionId', '')
-            if self.position_manager.has_position(market_id):
+            if not market_id:
                 continue
 
             # Track current price for momentum features
@@ -595,6 +429,11 @@ class ShortExpiryTrader:
             signal = self._generate_signal(features, market, bucket)
 
             if signal['action'] == 'HOLD':
+                continue
+
+            # Skip if already have position on this outcome
+            outcome = signal.get('outcome', 'YES')
+            if self.position_manager.has_position(market_id, outcome):
                 continue
 
             # Risk checks
@@ -790,23 +629,23 @@ class ShortExpiryTrader:
             self.balance -= size
             self._save_balance(self.balance)
 
-        # Record position
-        position = {
-            'market_id': market_id,
-            'token_id': f"{market_id}_{outcome}",
-            'outcome': outcome,
-            'entry_price': entry_price,
-            'size': size,
-            'entry_time': datetime.now(timezone.utc).isoformat(),
-            'bucket': bucket,
-            'hours_to_expiry': features['hours_to_expiry'].iloc[0],
-            'edge': signal['edge'],
-            'confidence': signal['confidence'],
-            'signal_reason': signal['reason'],
-            'features_json': features.to_json()
-        }
-
-        self.position_manager.add_position(position)
+        # Record position using PositionManager V2
+        self.position_manager.save_position(
+            market_id=market_id,
+            token_id=f"{market_id}_{outcome}",
+            outcome=outcome,
+            entry_time=datetime.now(timezone.utc),
+            entry_price=entry_price,
+            size=size,
+            edge=signal['edge'],
+            confidence=signal['confidence'],
+            signal_reason=signal['reason'],
+            hours_to_expiry=features['hours_to_expiry'].iloc[0],
+            metadata={
+                'bucket': bucket,
+                'features_json': features.to_json()
+            }
+        )
 
         logger.info(f"TRADE OPENED | Market: {market.get('question', '')[:50]} | "
                    f"Bucket: {bucket} | Outcome: {outcome} | Size: ${size:.2f} | "
@@ -836,16 +675,18 @@ class ShortExpiryTrader:
             market_id = pos['market_id']
             outcome = pos['outcome']
             entry_price = pos['entry_price']
-            entry_time_str = pos['entry_time']
+            entry_time = pos['entry_time']  # Already a datetime in V2
             hours_to_expiry = pos.get('hours_to_expiry_at_entry', 0)
-            bucket = pos.get('bucket', 'unknown')
+
+            # Get bucket from metadata (V2 stores it there)
+            metadata = pos.get('metadata', {})
+            bucket = metadata.get('bucket', 'unknown') if isinstance(metadata, dict) else 'unknown'
 
             logger.debug(f"Checking position: {market_id[:16]}... | "
                         f"Outcome: {outcome} | Entry: {entry_price:.4f}")
 
             # Check if market has expired based on entry time + hours_to_expiry
             if hours_to_expiry > 0:
-                entry_time = datetime.fromisoformat(entry_time_str.replace('Z', '+00:00'))
                 expiry_time = entry_time + timedelta(hours=hours_to_expiry)
                 now = datetime.now(timezone.utc)
 

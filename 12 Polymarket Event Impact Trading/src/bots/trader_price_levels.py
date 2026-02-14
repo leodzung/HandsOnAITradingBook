@@ -24,7 +24,7 @@ from core.price_fetcher import PriceFetcher
 from utils.market_parser import PriceLevelMarketParser
 from utils.external_data import SpotPriceDataSource
 from features.price_level_features import PriceLevelFeatureExtractor
-from core.position_manager import PositionManager
+from core.position_manager_v2 import PositionManager
 from core.trade_executor import TradeExecutor, TradeRequest
 from utils.conditional_resolution import ConditionalResolutionAnalyzer
 from core.exposure_manager import ExposureManager
@@ -412,8 +412,11 @@ class PriceLevelTrader:
                 # entry_price and current_token_price are both actual token prices (YES or NO)
                 pnl_pct = ((current_token_price - entry_price) / entry_price) * 100
 
-                # Update price extremes for trailing stop (always use YES price)
-                extremes = self.position_manager.update_price_extremes(market_id, current_yes_price)
+                # Get outcome from position
+                outcome = position.get('outcome', position.get('side', 'YES'))
+
+                # Update price extremes for trailing stop (V2: track by outcome)
+                extremes = self.position_manager.update_price_extremes(market_id, outcome, current_token_price)
 
                 # Check stop-loss
                 if sl_config.get('enabled') and pnl_pct <= -sl_config.get('pct', 20):

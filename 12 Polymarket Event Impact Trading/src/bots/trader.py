@@ -23,7 +23,7 @@ from utils.event_detector import EventDetector
 from features.feature_extractor import FeatureEngineering
 from models.models import PriceMovementPredictor, TradingSignalGenerator, ModelPerformanceTracker
 from utils.price_tracker import PriceTracker
-from core.position_manager import PositionManager
+from core.position_manager_v2 import PositionManager
 from monitoring.telegram_notifier import TelegramNotifier
 
 
@@ -871,9 +871,12 @@ class PolymarketTrader:
                 token_id=token_id,
                 entry_time=datetime.now(timezone.utc),
                 entry_price=entry_price,  # Actual token price (YES or NO)
-                side=outcome,  # Store YES or NO
+                outcome=outcome,  # YES or NO (V2 uses 'outcome' not 'side')
                 size=position_size,
-                metadata={'confidence': signal.get('confidence', 0), 'signal_action': signal['action']}
+                edge=signal.get('edge', 0),  # V2: track expected edge
+                confidence=signal.get('confidence', 0),  # V2: track confidence
+                signal_reason='event',  # V2: track which strategy
+                metadata={'signal_action': signal['action'], 'event_source': signal.get('source', 'unknown')}
             )
 
             # Track paper position (in memory)
@@ -957,8 +960,8 @@ class PolymarketTrader:
                 continue
             pnl_pct = ((current_token_price - entry_price) / entry_price) * 100
 
-            # Update price extremes for trailing stop (always use YES price)
-            extremes = self.position_manager.update_price_extremes(market_id, current_yes_price)
+            # Update price extremes for trailing stop (V2: track by outcome)
+            extremes = self.position_manager.update_price_extremes(market_id, outcome, current_token_price)
 
             # Check stop-loss
             if sl_config.get('enabled') and pnl_pct <= -sl_config.get('pct', 15):
