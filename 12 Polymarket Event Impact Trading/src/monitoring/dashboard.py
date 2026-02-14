@@ -21,6 +21,7 @@ from urllib.parse import quote
 import plotly.express as px
 import plotly.graph_objects as go
 import requests
+import pytz
 
 # Page config
 st.set_page_config(
@@ -29,6 +30,10 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="expanded"
 )
+
+# Initialize session state for timezone
+if 'timezone' not in st.session_state:
+    st.session_state.timezone = 'UTC'
 
 # Constants
 DATA_DIR = Path("data")
@@ -369,6 +374,30 @@ def load_arbitrage_opportunities() -> pd.DataFrame:
     return df.sort_values('timestamp', ascending=False)
 
 
+def convert_to_timezone(dt, from_tz='UTC'):
+    """Convert datetime to user's selected timezone."""
+    if dt is None or pd.isna(dt):
+        return None
+
+    try:
+        # If it's a string, parse it first
+        if isinstance(dt, str):
+            dt = pd.to_datetime(dt, format='mixed')
+
+        # If datetime is naive (no timezone), assume it's UTC
+        if dt.tzinfo is None:
+            dt = pytz.UTC.localize(dt)
+
+        # Convert to target timezone
+        target_tz = pytz.timezone(st.session_state.timezone)
+        dt_converted = dt.astimezone(target_tz)
+
+        return dt_converted
+    except Exception as e:
+        # Return original if conversion fails
+        return dt
+
+
 def format_currency(value):
     """Format value as currency."""
     if pd.isna(value):
@@ -503,8 +532,9 @@ st.sidebar.subheader("Trading Bots")
 bot_status = get_bot_status()
 
 # Debug timestamp to verify refresh
-from datetime import datetime
-st.sidebar.caption(f"Last check: {datetime.now().strftime('%H:%M:%S')}")
+current_time = convert_to_timezone(datetime.now(pytz.UTC))
+time_str = current_time.strftime('%H:%M:%S %Z') if current_time else datetime.now().strftime('%H:%M:%S')
+st.sidebar.caption(f"Last check: {time_str}")
 
 for bot_name, is_running in bot_status.items():
     display_name = bot_name.replace("_", " ").title()
@@ -618,16 +648,22 @@ with tab1:
             question = question[:60] if question else 'Unknown'
             strike = row.get('strike', 0) or 0
             asset = row.get('asset', 'Unknown') if pd.notna(row.get('asset')) else 'Unknown'
-            side = 'YES' if row.get('side') in ['BUY', 'YES'] else 'NO'
+            # Handle both V1 'side' and V2 'outcome' fields
+            outcome_value = row.get('outcome', row.get('side', 'YES'))
+            side = 'YES' if outcome_value in ['BUY', 'YES'] else 'NO'
             entry = row.get('entry_price', 0) or 0
             size = row.get('size', 0) or 0
             market_id = row.get('market_id', '')
             entry_time = row.get('entry_time', '')
 
-            # Format entry date
+            # Format entry date with timezone conversion
             if pd.notna(entry_time):
                 try:
-                    entry_date = pd.to_datetime(entry_time, format='mixed').strftime('%m/%d %H:%M')
+                    dt_converted = convert_to_timezone(entry_time)
+                    if dt_converted:
+                        entry_date = dt_converted.strftime('%m/%d %H:%M')
+                    else:
+                        entry_date = str(entry_time)[:16] if entry_time else 'N/A'
                 except:
                     entry_date = str(entry_time)[:16] if entry_time else 'N/A'
             else:
@@ -686,13 +722,16 @@ with tab1:
 
         # Also show as table for easy copying
         with st.expander("📋 Table View"):
-            display_df = pl_open[['question', 'asset', 'side', 'entry_price', 'size', 'strike', 'entry_time']].copy()
+            # Handle both V1 'side' and V2 'outcome' columns
+            outcome_col = 'outcome' if 'outcome' in pl_open.columns else 'side'
+            display_df = pl_open[['question', 'asset', outcome_col, 'entry_price', 'size', 'strike', 'entry_time']].copy()
             display_df.columns = ['Market', 'Asset', 'Side', 'Entry', 'Size', 'Strike', 'Entry Time']
             display_df['Side'] = display_df['Side'].map({'BUY': 'YES', 'SELL': 'NO', 'YES': 'YES', 'NO': 'NO'})
             display_df['Entry'] = display_df['Entry'].apply(lambda x: f"${x:.3f}")
             display_df['Size'] = display_df['Size'].apply(lambda x: f"${x:.2f}")
             display_df['Strike'] = display_df['Strike'].apply(lambda x: f"${x:,.0f}" if x else "N/A")
-            display_df['Entry Time'] = pd.to_datetime(display_df['Entry Time'], format='mixed').dt.strftime('%Y-%m-%d %H:%M')
+            # Convert to timezone before formatting
+            display_df['Entry Time'] = display_df['Entry Time'].apply(lambda x: convert_to_timezone(x).strftime('%Y-%m-%d %H:%M') if convert_to_timezone(x) else str(x)[:16] if x else 'N/A')
             st.dataframe(display_df, width='stretch', hide_index=True)
 
         # Exposure by asset
@@ -746,7 +785,9 @@ with tab1:
         for idx, row in closed_sorted.iterrows():
             # Use pre-extracted columns from load_positions()
             question = row.get('question', 'Unknown') if pd.notna(row.get('question')) else 'Unknown'
-            side = 'YES' if row.get('side') in ['BUY', 'YES'] else 'NO'
+            # Handle both V1 'side' and V2 'outcome' fields
+            outcome_value = row.get('outcome', row.get('side', 'YES'))
+            side = 'YES' if outcome_value in ['BUY', 'YES'] else 'NO'
             entry = row.get('entry_price', 0) or 0
             exit_p = row.get('exit_price', 0) or 0
             size = row.get('size', 0) or 0
@@ -755,10 +796,14 @@ with tab1:
             entry_time = row.get('entry_time', '')
             exit_time = row.get('exit_time', '')
 
-            # Format dates
+            # Format dates with timezone conversion
             if pd.notna(entry_time):
                 try:
-                    entry_date = pd.to_datetime(entry_time, format='mixed').strftime('%m/%d %H:%M')
+                    dt_converted = convert_to_timezone(entry_time)
+                    if dt_converted:
+                        entry_date = dt_converted.strftime('%m/%d %H:%M')
+                    else:
+                        entry_date = str(entry_time)[:16] if entry_time else 'N/A'
                 except:
                     entry_date = str(entry_time)[:16] if entry_time else 'N/A'
             else:
@@ -766,7 +811,11 @@ with tab1:
 
             if pd.notna(exit_time):
                 try:
-                    exit_date = pd.to_datetime(exit_time, format='mixed').strftime('%m/%d %H:%M')
+                    dt_converted = convert_to_timezone(exit_time)
+                    if dt_converted:
+                        exit_date = dt_converted.strftime('%m/%d %H:%M')
+                    else:
+                        exit_date = str(exit_time)[:16] if exit_time else 'N/A'
                 except:
                     exit_date = str(exit_time)[:16] if exit_time else 'N/A'
             else:
@@ -882,10 +931,14 @@ with tab2:
                 market_info = get_market_info(market_id)
                 market_name = market_info.get('name', 'Unknown Market')[:60]
 
-            # Format entry date
+            # Format entry date with timezone conversion
             if pd.notna(entry_time):
                 try:
-                    entry_date = pd.to_datetime(entry_time, format='mixed').strftime('%m/%d %H:%M')
+                    dt_converted = convert_to_timezone(entry_time)
+                    if dt_converted:
+                        entry_date = dt_converted.strftime('%m/%d %H:%M')
+                    else:
+                        entry_date = str(entry_time)[:16] if entry_time else 'N/A'
                 except:
                     entry_date = str(entry_time)[:16] if entry_time else 'N/A'
             else:
@@ -951,7 +1004,8 @@ with tab2:
                 display_df['Entry'] = display_df['Entry'].apply(lambda x: f"${x:.3f}" if pd.notna(x) else 'N/A')
                 display_df['Size'] = display_df['Size'].apply(lambda x: f"${x:.2f}" if pd.notna(x) else 'N/A')
                 display_df['Expiry (h)'] = display_df['Expiry (h)'].apply(lambda x: f"{x:.1f}h" if pd.notna(x) else 'N/A')
-                display_df['Entry Time'] = pd.to_datetime(display_df['Entry Time'], format='mixed').dt.strftime('%Y-%m-%d %H:%M')
+                # Convert to timezone before formatting
+                display_df['Entry Time'] = display_df['Entry Time'].apply(lambda x: convert_to_timezone(x).strftime('%Y-%m-%d %H:%M') if convert_to_timezone(x) else str(x)[:16] if x else 'N/A')
                 display_df['Signal'] = display_df['Signal'].apply(lambda x: x.replace('_', ' ').title() if pd.notna(x) else 'N/A')
                 st.dataframe(display_df, width='stretch', hide_index=True)
     else:
@@ -1019,10 +1073,14 @@ with tab2:
                 market_info = get_market_info(market_id)
                 market_name = market_info.get('name', 'Unknown Market')[:50]
 
-            # Format dates
+            # Format dates with timezone conversion
             if pd.notna(entry_time):
                 try:
-                    entry_date = pd.to_datetime(entry_time, format='mixed').strftime('%m/%d %H:%M')
+                    dt_converted = convert_to_timezone(entry_time)
+                    if dt_converted:
+                        entry_date = dt_converted.strftime('%m/%d %H:%M')
+                    else:
+                        entry_date = str(entry_time)[:16] if entry_time else 'N/A'
                 except:
                     entry_date = str(entry_time)[:16] if entry_time else 'N/A'
             else:
@@ -1030,7 +1088,11 @@ with tab2:
 
             if pd.notna(exit_time):
                 try:
-                    exit_date = pd.to_datetime(exit_time, format='mixed').strftime('%m/%d %H:%M')
+                    dt_converted = convert_to_timezone(exit_time)
+                    if dt_converted:
+                        exit_date = dt_converted.strftime('%m/%d %H:%M')
+                    else:
+                        exit_date = str(exit_time)[:16] if exit_time else 'N/A'
                 except:
                     exit_date = str(exit_time)[:16] if exit_time else 'N/A'
             else:
@@ -1116,7 +1178,8 @@ with tab4:
 
         display_arb = recent[['timestamp', 'type', 'question', 'yes_price', 'no_price', 'profit_pct', 'profitable']].copy()
         display_arb.columns = ['Time', 'Type', 'Market', 'YES', 'NO', 'Profit %', 'Actionable']
-        display_arb['Time'] = display_arb['Time'].dt.strftime('%Y-%m-%d %H:%M')
+        # Convert to timezone before formatting
+        display_arb['Time'] = display_arb['Time'].apply(lambda x: convert_to_timezone(x).strftime('%Y-%m-%d %H:%M') if convert_to_timezone(x) else str(x)[:16] if x else 'N/A')
         display_arb['YES'] = display_arb['YES'].apply(lambda x: f"${x:.3f}" if pd.notna(x) else "N/A")
         display_arb['NO'] = display_arb['NO'].apply(lambda x: f"${x:.3f}" if pd.notna(x) else "N/A")
 
@@ -1195,7 +1258,9 @@ with tab5:
         st.write(f"**News Events:** {db_stats['gdelt_events']:,}")
         st.write(f"**Files Processed:** {db_stats['gdelt_files_processed']:,}")
         if db_stats['gdelt_latest_event']:
-            st.write(f"**Latest Event:** {db_stats['gdelt_latest_event'][:19]}")
+            latest_dt = convert_to_timezone(db_stats['gdelt_latest_event'])
+            latest_str = latest_dt.strftime('%Y-%m-%d %H:%M') if latest_dt else db_stats['gdelt_latest_event'][:19]
+            st.write(f"**Latest Event:** {latest_str}")
 
         # GDELT Progress bar (96 files/day * 180 days = 17,280 files for 6 months)
         target_files = 17_280
@@ -1221,7 +1286,9 @@ with tab5:
         if db_stats['alchemy_last_block']:
             st.write(f"**Last Block:** {db_stats['alchemy_last_block']:,}")
         if db_stats['alchemy_last_trade']:
-            st.write(f"**Last Trade:** {db_stats['alchemy_last_trade'][:19]}")
+            last_trade_dt = convert_to_timezone(db_stats['alchemy_last_trade'])
+            last_trade_str = last_trade_dt.strftime('%Y-%m-%d %H:%M') if last_trade_dt else db_stats['alchemy_last_trade'][:19]
+            st.write(f"**Last Trade:** {last_trade_str}")
 
         # Alchemy Progress bar (50M target trades for 6 months)
         target_trades = 50_000_000
@@ -1253,6 +1320,51 @@ with tab5:
 
 with tab6:
     st.subheader("Configuration")
+
+    # Timezone selector
+    st.write("### 🌍 Display Timezone")
+    col_tz1, col_tz2 = st.columns([2, 3])
+
+    with col_tz1:
+        # Popular timezones
+        popular_timezones = [
+            'UTC',
+            'US/Eastern',
+            'US/Central',
+            'US/Mountain',
+            'US/Pacific',
+            'Europe/London',
+            'Europe/Paris',
+            'Europe/Berlin',
+            'Asia/Tokyo',
+            'Asia/Shanghai',
+            'Asia/Singapore',
+            'Asia/Hong_Kong',
+            'Australia/Sydney',
+        ]
+
+        selected_tz = st.selectbox(
+            "Select Timezone",
+            options=popular_timezones,
+            index=popular_timezones.index(st.session_state.timezone) if st.session_state.timezone in popular_timezones else 0,
+            help="All timestamps will be displayed in this timezone"
+        )
+
+        # Update session state if changed
+        if selected_tz != st.session_state.timezone:
+            st.session_state.timezone = selected_tz
+            st.rerun()
+
+    with col_tz2:
+        # Show current time in selected timezone
+        try:
+            tz = pytz.timezone(st.session_state.timezone)
+            current_time = datetime.now(tz)
+            st.info(f"**Current time in {st.session_state.timezone}:**\n\n{current_time.strftime('%Y-%m-%d %H:%M:%S %Z')}")
+        except Exception as e:
+            st.warning(f"Could not display current time: {e}")
+
+    st.divider()
 
     # Load configs
     col1, col2 = st.columns(2)
@@ -1294,4 +1406,6 @@ with tab6:
 
 # Footer
 st.divider()
-st.caption(f"Last updated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+footer_time = convert_to_timezone(datetime.now(pytz.UTC))
+time_str = footer_time.strftime('%Y-%m-%d %H:%M:%S %Z') if footer_time else datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+st.caption(f"Last updated: {time_str}")
