@@ -989,10 +989,21 @@ class PriceLevelTrader:
             return
 
         # Determine entry price based on outcome
+        # ALWAYS fetch fresh prices to avoid YES/NO confusion
+        condition_id = parsed_market.get('conditionId')
+        if not condition_id:
+            logger.error("  No condition_id - cannot fetch prices")
+            return
+
+        entry_prices = self.price_fetcher.get_entry_prices(condition_id)
+        if not entry_prices:
+            logger.error("  Cannot fetch entry prices")
+            return
+
         if outcome == 'YES':
-            entry_price = signal['market_price']
+            entry_price = entry_prices.yes_price
         else:
-            entry_price = signal.get('no_price', 1.0 - signal['market_price'])
+            entry_price = entry_prices.no_price
 
         # Get slug from original market data (for restricted market price lookups)
         orig_market = parsed_market.get('original_market', {})
