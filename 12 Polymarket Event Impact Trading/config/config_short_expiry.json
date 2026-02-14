@@ -83,7 +83,7 @@
     "orderbook_staleness_seconds": 10,
     "depth_buffer_pct": 0.10,
     "volatility_adjustment": false,
-    "volume_limit_pct": 0.02,
+    "volume_limit_pct": 0.05,
     "warn_threshold_bps": {
       "ultra_short": 2000,
       "short": 1500,
