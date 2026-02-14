@@ -563,6 +563,12 @@ class PolymarketClient:
         """
         Get order book for a specific token.
 
+        WARNING: The /book endpoint returns STALE data (0.99/0.01).
+        Do NOT use this for pricing! Use get_token_price() instead.
+        Only use this for orderbook depth analysis.
+
+        See: https://github.com/Polymarket/py-clob-client/issues/180
+
         Args:
             token_id: Token ID
 
@@ -581,16 +587,63 @@ class PolymarketClient:
             print(f"Error fetching orderbook for {token_id}: {e}")
             return {'bids': [], 'asks': []}
 
+    def get_token_price(self, token_id: str, side: str = 'sell') -> Optional[float]:
+        """
+        Get accurate live price from /price endpoint (NOT stale /book data).
+
+        IMPORTANT: Use this instead of get_orderbook() for pricing!
+        The /book endpoint returns stale data (0.99/0.01), while /price returns accurate live prices.
+
+        Reference: https://github.com/Polymarket/py-clob-client/issues/180
+
+        Args:
+            token_id: Token ID
+            side: 'sell' for ask prices (cost to buy tokens),
+                  'buy' for bid prices (proceeds from selling tokens)
+
+        Returns:
+            Current price or None
+
+        Examples:
+            # To get the price you'd PAY to buy YES tokens (ask price):
+            ask_price = client.get_token_price(yes_token_id, side='sell')
+
+            # To get the price you'd RECEIVE selling YES tokens (bid price):
+            bid_price = client.get_token_price(yes_token_id, side='buy')
+        """
+        try:
+            response = self.session.get(
+                f"{self.BASE_URL}/price",
+                params={
+                    'token_id': token_id,
+                    'side': side
+                },
+                headers=self._get_headers(),
+                timeout=10
+            )
+            response.raise_for_status()
+            data = response.json()
+            price = data.get('price')
+            if price is not None:
+                return float(price)
+            return None
+        except Exception as e:
+            print(f"Error fetching price for {token_id[:16]}...: {e}")
+            return None
+
     def get_clob_prices(self, condition_id: str, side: str = 'BUY') -> Dict[str, Optional[float]]:
         """
-        Get YES and NO prices from CLOB orderbook (not Gamma API estimates).
+        Get YES and NO prices from CLOB /price endpoint (NOT stale /book data).
 
         This is the SINGLE SOURCE OF TRUTH for all price operations:
         - Signal generation (side='BUY' - use ask prices)
         - Trade execution (side='BUY' - use ask prices)
         - Position monitoring (side='SELL' - use bid prices)
 
-        Uses best bid/ask from the actual CLOB orderbook, not Gamma API estimates.
+        IMPORTANT: Uses /price endpoint for accurate live prices.
+        The /book endpoint returns stale data (0.99/0.01) - DO NOT USE for pricing!
+
+        Reference: https://github.com/Polymarket/py-clob-client/issues/180
 
         Args:
             condition_id: Market condition ID
@@ -599,8 +652,8 @@ class PolymarketClient:
                   - SELL: Returns bid prices (what you'd get selling tokens)
 
         Returns:
-            Dict with 'yes' and 'no' prices from orderbook, e.g. {'yes': 0.99, 'no': 0.01}
-            Returns None for prices if orderbook unavailable
+            Dict with 'yes' and 'no' prices, e.g. {'yes': 0.89, 'no': 0.12}
+            Returns None for prices if unavailable
         """
         result = {'yes': None, 'no': None}
 
@@ -612,33 +665,14 @@ class PolymarketClient:
         if not yes_token_id or not no_token_id:
             return result
 
-        # Get YES token orderbook
-        yes_orderbook = self.get_orderbook(yes_token_id)
+        # Map our side to API side parameter
+        # When we want to BUY tokens, we need ASK prices = 'sell' side in API
+        # When we want to SELL tokens, we need BID prices = 'buy' side in API
+        api_side = 'sell' if side == 'BUY' else 'buy'
 
-        if side == 'BUY':
-            # Best ask = price to BUY YES tokens
-            yes_asks = yes_orderbook.get('asks', [])
-            if yes_asks:
-                result['yes'] = float(yes_asks[0]['price'])
-        else:  # SELL
-            # Best bid = price to SELL YES tokens
-            yes_bids = yes_orderbook.get('bids', [])
-            if yes_bids:
-                result['yes'] = float(yes_bids[0]['price'])
-
-        # Get NO token orderbook
-        no_orderbook = self.get_orderbook(no_token_id)
-
-        if side == 'BUY':
-            # Best ask = price to BUY NO tokens
-            no_asks = no_orderbook.get('asks', [])
-            if no_asks:
-                result['no'] = float(no_asks[0]['price'])
-        else:  # SELL
-            # Best bid = price to SELL NO tokens
-            no_bids = no_orderbook.get('bids', [])
-            if no_bids:
-                result['no'] = float(no_bids[0]['price'])
+        # Get prices from /price endpoint (NOT /book!)
+        result['yes'] = self.get_token_price(yes_token_id, side=api_side)
+        result['no'] = self.get_token_price(no_token_id, side=api_side)
 
         return result
 
@@ -963,6 +997,117 @@ class MarketFilter:
                     filtered.append(m)
             except:
                 continue
+
+        return filtered
+
+    @staticmethod
+    def filter_by_quality(markets: List[Dict],
+                         price_fetcher,
+                         min_price: float = 0.05,
+                         max_price: float = 0.95,
+                         max_spread_pct: float = 10.0,
+                         check_last_trade: bool = True,
+                         logger=None) -> List[Dict]:
+        """
+        Filter markets by quality metrics: price range, spread, and trade activity.
+
+        This is a centralized quality filter used by all bots to ensure consistent
+        market filtering across the system.
+
+        Args:
+            markets: List of market dictionaries
+            price_fetcher: PriceFetcher instance for getting current prices
+            min_price: Minimum acceptable price (default 0.05)
+            max_price: Maximum acceptable price (default 0.95)
+            max_spread_pct: Maximum acceptable spread percentage (default 10.0)
+            check_last_trade: Whether to require lastTradePrice (default True)
+
+        Returns:
+            Filtered list of markets that meet quality criteria
+
+        Quality Filters Applied:
+            1. Spread check: spread% <= max_spread_pct
+            2. Price range check: price in [min_price, max_price]
+            3. Trade activity check: market has recent trades (optional)
+
+        Note:
+            - Markets with both YES and NO prices as None are filtered out
+            - Price check uses whichever price is available (YES or NO)
+            - Since YES + NO ≈ 1.0, checking one validates both sides
+        """
+        filtered = []
+        rejection_counts = {
+            'spread_too_wide': 0,
+            'no_market_id': 0,
+            'no_entry_prices': 0,
+            'both_prices_none': 0,
+            'price_out_of_range': 0,
+            'no_last_trade': 0
+        }
+
+        for m in markets:
+            # Check spread
+            best_bid = m.get('bestBid', 0.45)
+            best_ask = m.get('bestAsk', 0.55)
+
+            if isinstance(best_bid, str):
+                best_bid = float(best_bid)
+            if isinstance(best_ask, str):
+                best_ask = float(best_ask)
+
+            spread = best_ask - best_bid
+            mid_price = (best_bid + best_ask) / 2.0
+            spread_pct = (spread / mid_price * 100) if mid_price > 0 else 0
+
+            if spread_pct > max_spread_pct:
+                rejection_counts['spread_too_wide'] += 1
+                continue
+
+            # Get prices using PriceFetcher
+            market_id = m.get('conditionId') or m.get('condition_id')
+            if not market_id:
+                rejection_counts['no_market_id'] += 1
+                continue
+
+            entry_prices = price_fetcher.get_entry_prices(market_id)
+            if entry_prices is None:
+                rejection_counts['no_entry_prices'] += 1
+                continue
+
+            yes_price = entry_prices.yes_price
+            no_price = entry_prices.no_price
+
+            # Skip if both prices are None
+            if yes_price is None and no_price is None:
+                rejection_counts['both_prices_none'] += 1
+                continue
+
+            # Check price range using whichever price is available
+            # YES and NO are complementary, so checking one validates both
+            check_price = yes_price if yes_price is not None else no_price
+            if check_price < min_price or check_price > max_price:
+                rejection_counts['price_out_of_range'] += 1
+                if logger:
+                    logger.debug(f"Price out of range: {check_price:.3f} (range: {min_price}-{max_price}) | {m.get('question', '')[:50]}")
+                continue
+
+            # Check that we have pricing data (optional)
+            if check_last_trade and m.get('lastTradePrice') is None:
+                rejection_counts['no_last_trade'] += 1
+                continue
+
+            filtered.append(m)
+
+        # Log rejection summary
+        if logger:
+            total_rejected = sum(rejection_counts.values())
+            if total_rejected > 0:
+                logger.info(f"Quality filter rejections: {total_rejected} total | "
+                           f"Spread: {rejection_counts['spread_too_wide']} | "
+                           f"No prices: {rejection_counts['no_entry_prices']} | "
+                           f"Both None: {rejection_counts['both_prices_none']} | "
+                           f"Out of range: {rejection_counts['price_out_of_range']} | "
+                           f"No trades: {rejection_counts['no_last_trade']}")
 
         return filtered
 
