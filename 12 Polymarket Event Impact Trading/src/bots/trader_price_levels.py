@@ -615,8 +615,11 @@ class PriceLevelTrader:
             all_markets, assets=assets
         )
 
-        # Apply additional filters (volume and expiry already filtered at API level)
+        # Apply additional filters (volume filtered at API level, but expiry needs rechecking for event slug markets)
         filtered_markets = []
+        min_days = self.config.get('min_days_to_expiry', 1)
+        max_days = self.config.get('max_days_to_expiry', 365)
+
         for market in price_level_markets:
             # Find original market data
             orig_market = next((m for m in all_markets
@@ -625,22 +628,22 @@ class PriceLevelTrader:
             if orig_market:
                 # Store original market data
                 market['original_market'] = orig_market
-                filtered_markets.append(market)
-            else:
-                # Market from event slug - apply manual filters
-                days_to_expiry = market.get('days_to_expiry', 0)
-                # Ensure days_to_expiry is an integer (handle string case)
-                try:
-                    days_to_expiry = int(days_to_expiry) if days_to_expiry else 0
-                except (ValueError, TypeError):
-                    logger.warning(f"Invalid days_to_expiry for {market.get('question', '')}: {days_to_expiry}")
-                    continue
 
-                if days_to_expiry < self.config.get('min_days_to_expiry', 1):
-                    continue
-                if days_to_expiry > self.config.get('max_days_to_expiry', 365):
-                    continue
-                filtered_markets.append(market)
+            # Apply expiry filter to ALL markets (event slugs bypass API-level filtering)
+            days_to_expiry = market.get('days_to_expiry', 0)
+            # Ensure days_to_expiry is an integer (handle string case)
+            try:
+                days_to_expiry = int(days_to_expiry) if days_to_expiry else 0
+            except (ValueError, TypeError):
+                logger.warning(f"Invalid days_to_expiry for {market.get('question', '')}: {days_to_expiry}")
+                continue
+
+            if days_to_expiry < min_days:
+                continue
+            if days_to_expiry > max_days:
+                continue
+
+            filtered_markets.append(market)
 
         logger.info(f"After expiry filter: {len(filtered_markets)} price-level markets")
 
