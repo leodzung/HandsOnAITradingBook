@@ -104,29 +104,43 @@ Key papers that can improve the bots:
 ## Technical Debt & Refactoring
 
 ### Code Architecture Issues
-- [ ] **Consolidate duplicated position management code** - Short-expiry bot duplicates ~100 LOC
-  - Root cause: `ShortExpiryPositionManager` reimplements functionality from shared `PositionManager`
-  - Files affected:
-    - `src/bots/trader_short_expiry.py:47-186` (custom implementation)
-    - `src/core/position_manager.py` (shared framework used by event & price-level traders)
-  - Duplicated functionality:
-    - Database initialization and schema creation
-    - CRUD operations (get, save, close positions)
-    - Price tracking (highest/lowest seen)
-    - Exit reason handling
-  - Unique short-expiry requirements (justifies some customization):
-    - `bucket` field (ultra_short, short, medium)
-    - `hours_to_expiry_at_entry` (critical for time-based expiry)
-    - ML metadata (`edge`, `confidence`, `features_json`)
-    - `outcome` field (YES/NO) instead of `side` (BUY/SELL)
-    - `UNIQUE(market_id, outcome)` constraint
-    - `count_positions_by_bucket()` method
-  - Recommended approach:
-    - **Short-term**: Keep as-is (working, well-tested, unique requirements)
-    - **Medium-term**: Refactor to use inheritance (extend base PositionManager)
-    - **Long-term**: Create unified flexible position manager for all bot types
-  - Documentation: `ARCHITECTURE_ISSUE_POSITION_MANAGERS.md`
-  - Priority: Low (future improvement when adding next bot)
+
+#### ✅ RESOLVED (2026-02-14)
+- [x] **Consolidate duplicated position management code** - ~~Short-expiry bot duplicates ~100 LOC~~
+  - **Status**: COMPLETE - Implemented PositionManager V2
+  - **Solution**: Created unified `src/core/position_manager.py` with flexible schema
+  - **Eliminated code duplication**:
+    - Replaced 3 separate implementations with single V2 manager
+    - Removed ~500 lines of duplicated code across all bots
+    - All bots now use same position tracking infrastructure
+  - **V2 Features** (addresses all unique requirements):
+    - Multiple positions per market (YES/NO simultaneously)
+    - Flexible metadata (bucket, edge, confidence, features_json, etc.)
+    - Prediction market terminology: `outcome` (YES/NO) not `side` (BUY/SELL)
+    - Enhanced analytics: hours_to_expiry, signal_reason, current_price, pnl_pct
+    - Backward compatible migration from V1
+  - **Migration**: All 3 bots deployed with V2 (commit bea0cfe)
+  - **Testing**: Comprehensive test suite with V1→V2 validation (commit 7326b86)
+  - **Documentation**: `POSITION_MANAGER_V2_DOCS.md`
+
+#### Active Technical Debt
+- [x] **WebSocket Reconnection Logic** (Priority: High) - ✅ RESOLVED (2026-02-14)
+  - **Solution**: Implemented exponential backoff with jitter (1s→60s, unlimited retries)
+  - **Impact**: Automatic recovery from disconnections, no manual restart required
+  - **Testing**: Unit tests and integration tests passing
+  - **Documentation**: WEBSOCKET_RECONNECTION_IMPLEMENTATION.md
+
+- [ ] **Old Position Manager Code Cleanup** (Priority: Low)
+  - **Issue**: V1 position manager code still in bot files (unused/commented)
+  - **Files**: trader.py, trader_price_levels.py, trader_short_expiry.py
+  - **Solution**: Remove old position management code blocks
+  - **Effort**: ~1 hour
+
+- [ ] **Backup Files Cleanup** (Priority: Low)
+  - **Issue**: Multiple `.backup` files in repository
+  - **Files**: trader.py.backup, trader_price_levels.py.backup, trader_short_expiry.py.backup
+  - **Solution**: Remove backup files (already in git history)
+  - **Effort**: 15 minutes
 
 ---
 
@@ -532,6 +546,12 @@ Key papers that can improve the bots:
 | 2026-02-09 | **Production readiness gates** | Criteria: AUC≥0.70, std<0.10, |degradation|<0.10 - blocks bad deployments |
 | 2026-02-09 | **Enhanced models.py with CV** | Added `train_with_cv()` method, backward compatible, automatic visualization/reports |
 | 2026-02-09 | **Slippage estimation integration** | Both traders now check orderbook depth before execution - rejects trades with >50 bps slippage |
+| 2026-02-13 | **WebSocket Orderbook Integration** | Real-time orderbook for all 3 bots via OrderbookManager - dual-mode with auto-fallback to REST |
+| 2026-02-13 | **PriceFetcher Centralization** | Migrated all bots to unified price source - fixed broken /book endpoint, uses /price + WebSocket |
+| 2026-02-14 | **PositionManager V2 Deployed** | Consolidated 3 separate implementations into unified V2 - ~500 LOC removed, all bots migrated |
+| 2026-02-14 | **Dashboard V2 Compatibility** | Fixed timezone persistence, outcome field handling, and V2 API method compatibility |
+| 2026-02-14 | **Technical Debt: Position Mgmt** | RESOLVED - PositionManager V2 eliminates all code duplication across bots |
+| 2026-02-14 | **WebSocket Reconnection Logic** | Implemented exponential backoff (1s→60s) with ±30% jitter, unlimited retries, auto-recovery from disconnections |
 
 ---
 

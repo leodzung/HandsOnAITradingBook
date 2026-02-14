@@ -2,6 +2,22 @@
 
 ## Completed ✅
 
+### 2026-02-14: WebSocket Reconnection Logic - Exponential Backoff
+- ✅ **Implemented exponential backoff**: 1s → 2s → 4s → 8s → 16s → 32s → 60s (max)
+- ✅ **Random jitter (±30%)**: Prevents thundering herd when multiple clients reconnect
+- ✅ **Unlimited retries**: No max attempt limit, keeps trying as long as running
+- ✅ **Backoff reset on success**: Delay resets to 1s after successful connection
+- ✅ **Enhanced monitoring**: Added `reconnect_count` and `current_backoff_delay` to stats
+- ✅ **Comprehensive testing**: Unit test and integration test for reconnection behavior
+- ✅ **Documentation**: Complete implementation guide in WEBSOCKET_RECONNECTION_IMPLEMENTATION.md
+- ✅ **Benefit**: Bots now automatically recover from WebSocket failures without manual restart
+
+### 2026-02-14: Dashboard V2 Compatibility Fixes
+- ✅ **Timezone persistence**: Fixed timezone display to persist across sessions (commit be7a7e7)
+- ✅ **V2 API compatibility**: Updated to handle 'outcome' field instead of 'side' (commit 90c0570)
+- ✅ **V2 method migration**: Replaced `load_positions()` with `get_open_positions()` (commit 9c9fdbe)
+- ✅ **Complete V2 migration**: Dashboard now fully compatible with PositionManager V2
+
 ### 2026-02-14: Enhanced PositionManager V2 - Consolidated & Feature-Rich
 - ✅ **Eliminated code duplication**: Replaced 3 separate position managers with unified V2
 - ✅ **Multiple positions per market**: Can hold YES and NO simultaneously
@@ -9,7 +25,8 @@
 - ✅ **Real-time monitoring**: current_price, pnl_pct automatic calculation
 - ✅ **Prediction market terminology**: outcome (YES/NO) instead of side (BUY/SELL)
 - ✅ **Backward compatible migration**: Auto-migrates from V1 to V2
-- ✅ **Comprehensive testing**: 100% test coverage with V1→V2 migration validation
+- ✅ **Comprehensive testing**: 100% test coverage with V1→V2 migration validation (commit 7326b86)
+- ✅ **Full deployment**: All 3 bots migrated to PositionManager V2 (commit bea0cfe)
 - ✅ **Metadata filtering**: Flexible bucket counting and strategy filtering
 
 ### 2026-02-14: Short Expiry Bot Price History Fix
@@ -17,6 +34,70 @@
 - ✅ Pass price_history to feature extractor (enables momentum signals)
 - ✅ Use PriceFetcher for all price tracking (real-time CLOB data)
 - ✅ Updated memory: ALWAYS use PriceFetcher for ANY price data
+
+### 2026-02-13: WebSocket Orderbook Integration - Complete System
+- ✅ **Real-time orderbook data**: Integrated WebSocket feed for all 3 bots (commit 31d700f)
+- ✅ **OrderbookManager**: Dual-mode system (WebSocket primary, REST fallback)
+- ✅ **Automatic fallback**: Uses synthetic orderbook from `/price` endpoint when WebSocket unavailable
+- ✅ **Market registration**: Bots register discovered markets for WebSocket subscriptions
+- ✅ **Configuration**: All bots default to `orderbook_source: "websocket"`
+- ✅ **Benefits**:
+  - Real orderbook depth and liquidity (< 100ms updates)
+  - Accurate slippage estimation
+  - Fixes broken `/book` REST endpoint issue
+- ✅ **Documentation**: Complete technical docs in WEBSOCKET_INTEGRATION_COMPLETE.md
+- ✅ **Testing**: Verification script (`test_websocket_orderbook.py`)
+
+### 2026-02-13: PriceFetcher Centralization
+- ✅ **Migrated all 3 bots** to use centralized PriceFetcher (commits e1e08da, 3423876)
+- ✅ **Fixed critical bug**: Replaced broken `/book` endpoint with `/price` endpoint (commit 6a4dbbe)
+- ✅ **Entry/exit prices**: Unified interface for ASK (entry) and BID (exit) prices
+- ✅ **WebSocket integration**: PriceFetcher uses OrderbookManager for real-time data
+- ✅ **Safety checks**: YES/NO price validation, range checks, confusion detection
+
+---
+
+## Technical Debt 🔧
+
+### Completed Technical Debt ✅
+
+#### **Consolidate duplicated position management code**
+- ✅ **Status:** RESOLVED (2026-02-14)
+- ✅ **Solution:** Implemented PositionManager V2
+- ✅ **Impact:**
+  - Eliminated 3 separate implementations (trader.py, trader_price_levels.py, trader_short_expiry.py)
+  - Replaced with unified `src/core/position_manager.py`
+  - ~500 lines of duplicated code removed
+  - Consistent position tracking across all bots
+- ✅ **Migration:** All 3 bots migrated with backward compatibility (commit bea0cfe)
+- ✅ **Testing:** Comprehensive test suite with V1→V2 migration validation (commit 7326b86)
+
+### Completed Technical Debt ✅
+
+#### **WebSocket Reconnection Logic**
+- ✅ **Status:** RESOLVED (2026-02-14)
+- ✅ **Solution:** Implemented exponential backoff with jitter (1s→60s, unlimited retries)
+- ✅ **Impact:**
+  - Automatic recovery from WebSocket disconnections
+  - No manual restart required
+  - Smart backoff prevents server overload
+  - Bots maintain real-time orderbook data during recovery
+- ✅ **Testing:** Unit tests and integration tests passing
+- ✅ **Documentation:** WEBSOCKET_RECONNECTION_IMPLEMENTATION.md
+
+### Active Technical Debt 🚨
+
+#### **Old Position Manager Files Cleanup** (Priority: Low)
+- **Issue:** V1 position manager code still in bot files (commented/unused)
+- **Files:** trader.py, trader_price_levels.py, trader_short_expiry.py
+- **Solution:** Remove old position management code blocks
+- **Effort:** ~1 hour
+
+#### **Backup Files Cleanup** (Priority: Low)
+- **Issue:** Multiple `.backup` files in repository
+- **Files:** trader.py.backup, trader_price_levels.py.backup, trader_short_expiry.py.backup
+- **Solution:** Remove backup files (already in git history)
+- **Effort:** 15 minutes
 
 ---
 
@@ -114,6 +195,11 @@ price_history_no = self.price_tracker.get_price_history(f"{market_id}_NO", hours
 
 ## Notes
 
-**Last Updated:** 2026-02-14
-**Active Bots:** Event-based, Price-level, Short-expiry
+**Last Updated:** 2026-02-14 (Post-WebSocket & PositionManager V2 deployment)
+**Active Bots:** Event-based, Price-level, Short-expiry (all using WebSocket + V2)
 **Paper Trading Balance:** Event=$1000, Price-level=$500, Short-expiry=$470
+**Key Infrastructure:**
+- OrderbookManager (WebSocket + REST fallback)
+- PositionManager V2 (unified across all bots)
+- PriceFetcher (centralized price source)
+- TradeExecutor (centralized validation)

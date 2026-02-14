@@ -17,6 +17,7 @@ import json
 import time
 import logging
 import threading
+import random
 from datetime import datetime
 from typing import Dict, List, Optional, Callable, Set
 from dataclasses import dataclass, field
@@ -203,8 +204,12 @@ class OrderBookWebSocket:
 
     WS_URL = "wss://ws-subscriptions-clob.polymarket.com/ws/market"
     PING_INTERVAL = 10  # seconds
-    RECONNECT_DELAY = 5  # seconds
-    MAX_RECONNECT_ATTEMPTS = 10
+
+    # Exponential backoff configuration
+    INITIAL_RECONNECT_DELAY = 1  # seconds - start with 1s
+    MAX_RECONNECT_DELAY = 60  # seconds - cap at 60s
+    BACKOFF_MULTIPLIER = 2  # exponential factor
+    JITTER_RANGE = 0.3  # ±30% random jitter to prevent thundering herd
 
     def __init__(self, on_book_update: Optional[Callable[[OrderBook], None]] = None,
                  on_arb_signal: Optional[Callable[[ArbitrageSignal], None]] = None):
@@ -238,6 +243,7 @@ class OrderBookWebSocket:
         self._running = False
         self._connected = False
         self._reconnect_count = 0
+        self._current_backoff_delay = self.INITIAL_RECONNECT_DELAY
 
         # Statistics
         self.stats = {
@@ -422,7 +428,15 @@ class OrderBookWebSocket:
         return False
 
     def _run_websocket(self) -> None:
-        """Run WebSocket connection loop."""
+        """
+        Run WebSocket connection loop with exponential backoff reconnection.
+
+        Implements:
+        - Exponential backoff: starts at 1s, doubles each attempt up to 60s max
+        - Random jitter: ±30% randomization to prevent thundering herd
+        - Unlimited retries: keeps trying as long as self._running is True
+        - Backoff reset: resets delay to initial value on successful connection
+        """
         while self._running:
             try:
                 self._ws = websocket.WebSocketApp(
@@ -438,17 +452,31 @@ class OrderBookWebSocket:
                 logger.error(f"WebSocket error: {e}")
                 self.stats['errors'] += 1
 
+            # Only reconnect if still running (not explicitly stopped)
             if self._running:
                 self._reconnect_count += 1
                 self.stats['reconnects'] += 1
 
-                if self._reconnect_count > self.MAX_RECONNECT_ATTEMPTS:
-                    logger.error("Max reconnection attempts reached")
-                    self._running = False
-                    break
+                # Calculate exponential backoff with jitter
+                jitter = random.uniform(
+                    -self.JITTER_RANGE * self._current_backoff_delay,
+                    self.JITTER_RANGE * self._current_backoff_delay
+                )
+                delay = self._current_backoff_delay + jitter
 
-                logger.info(f"Reconnecting in {self.RECONNECT_DELAY}s... (attempt {self._reconnect_count})")
-                time.sleep(self.RECONNECT_DELAY)
+                logger.info(
+                    f"Reconnecting in {delay:.1f}s... "
+                    f"(attempt #{self._reconnect_count}, "
+                    f"base delay: {self._current_backoff_delay}s)"
+                )
+
+                time.sleep(delay)
+
+                # Increase backoff delay for next attempt (exponential backoff)
+                self._current_backoff_delay = min(
+                    self._current_backoff_delay * self.BACKOFF_MULTIPLIER,
+                    self.MAX_RECONNECT_DELAY
+                )
 
     def _ping_loop(self) -> None:
         """Send periodic pings to keep connection alive."""
@@ -461,10 +489,14 @@ class OrderBookWebSocket:
                     pass
 
     def _on_open(self, ws) -> None:
-        """Handle WebSocket connection opened."""
+        """Handle WebSocket connection opened - reset backoff on successful connection."""
         self._connected = True
         self._reconnect_count = 0
-        logger.info("WebSocket connected")
+
+        # Reset backoff delay on successful connection
+        self._current_backoff_delay = self.INITIAL_RECONNECT_DELAY
+
+        logger.info("WebSocket connected successfully (backoff reset)")
 
         # Send initial subscription
         if self._subscribed_assets:
@@ -674,7 +706,9 @@ class OrderBookWebSocket:
             'connected': self._connected,
             'subscribed_assets': len(self._subscribed_assets),
             'tracked_markets': len(self._condition_to_assets),
-            'order_books': len(self._order_books)
+            'order_books': len(self._order_books),
+            'reconnect_count': self._reconnect_count,
+            'current_backoff_delay': self._current_backoff_delay
         }
 
 
