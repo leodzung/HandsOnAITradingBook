@@ -130,17 +130,15 @@ Key papers that can improve the bots:
   - **Testing**: Unit tests and integration tests passing
   - **Documentation**: WEBSOCKET_RECONNECTION_IMPLEMENTATION.md
 
+- [x] **Backup Files Cleanup** (Priority: Low) - ✅ RESOLVED (2026-02-14)
+  - **Solution**: Removed all .backup files (trader.py.backup, trader_price_levels.py.backup, trader_short_expiry.py.backup)
+  - **Impact**: Cleaner repository, no redundant files
+
 - [ ] **Old Position Manager Code Cleanup** (Priority: Low)
   - **Issue**: V1 position manager code still in bot files (unused/commented)
   - **Files**: trader.py, trader_price_levels.py, trader_short_expiry.py
   - **Solution**: Remove old position management code blocks
   - **Effort**: ~1 hour
-
-- [ ] **Backup Files Cleanup** (Priority: Low)
-  - **Issue**: Multiple `.backup` files in repository
-  - **Files**: trader.py.backup, trader_price_levels.py.backup, trader_short_expiry.py.backup
-  - **Solution**: Remove backup files (already in git history)
-  - **Effort**: 15 minutes
 
 ---
 
@@ -552,6 +550,7 @@ Key papers that can improve the bots:
 | 2026-02-14 | **Dashboard V2 Compatibility** | Fixed timezone persistence, outcome field handling, and V2 API method compatibility |
 | 2026-02-14 | **Technical Debt: Position Mgmt** | RESOLVED - PositionManager V2 eliminates all code duplication across bots |
 | 2026-02-14 | **WebSocket Reconnection Logic** | Implemented exponential backoff (1s→60s) with ±30% jitter, unlimited retries, auto-recovery from disconnections |
+| 2026-02-14 | **Backup Files Cleanup** | Removed 3 .backup files from repository - cleaner codebase, originals preserved in git history |
 
 ---
 
