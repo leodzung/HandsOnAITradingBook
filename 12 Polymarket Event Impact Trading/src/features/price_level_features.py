@@ -422,14 +422,21 @@ class MarketMicrostructureFeatures:
         asks = orderbook.get('asks', [])
 
         if bids and asks:
-            best_bid = float(bids[0]['price'])
-            best_ask = float(asks[0]['price'])
+            # Handle both dict format {'price': x, 'size': y} and array format [x, y]
+            if isinstance(bids[0], dict):
+                best_bid = float(bids[0]['price'])
+                best_ask = float(asks[0]['price'])
+                bid_depth_5 = sum(float(b['size']) for b in bids[:5])
+                ask_depth_5 = sum(float(a['size']) for a in asks[:5])
+            else:
+                # Array format: [price, size]
+                best_bid = float(bids[0][0])
+                best_ask = float(asks[0][0])
+                bid_depth_5 = sum(float(b[1]) for b in bids[:5])
+                ask_depth_5 = sum(float(a[1]) for a in asks[:5])
+
             spread = best_ask - best_bid
             mid_price = (best_bid + best_ask) / 2
-
-            # Depth (top 5 levels)
-            bid_depth_5 = sum(float(b['size']) for b in bids[:5])
-            ask_depth_5 = sum(float(a['size']) for a in asks[:5])
 
             if bid_depth_5 + ask_depth_5 > 0:
                 depth_imbalance = (bid_depth_5 - ask_depth_5) / (bid_depth_5 + ask_depth_5)
