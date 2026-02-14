@@ -203,12 +203,18 @@ class PolymarketTrader:
         self.client = PolymarketClient(
             api_key=config.get('polymarket_api_key'),
             api_secret=config.get('polymarket_api_secret'),
-            private_key=config.get('polymarket_private_key')
+            private_key=config.get('polymarket_private_key'),
+            config=config
         )
 
         # Initialize centralized price fetcher
         self.price_fetcher = PriceFetcher(self.client)
         logger.info("✓ Price fetcher initialized")
+
+        # Initialize WebSocket orderbook manager for real-time price discovery
+        logger.info("Initializing WebSocket orderbook manager...")
+        self.client.initialize_orderbook_manager()
+        logger.info("✓ WebSocket orderbook manager initialized")
 
         self.event_detector = EventDetector(
             news_api_key=config.get('news_api_key'),
@@ -662,6 +668,16 @@ class PolymarketTrader:
             logger.info(f"Filtered to {len(markets)} markets after quality filter")
 
         logger.info(f"Final market count: {len(markets)}")
+
+        # Register markets for WebSocket orderbook tracking
+        if markets:
+            logger.info(f"Registering {len(markets)} markets for WebSocket orderbook tracking...")
+            for market in markets:
+                condition_id = market.get('conditionId')
+                question = market.get('question', '')
+                if condition_id:
+                    self.client.register_market_for_orderbook(condition_id, question)
+
         return markets
 
     def process_signal(self, event, market: Dict):

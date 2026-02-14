@@ -307,8 +307,12 @@ class ShortExpiryTrader:
             self.config = json.load(f)
 
         # Initialize components
-        self.client = PolymarketClient()  # No auth needed for read-only
+        self.client = PolymarketClient(config=self.config)  # Pass config for WebSocket support
         self.price_fetcher = PriceFetcher(self.client)
+
+        # Initialize WebSocket orderbook manager for real-time price discovery
+        logger.info("Initializing WebSocket orderbook manager...")
+        self.client.initialize_orderbook_manager()
         self.position_manager = ShortExpiryPositionManager(
             self.config['database']['positions_db']
         )
@@ -426,6 +430,15 @@ class ShortExpiryTrader:
                 logger=logger
             )
             markets['ultra_short'] = self._filter_tradeable(ultra_short_markets, 'ultra_short')
+
+            # Register ultra_short markets for WebSocket orderbook tracking
+            if markets['ultra_short']:
+                logger.info(f"Registering {len(markets['ultra_short'])} ultra_short markets for WebSocket orderbook...")
+                for market in markets['ultra_short']:
+                    condition_id = market.get('conditionId')
+                    question = market.get('question', '')
+                    if condition_id:
+                        self.client.register_market_for_orderbook(condition_id, question)
         except Exception as e:
             logger.error(f"Error discovering ultra_short markets: {e}", exc_info=True)
             markets['ultra_short'] = []
@@ -445,6 +458,15 @@ class ShortExpiryTrader:
                 logger=logger
             )
             markets['short'] = self._filter_tradeable(short_markets, 'short')
+
+            # Register short markets for WebSocket orderbook tracking
+            if markets['short']:
+                logger.info(f"Registering {len(markets['short'])} short markets for WebSocket orderbook...")
+                for market in markets['short']:
+                    condition_id = market.get('conditionId')
+                    question = market.get('question', '')
+                    if condition_id:
+                        self.client.register_market_for_orderbook(condition_id, question)
         except Exception as e:
             logger.error(f"Error discovering short markets: {e}", exc_info=True)
             markets['short'] = []
@@ -464,6 +486,15 @@ class ShortExpiryTrader:
                 logger=logger
             )
             markets['medium'] = self._filter_tradeable(medium_markets, 'medium')
+
+            # Register medium markets for WebSocket orderbook tracking
+            if markets['medium']:
+                logger.info(f"Registering {len(markets['medium'])} medium markets for WebSocket orderbook...")
+                for market in markets['medium']:
+                    condition_id = market.get('conditionId')
+                    question = market.get('question', '')
+                    if condition_id:
+                        self.client.register_market_for_orderbook(condition_id, question)
         except Exception as e:
             logger.error(f"Error discovering medium markets: {e}", exc_info=True)
             markets['medium'] = []

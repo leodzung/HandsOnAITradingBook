@@ -202,7 +202,12 @@ class PriceLevelTrader:
         logger.info(f"Config: {config_path}")
 
         # Initialize components
-        self.client = PolymarketClient()
+        self.client = PolymarketClient(config=config)
+
+        # Initialize WebSocket orderbook manager for real-time price discovery
+        logger.info("Initializing WebSocket orderbook manager...")
+        self.client.initialize_orderbook_manager()
+
         self.price_fetcher = PriceFetcher(self.client)
         self.parser = PriceLevelMarketParser()
         self.data_source = SpotPriceDataSource(
@@ -667,6 +672,16 @@ class PriceLevelTrader:
             logger.info(f"After quality filter: {len(filtered_markets)} tradeable price-level markets")
         else:
             logger.info(f"Filtered to {len(filtered_markets)} tradeable price-level markets")
+
+        # Register markets for WebSocket orderbook subscriptions
+        if filtered_markets:
+            logger.info(f"Registering {len(filtered_markets)} markets for WebSocket orderbook tracking...")
+            for market in filtered_markets:
+                orig_market = market.get('original_market', market)
+                condition_id = orig_market.get('conditionId')
+                question = orig_market.get('question', '')
+                if condition_id:
+                    self.client.register_market_for_orderbook(condition_id, question)
 
         return filtered_markets
 
