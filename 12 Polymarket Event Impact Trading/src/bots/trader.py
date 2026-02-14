@@ -430,16 +430,18 @@ class PolymarketTrader:
         """
         Restore open positions from database on startup.
         """
-        positions = self.position_manager.load_positions()
+        positions = self.position_manager.get_open_positions()
 
         for pos in positions:
             market_id = pos['market_id']
+            # Handle both V1 'side' and V2 'outcome' fields
+            outcome = pos.get('outcome', pos.get('side', 'YES'))
 
             # Restore to position_timers (in-memory tracking)
             self.position_timers[market_id] = {
                 'entry_time': pos['entry_time'],
                 'entry_price': pos['entry_price'],
-                'side': pos['side'],
+                'side': outcome,  # Keep 'side' key for backward compatibility with rest of code
                 'size': pos['size']
             }
 

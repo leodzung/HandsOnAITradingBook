@@ -309,20 +309,20 @@ class PriceLevelTrader:
 
     def _restore_positions(self):
         """Restore open positions from database."""
-        positions = self.position_manager.load_positions()
+        positions = self.position_manager.get_open_positions()
         for pos in positions:
             market_id = pos['market_id']
             # Parse expiry_date from string back to datetime
             expiry_str = pos.get('metadata', {}).get('expiry_date')
             expiry_date = datetime.fromisoformat(expiry_str) if expiry_str else None
 
-            # entry_time is already a datetime from position_manager.load_positions()
+            # entry_time is already a datetime from position_manager.get_open_positions()
             entry_time = pos['entry_time']
             if isinstance(entry_time, str):
                 entry_time = datetime.fromisoformat(entry_time)
 
-            # Handle both old format (BUY/SELL) and new format (YES/NO)
-            side = pos['side']
+            # Handle both V1 'side' and V2 'outcome' fields
+            side = pos.get('outcome', pos.get('side', 'YES'))
             if side in ['BUY', 'SELL']:
                 outcome = 'YES' if side == 'BUY' else 'NO'
             else:
@@ -981,7 +981,7 @@ class PriceLevelTrader:
         }
 
         # Convert active positions to list format for exposure check
-        existing_positions = self.position_manager.load_positions()
+        existing_positions = self.position_manager.get_open_positions()
 
         # Get total capital (current balance + deployed)
         total_capital = self.balance + sum(p.get('size', 0) for p in existing_positions)
@@ -1371,7 +1371,7 @@ class PriceLevelTrader:
 
     def _log_exposure_report(self):
         """Log portfolio exposure report."""
-        positions = self.position_manager.load_positions()
+        positions = self.position_manager.get_open_positions()
         total_capital = self.balance + sum(p.get('size', 0) for p in positions)
 
         if not positions:
