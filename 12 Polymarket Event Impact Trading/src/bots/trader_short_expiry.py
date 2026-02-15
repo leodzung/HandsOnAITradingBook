@@ -241,6 +241,10 @@ class ShortExpiryTrader:
                 break
             except Exception as e:
                 logger.error(f"Error in main loop: {e}", exc_info=True)
+                self.telegram.notify_error(
+                    f"⚠️ Main loop error:\n{str(e)[:200]}",
+                    bot_name="Short-Expiry Trader"
+                )
                 time.sleep(60)
 
     def discover_markets(self) -> Dict[str, List[Dict]]:
@@ -281,6 +285,10 @@ class ShortExpiryTrader:
                         self.client.register_market_for_orderbook(condition_id, question)
         except Exception as e:
             logger.error(f"Error discovering ultra_short markets: {e}", exc_info=True)
+            self.telegram.notify_error(
+                f"⚠️ Ultra-short market discovery error:\n{str(e)[:200]}",
+                bot_name="Short-Expiry Trader"
+            )
             markets['ultra_short'] = []
 
         # Bucket 2: Short (24-72h)
@@ -309,6 +317,10 @@ class ShortExpiryTrader:
                         self.client.register_market_for_orderbook(condition_id, question)
         except Exception as e:
             logger.error(f"Error discovering short markets: {e}", exc_info=True)
+            self.telegram.notify_error(
+                f"⚠️ Short market discovery error:\n{str(e)[:200]}",
+                bot_name="Short-Expiry Trader"
+            )
             markets['short'] = []
 
         # Bucket 3: Medium (72-168h = 3-7d)
@@ -337,6 +349,10 @@ class ShortExpiryTrader:
                         self.client.register_market_for_orderbook(condition_id, question)
         except Exception as e:
             logger.error(f"Error discovering medium markets: {e}", exc_info=True)
+            self.telegram.notify_error(
+                f"⚠️ Medium market discovery error:\n{str(e)[:200]}",
+                bot_name="Short-Expiry Trader"
+            )
             markets['medium'] = []
 
         return markets
@@ -694,8 +710,32 @@ class ShortExpiryTrader:
                     logger.info(f"Position expired: {market_id[:16]}... | "
                                f"Expired {(now - expiry_time).total_seconds() / 3600:.1f}h ago")
                     # Close at entry price (we don't know final outcome)
+                    pnl = 0.0  # No P&L if expired
+                    pnl_pct = 0.0
+                    position_size = pos.get('size', 0)
+
                     self.position_manager.close_position(
                         market_id, outcome, entry_price, 'expiry_time'
+                    )
+
+                    # Update balance (return position size)
+                    if self.paper_trading:
+                        self.balance += position_size
+                        self._save_balance(self.balance)
+
+                    # Send Telegram notification
+                    self.telegram.notify_position_closed(
+                        market_id=market_id,
+                        asset=pos.get('metadata', {}).get('asset', 'CRYPTO') if isinstance(pos.get('metadata'), dict) else 'CRYPTO',
+                        outcome=outcome,
+                        entry_price=entry_price,
+                        exit_price=entry_price,
+                        position_size=position_size,
+                        pnl=pnl,
+                        pnl_pct=pnl_pct,
+                        exit_reason='expiry_time',
+                        question=market.get('question') if 'market' in locals() else None,
+                        bot_name="Short-Expiry Trader"
                     )
                     continue
 
@@ -710,8 +750,32 @@ class ShortExpiryTrader:
                 if market.get('closed', False) or not market.get('active', True):
                     logger.info(f"Market closed: {market_id[:16]}...")
                     # Close at entry price (we don't know final outcome)
+                    pnl = 0.0
+                    pnl_pct = 0.0
+                    position_size = pos.get('size', 0)
+
                     self.position_manager.close_position(
                         market_id, outcome, entry_price, 'market_closed'
+                    )
+
+                    # Update balance (return position size)
+                    if self.paper_trading:
+                        self.balance += position_size
+                        self._save_balance(self.balance)
+
+                    # Send Telegram notification
+                    self.telegram.notify_position_closed(
+                        market_id=market_id,
+                        asset=pos.get('metadata', {}).get('asset', 'CRYPTO') if isinstance(pos.get('metadata'), dict) else 'CRYPTO',
+                        outcome=outcome,
+                        entry_price=entry_price,
+                        exit_price=entry_price,
+                        position_size=position_size,
+                        pnl=pnl,
+                        pnl_pct=pnl_pct,
+                        exit_reason='market_closed',
+                        question=market.get('question'),
+                        bot_name="Short-Expiry Trader"
                     )
                     continue
 
@@ -730,8 +794,54 @@ class ShortExpiryTrader:
                 if exit_reason:
                     logger.info(f"Exit signal: {market_id[:16]}... | {outcome} | "
                                f"{entry_price:.4f} → {current_price:.4f} | {exit_reason}")
+
+                    # Calculate P&L
+                    position_size = pos.get('size', 0)
+                    if entry_price > 0:
+                        tokens = position_size / entry_price
+                        payout = tokens * current_price
+                        pnl = payout - position_size
+                        pnl_pct = (pnl / position_size) * 100
+                    else:
+                        payout = 0
+                        pnl = -position_size
+                        pnl_pct = -100
+
                     self.position_manager.close_position(
                         market_id, outcome, current_price, exit_reason
+                    )
+
+                    # Update balance (add payout)
+                    if self.paper_trading:
+                        self.balance += payout
+                        self._save_balance(self.balance)
+
+                    # Update risk manager (for circuit breaker)
+                    was_active = self.risk_manager.consecutive_losses >= self.risk_manager.config['risk_management']['circuit_breaker_losses']
+                    self.risk_manager.update_consecutive_losses(is_loss=(pnl < 0))
+                    is_now_active = self.risk_manager.consecutive_losses >= self.risk_manager.config['risk_management']['circuit_breaker_losses']
+
+                    # Check if circuit breaker was just triggered
+                    if not was_active and is_now_active:
+                        self.telegram.notify_circuit_breaker(
+                            consecutive_losses=self.risk_manager.consecutive_losses,
+                            cooldown_hours=4.0,  # Default cooldown
+                            bot_name="Short-Expiry Trader"
+                        )
+
+                    # Send Telegram notification
+                    self.telegram.notify_position_closed(
+                        market_id=market_id,
+                        asset=pos.get('metadata', {}).get('asset', 'CRYPTO') if isinstance(pos.get('metadata'), dict) else 'CRYPTO',
+                        outcome=outcome,
+                        entry_price=entry_price,
+                        exit_price=current_price,
+                        position_size=position_size,
+                        pnl=pnl,
+                        pnl_pct=pnl_pct,
+                        exit_reason=exit_reason,
+                        question=market.get('question'),
+                        bot_name="Short-Expiry Trader"
                     )
                 else:
                     # Update highest/lowest prices seen (for trailing stop)
@@ -741,6 +851,10 @@ class ShortExpiryTrader:
 
             except Exception as e:
                 logger.error(f"Error checking position {market_id[:16]}...: {e}")
+                self.telegram.notify_error(
+                    f"⚠️ Position check error:\nMarket: {market_id[:16]}...\nError: {str(e)[:150]}",
+                    bot_name="Short-Expiry Trader"
+                )
 
 
 def main():

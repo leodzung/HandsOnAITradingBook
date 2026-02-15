@@ -447,6 +447,10 @@ class PriceLevelTrader:
 
             except Exception as e:
                 logger.error(f"[Monitor] Error checking {market_id}: {e}")
+                self.telegram.notify_error(
+                    f"⚠️ Position monitoring error:\nMarket: {market_id[:16]}...\nError: {str(e)[:150]}",
+                    bot_name="Price-Level Trader"
+                )
 
         # Close triggered positions
         for market_id, exit_reason in positions_to_close:
@@ -485,6 +489,10 @@ class PriceLevelTrader:
                     raise
                 except Exception as e:
                     logger.error(f"Error in trading cycle: {e}", exc_info=True)
+                    self.telegram.notify_error(
+                        f"⚠️ Trading cycle error:\n{str(e)[:200]}",
+                        bot_name="Price-Level Trader"
+                    )
                     time.sleep(60)  # Wait 1 minute before retrying
         except KeyboardInterrupt:
             logger.info("Shutting down...")
@@ -532,6 +540,10 @@ class PriceLevelTrader:
                 import traceback
                 logger.error(f"Error processing market {parsed_market.get('question', '')[:40]}: {e}")
                 logger.error(f"Full traceback:\n{traceback.format_exc()}")
+                self.telegram.notify_error(
+                    f"⚠️ Market processing error:\nMarket: {parsed_market.get('question', '')[:60]}\nError: {str(e)[:150]}",
+                    bot_name="Price-Level Trader"
+                )
 
         logger.info(f"Generated {signals_generated} actionable signals, {arbitrage_found} arbitrage opportunities")
 

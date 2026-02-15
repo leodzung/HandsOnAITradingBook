@@ -239,6 +239,7 @@ class PolymarketTrader:
                 logger.info(f"Loaded model from {model_path}")
             except Exception as e:
                 logger.error(f"Failed to load model: {e}")
+                # Note: Telegram not initialized yet, so we can't send alert here
 
         self.signal_generator = TradingSignalGenerator(
             model=self.model,
@@ -304,6 +305,10 @@ class PolymarketTrader:
                 self.stop()
             except Exception as e:
                 logger.error(f"Error in trading cycle: {e}", exc_info=True)
+                self.telegram.notify_error(
+                    f"⚠️ Trading cycle error:\n{str(e)[:200]}",
+                    bot_name="Event Trader"
+                )
                 time.sleep(60)
 
     def stop(self):
@@ -361,6 +366,10 @@ class PolymarketTrader:
                 signals_processed += 1
             except Exception as e:
                 logger.error(f"Error processing signal for {market_id}: {e}", exc_info=True)
+                self.telegram.notify_error(
+                    f"⚠️ Signal processing error:\nMarket: {market.get('question', '')[:60]}\nError: {str(e)[:150]}",
+                    bot_name="Event Trader"
+                )
 
         logger.info(f"Processed {signals_processed} signals")
 
