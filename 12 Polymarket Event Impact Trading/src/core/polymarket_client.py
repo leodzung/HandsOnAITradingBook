@@ -43,7 +43,12 @@ class PolymarketClient:
         self.session = requests.Session()
         self.config = config or {}
 
-        # Orderbook manager for WebSocket/REST switching
+        # Orderbook service client (microservice)
+        self._use_orderbook_service = self.config.get('use_orderbook_service', True)
+        self._orderbook_service_url = self.config.get('orderbook_service_url', 'http://localhost:8765')
+        self._orderbook_client = None
+
+        # Legacy: Orderbook manager for direct WebSocket/REST (deprecated)
         self._orderbook_manager = None
         self._orderbook_source = self.config.get('orderbook_source', 'websocket')
 
@@ -569,10 +574,13 @@ class PolymarketClient:
         """
         Get order book for a specific token.
 
-        Automatically uses WebSocket (real-time) or REST (synthetic) based on configuration.
+        Uses the centralized Orderbook Microservice if enabled (default),
+        otherwise falls back to direct WebSocket/REST or synthetic orderbook.
 
         Configuration:
-            orderbook_source: 'websocket' or 'rest' (default: 'websocket')
+            use_orderbook_service: True (default) - use microservice
+            orderbook_service_url: 'http://localhost:8765' (default)
+            orderbook_source: 'websocket' or 'rest' (legacy, for direct connection)
 
         See: https://github.com/Polymarket/py-clob-client/issues/180
 
@@ -580,56 +588,95 @@ class PolymarketClient:
             token_id: Token ID
 
         Returns:
-            Order book with bids and asks (real from WebSocket or synthetic from /price)
+            Order book with bids and asks
         """
-        # Use orderbook manager if initialized
+        # Priority 1: Use orderbook microservice (recommended)
+        if self._use_orderbook_service:
+            if self._orderbook_client is None:
+                from services.orderbook_client import OrderbookServiceClient
+                self._orderbook_client = OrderbookServiceClient(
+                    service_url=self._orderbook_service_url,
+                    cache_ttl_seconds=self.config.get('orderbook', {}).get('cache_ttl_seconds', 5)
+                )
+            return self._orderbook_client.get_orderbook(token_id)
+
+        # Priority 2: Use orderbook manager if initialized (legacy)
         if self._orderbook_manager:
             return self._orderbook_manager.get_orderbook(token_id)
 
-        # Fallback to synthetic if manager not initialized
+        # Priority 3: Fallback to synthetic if nothing else available
         return self.get_synthetic_orderbook(token_id)
 
     def initialize_orderbook_manager(self, source: Optional[str] = None):
         """
         Initialize the orderbook manager for WebSocket or REST orderbooks.
 
+        NOTE: This method is deprecated when using the Orderbook Microservice.
+        If use_orderbook_service=True in config, this method does nothing.
+
+        Legacy behavior (use_orderbook_service=False):
+        Uses a shared singleton for WebSocket to avoid multiple connections.
+        Each client can still use REST independently.
+
         Args:
             source: 'websocket' or 'rest' (defaults to config setting)
         """
         import logging
-        from core.orderbook_manager import OrderbookManager
 
         logger = logging.getLogger(__name__)
+
+        # Skip initialization if using microservice
+        if self._use_orderbook_service:
+            logger.info("Using Orderbook Microservice - skipping local orderbook manager initialization")
+            return None
+
+        # Legacy: Initialize local orderbook manager
+        from core.shared_orderbook import SharedOrderbookManager
+        from core.orderbook_manager import OrderbookManager
+
         source = source or self._orderbook_source
 
-        self._orderbook_manager = OrderbookManager(
-            client=self,
-            source=source,
-            config=self.config.get('orderbook', {})
-        )
-
-        # Start if WebSocket
         if source == 'websocket':
-            success = self._orderbook_manager.start()
-            if not success:
-                logger.warning("WebSocket failed to start, falling back to REST")
-                self._orderbook_manager = OrderbookManager(
-                    client=self,
-                    source='rest',
-                    config=self.config.get('orderbook', {})
-                )
+            # Use shared singleton for WebSocket (one connection for all bots)
+            self._orderbook_manager = SharedOrderbookManager.get_instance(
+                client=self,
+                source='websocket',
+                config=self.config.get('orderbook', {})
+            )
+            logger.info(f"Using shared WebSocket orderbook manager (legacy mode)")
+        else:
+            # REST mode - each client gets its own instance (no WebSocket)
+            self._orderbook_manager = OrderbookManager(
+                client=self,
+                source='rest',
+                config=self.config.get('orderbook', {})
+            )
+            logger.info(f"Orderbook manager initialized: REST (independent instance, legacy mode)")
 
-        logger.info(f"Orderbook manager initialized: {source}")
         return self._orderbook_manager
 
     def register_market_for_orderbook(self, condition_id: str, question: str = ""):
         """
         Register a market for orderbook tracking (WebSocket subscriptions).
 
+        If using microservice, sends subscription request to service.
+        Otherwise, registers with local orderbook manager.
+
         Args:
             condition_id: Market condition ID
             question: Market question (for logging)
         """
+        # If using microservice, send subscription request
+        if self._use_orderbook_service:
+            if self._orderbook_client is None:
+                from services.orderbook_client import OrderbookServiceClient
+                self._orderbook_client = OrderbookServiceClient(
+                    service_url=self._orderbook_service_url
+                )
+            self._orderbook_client.subscribe_market(condition_id, question=question)
+            return
+
+        # Legacy: Use local orderbook manager
         if not self._orderbook_manager:
             return
 
