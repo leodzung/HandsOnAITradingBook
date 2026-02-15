@@ -248,7 +248,7 @@ class PositionManager:
                      entry_time: datetime, entry_price: float, size: float,
                      edge: float = None, confidence: float = None,
                      signal_reason: str = None, hours_to_expiry: float = None,
-                     metadata: Dict = None, stop_loss_pct: float = None,
+                     bucket: str = None, metadata: Dict = None, stop_loss_pct: float = None,
                      take_profit_pct: float = None):
         """
         Save a new position to database.
@@ -264,6 +264,7 @@ class PositionManager:
             confidence: Signal confidence 0-1 (optional)
             signal_reason: Strategy that generated signal (optional)
             hours_to_expiry: Hours until market expiry at entry (optional)
+            bucket: Trading bucket (e.g., 'ultra_short', 'short', 'medium') (optional)
             metadata: Additional data (dict, optional)
             stop_loss_pct: Stop loss percentage (optional)
             take_profit_pct: Take profit percentage (optional)
@@ -276,14 +277,14 @@ class PositionManager:
             conn.execute('''
                 INSERT INTO positions
                 (market_id, token_id, outcome, entry_time, entry_price, size, status,
-                 edge, confidence, signal_reason, hours_to_expiry_at_entry,
+                 edge, confidence, signal_reason, hours_to_expiry_at_entry, bucket,
                  current_price, highest_price_seen, lowest_price_seen,
                  stop_loss_pct, take_profit_pct, metadata)
-                VALUES (?, ?, ?, ?, ?, ?, 'open', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, 'open', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ''', (
                 market_id, token_id, outcome,
                 entry_time.isoformat(), entry_price, size,
-                edge, confidence, signal_reason, hours_to_expiry,
+                edge, confidence, signal_reason, hours_to_expiry, bucket,
                 entry_price,  # Initialize current_price
                 entry_price,  # Initialize highest_price_seen
                 entry_price,  # Initialize lowest_price_seen

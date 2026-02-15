@@ -641,8 +641,8 @@ class ShortExpiryTrader:
             confidence=signal['confidence'],
             signal_reason=signal['reason'],
             hours_to_expiry=features['hours_to_expiry'].iloc[0],
+            bucket=bucket,
             metadata={
-                'bucket': bucket,
                 'features_json': features.to_json()
             }
         )
