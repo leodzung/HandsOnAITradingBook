@@ -11,6 +11,7 @@ from typing import Dict, List, Optional
 import logging
 from pathlib import Path
 import numpy as np
+import pandas as pd
 
 from core.polymarket_client import PolymarketClient
 
@@ -100,6 +101,23 @@ class PriceTracker:
         cursor.execute('''
             CREATE INDEX IF NOT EXISTS idx_market_id
             ON tracked_events(market_id)
+        ''')
+
+        # Table: price_snapshots (for short-expiry momentum features)
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS price_snapshots (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                market_id TEXT NOT NULL,
+                price REAL NOT NULL,
+                timestamp TIMESTAMP NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        ''')
+
+        # Index for efficient time-based queries
+        cursor.execute('''
+            CREATE INDEX IF NOT EXISTS idx_price_market_time
+            ON price_snapshots(market_id, timestamp)
         ''')
 
         conn.commit()
@@ -339,6 +357,107 @@ class PriceTracker:
             return -1  # DOWN
         else:
             return 0  # NEUTRAL
+
+    def track_price(self, market_id: str, price: float):
+        """
+        Track a price snapshot for momentum feature calculation.
+
+        Used by short-expiry bot to build price history for velocity/acceleration features.
+
+        Args:
+            market_id: Market condition ID
+            price: Current market price (0.0 - 1.0)
+        """
+        conn = self._get_connection()
+        cursor = conn.cursor()
+
+        try:
+            cursor.execute('''
+                INSERT INTO price_snapshots (market_id, price, timestamp)
+                VALUES (?, ?, ?)
+            ''', (market_id, price, datetime.now(timezone.utc).isoformat()))
+
+            conn.commit()
+        except Exception as e:
+            logger.error(f"Error tracking price for {market_id}: {e}")
+            conn.rollback()
+        finally:
+            conn.close()
+
+    def get_price_history(self, market_id: str, hours: int = 24) -> Optional[pd.DataFrame]:
+        """
+        Retrieve price history for a market.
+
+        Returns snapshots from the last N hours for momentum calculations.
+
+        Args:
+            market_id: Market condition ID
+            hours: Hours of history to retrieve (default: 24)
+
+        Returns:
+            DataFrame with columns ['price', 'timestamp'] or None if no data
+        """
+        import pandas as pd
+
+        conn = self._get_connection()
+        cutoff = datetime.now(timezone.utc) - timedelta(hours=hours)
+
+        try:
+            df = pd.read_sql_query('''
+                SELECT price, timestamp
+                FROM price_snapshots
+                WHERE market_id = ? AND timestamp > ?
+                ORDER BY timestamp ASC
+            ''', conn, params=(market_id, cutoff.isoformat()))
+
+            conn.close()
+
+            if df.empty:
+                return None
+
+            # Convert timestamp to datetime
+            df['timestamp'] = pd.to_datetime(df['timestamp'])
+
+            return df
+
+        except Exception as e:
+            logger.error(f"Error getting price history for {market_id}: {e}")
+            conn.close()
+            return None
+
+    def cleanup_old_snapshots(self, days: int = 7) -> int:
+        """
+        Clean up old price snapshots to prevent database bloat.
+
+        Args:
+            days: Delete snapshots older than this many days (default: 7)
+
+        Returns:
+            Number of snapshots deleted
+        """
+        conn = self._get_connection()
+        cursor = conn.cursor()
+
+        cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+
+        try:
+            cursor.execute('''
+                DELETE FROM price_snapshots
+                WHERE timestamp < ?
+            ''', (cutoff.isoformat(),))
+
+            deleted = cursor.rowcount
+            conn.commit()
+
+            logger.info(f"Cleaned up {deleted} old price snapshots (older than {days} days)")
+            return deleted
+
+        except Exception as e:
+            logger.error(f"Error cleaning up snapshots: {e}")
+            conn.rollback()
+            return 0
+        finally:
+            conn.close()
 
     def get_statistics(self) -> Dict:
         """Get tracking statistics."""
