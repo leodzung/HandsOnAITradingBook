@@ -17,7 +17,7 @@ from dataclasses import dataclass
 
 from core.slippage_estimator import SlippageEstimator
 from core.polymarket_client import PolymarketClient
-from core.position_manager import PositionManager
+from core.position_manager_v2 import PositionManager
 
 
 logger = logging.getLogger(__name__)
@@ -299,27 +299,22 @@ class TradeExecutor:
             if request.confidence:
                 logger.info(f"     Confidence: {request.confidence:.2%}")
 
-        # Build position data
-        position_data = {
-            'market_id': request.market_id,
-            'token_id': request.token_id,
-            'side': request.outcome,
-            'entry_price': request.entry_price,
-            'size': request.position_size,
-            'entry_time': datetime.now(timezone.utc).isoformat(),
-            'metadata': self._build_metadata(request)
-        }
+        # Build metadata for position
+        metadata = self._build_metadata(request)
 
-        # Save position
+        # Save position (using V2 API with analytics fields)
         try:
             self.position_manager.save_position(
                 market_id=request.market_id,
                 token_id=request.token_id,
+                outcome=request.outcome,  # V2 uses 'outcome' instead of 'side'
                 entry_time=datetime.now(timezone.utc),
                 entry_price=request.entry_price,
-                side=request.outcome,
                 size=request.position_size,
-                metadata=position_data['metadata']
+                edge=request.edge,  # V2: track expected edge
+                confidence=request.confidence,  # V2: track confidence
+                signal_reason=request.signal_reason,  # V2: track strategy
+                metadata=metadata
             )
             logger.info("✓ Position tracked and persisted")
 
