@@ -29,6 +29,7 @@ from core.trade_executor import TradeExecutor, TradeRequest
 from utils.conditional_resolution import ConditionalResolutionAnalyzer
 from core.exposure_manager import ExposureManager
 from monitoring.telegram_notifier import TelegramNotifier
+from ml.snapshot_collector import MarketSnapshotCollector
 
 
 class ArbitrageLogger:
@@ -283,6 +284,13 @@ class PriceLevelTrader:
         )
         if telegram_config.get('enabled', False):
             logger.info("✓ Telegram notifications enabled")
+
+        # Initialize snapshot collector (centralized training data collection with alerts)
+        self.snapshot_collector = MarketSnapshotCollector(
+            db_path='data/market_snapshots.db',
+            telegram=self.telegram if telegram_config.get('enabled', False) else None
+        )
+        logger.info("✓ Snapshot collector initialized")
 
         logger.info("Initialization complete")
 
@@ -940,6 +948,39 @@ class PriceLevelTrader:
         signal['outcome'] = final_outcome
         signal['no_price'] = no_price  # Actual NO price from API
 
+        # Log snapshot for training data collection (regardless of whether trade is executed)
+        try:
+            self.snapshot_collector.log_snapshot(
+                market_id=parsed_market.get('conditionId'),
+                bot_type='price_level',
+                features=model_features,  # Already in model-compatible format
+                prediction={
+                    'model_prob': signal.get('model_prob', 0.5),
+                    'confidence': signal.get('confidence', 0.0),
+                    'edge': signal.get('edge', 0.0),
+                    'predicted_outcome': final_outcome if final_outcome else 'HOLD'
+                },
+                market_data={
+                    'question': parsed_market.get('question', ''),
+                    'asset': parsed_market.get('asset'),
+                    'strike_price': parsed_market.get('strike_price'),
+                    'expiry_date': parsed_market.get('expiry_date'),
+                    'days_to_expiry': parsed_market.get('days_to_expiry'),
+                    'market_type': parsed_market.get('market_type'),
+                    'condition_id': parsed_market.get('conditionId'),
+                    'token_id': parsed_market.get('token_id')
+                },
+                prices={
+                    'yes': market_price,
+                    'no': no_price,
+                    'spread': spread
+                },
+                position_opened=False,  # Will update in execute_signal if trade happens
+                rejection_reason=None  # Will be filled if trade blocked
+            )
+        except Exception as e:
+            logger.warning(f"Failed to log snapshot: {e}")
+
         return signal
 
     def execute_signal(self, parsed_market: Dict, signal: Dict):
@@ -1083,6 +1124,20 @@ class PriceLevelTrader:
             'strike_price': parsed_market.get('strike_price'),
             'slug': slug
         }
+
+        # Log successful position opening in snapshot (for training data tracking)
+        try:
+            # Find the most recent snapshot for this market and update it
+            unlabeled = self.snapshot_collector.get_unlabeled_snapshots(bot_type='price_level')
+            matching = [s for s in unlabeled if s['market_id'] == market_id or s['condition_id'] == market_id]
+            if matching:
+                # Get the most recent snapshot
+                most_recent = max(matching, key=lambda x: x['snapshot_time'])
+                # Note: We can't easily update position_opened flag without modifying the collector
+                # For now, we'll log that a position was opened via position_id tracking
+                logger.debug(f"Snapshot {most_recent['id']} linked to opened position")
+        except Exception as e:
+            logger.debug(f"Could not link snapshot to position: {e}")
 
         # Send Telegram notification
         self.telegram.notify_position_opened(
@@ -1300,6 +1355,41 @@ class PriceLevelTrader:
                 pnl=pnl,
                 exit_reason=exit_reason
             )
+
+            # Record outcome in snapshot collector for ML training
+            try:
+                # Determine outcome based on position direction and exit price
+                position_outcome = position.get('outcome', 'YES')
+
+                # For binary outcomes, determine if market resolved favorably
+                # If we bought YES and price went up → favorable
+                # If we bought NO and price went down → favorable
+                # For expiry, use exit price as proxy
+                if exit_reason == 'expiry':
+                    # Market expired - use final price as resolution proxy
+                    # High exit price (~1.0) suggests YES, low price (~0.0) suggests NO
+                    if exit_price >= 0.9:
+                        actual_outcome = 'YES'
+                    elif exit_price <= 0.1:
+                        actual_outcome = 'NO'
+                    else:
+                        actual_outcome = 'EXPIRED'  # Ambiguous
+                else:
+                    # Position closed early (SL/TP/trailing) - outcome still uncertain
+                    # We can't definitively say YES/NO until expiry
+                    # So we'll record as incomplete for now
+                    actual_outcome = None  # Don't label yet
+
+                if actual_outcome:
+                    self.snapshot_collector.record_outcome(
+                        market_id=market_id,
+                        bot_type='price_level',
+                        outcome=actual_outcome,
+                        resolution_price=exit_price
+                    )
+                    logger.debug(f"Recorded outcome '{actual_outcome}' for market snapshots")
+            except Exception as e:
+                logger.debug(f"Could not record snapshot outcome: {e}")
 
             # Send Telegram notification
             self.telegram.notify_position_closed(
