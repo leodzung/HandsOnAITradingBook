@@ -211,6 +211,10 @@ class OrderBookWebSocket:
     BACKOFF_MULTIPLIER = 2  # exponential factor
     JITTER_RANGE = 0.3  # ±30% random jitter to prevent thundering herd
 
+    # Data staleness monitoring (workaround for Polymarket server-side freeze bug)
+    # See: https://github.com/Polymarket/real-time-data-client/issues/26
+    DATA_STALENESS_TIMEOUT = 300  # seconds (5 minutes) - reconnect if no data messages
+
     def __init__(self, on_book_update: Optional[Callable[[OrderBook], None]] = None,
                  on_arb_signal: Optional[Callable[[ArbitrageSignal], None]] = None):
         """
@@ -240,10 +244,12 @@ class OrderBookWebSocket:
         self._ws: Optional[websocket.WebSocketApp] = None
         self._ws_thread: Optional[threading.Thread] = None
         self._ping_thread: Optional[threading.Thread] = None
+        self._staleness_monitor_thread: Optional[threading.Thread] = None
         self._running = False
         self._connected = False
         self._reconnect_count = 0
         self._current_backoff_delay = self.INITIAL_RECONNECT_DELAY
+        self._last_data_message_time = time.time()  # Track last data message (not ping/pong)
 
         # Statistics
         self.stats = {
@@ -402,12 +408,18 @@ class OrderBookWebSocket:
             return
 
         self._running = True
+        self._last_data_message_time = time.time()  # Reset on start
+
         self._ws_thread = threading.Thread(target=self._run_websocket, daemon=True)
         self._ws_thread.start()
 
         # Start ping thread to keep connection alive
         self._ping_thread = threading.Thread(target=self._ping_loop, daemon=True)
         self._ping_thread.start()
+
+        # Start staleness monitor (workaround for Polymarket server-side data freeze bug)
+        self._staleness_monitor_thread = threading.Thread(target=self._monitor_data_staleness, daemon=True)
+        self._staleness_monitor_thread.start()
 
         logger.info("OrderBook WebSocket started")
 
@@ -488,6 +500,33 @@ class OrderBookWebSocket:
                 except:
                     pass
 
+    def _monitor_data_staleness(self) -> None:
+        """
+        Monitor for data message staleness and force reconnect if needed.
+
+        Workaround for Polymarket server-side bug where data stream freezes after ~20 minutes
+        while connection remains open. See: https://github.com/Polymarket/real-time-data-client/issues/26
+        """
+        while self._running:
+            time.sleep(30)  # Check every 30 seconds
+
+            if self._connected:
+                time_since_last_data = time.time() - self._last_data_message_time
+
+                if time_since_last_data > self.DATA_STALENESS_TIMEOUT:
+                    logger.warning(
+                        f"Data stream stale for {time_since_last_data:.0f}s "
+                        f"(threshold: {self.DATA_STALENESS_TIMEOUT}s) - forcing reconnect"
+                    )
+                    self.stats['reconnects'] += 1
+
+                    # Force close and reconnect
+                    if self._ws:
+                        try:
+                            self._ws.close()
+                        except:
+                            pass
+
     def _on_open(self, ws) -> None:
         """Handle WebSocket connection opened - reset backoff on successful connection."""
         self._connected = True
@@ -495,6 +534,9 @@ class OrderBookWebSocket:
 
         # Reset backoff delay on successful connection
         self._current_backoff_delay = self.INITIAL_RECONNECT_DELAY
+
+        # Reset data staleness timer
+        self._last_data_message_time = time.time()
 
         logger.info("WebSocket connected successfully (backoff reset)")
 
@@ -519,6 +561,9 @@ class OrderBookWebSocket:
             data = json.loads(message)
         except json.JSONDecodeError:
             return
+
+        # Update last data message time (not ping/pong, actual data)
+        self._last_data_message_time = time.time()
 
         # Handle array of book updates (initial snapshot)
         if isinstance(data, list):
