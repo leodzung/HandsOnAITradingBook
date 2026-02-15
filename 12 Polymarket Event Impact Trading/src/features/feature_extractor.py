@@ -9,6 +9,10 @@ from typing import Dict, List, Optional
 from datetime import datetime, timedelta, timezone
 from collections import Counter
 import re
+import warnings
+
+# Import centralized feature extractors
+from features.common_features import OrderbookFeatures, VolumeFeatures
 
 
 class SentimentAnalyzer:
@@ -181,41 +185,28 @@ class MarketFeatureExtractor:
         """
         Extract features from order book.
 
+        DEPRECATED: This method now uses the centralized OrderbookFeatures extractor
+        from common_features.py. All new code should use OrderbookFeatures directly.
+
         Args:
             orderbook: Order book dictionary with 'bids' and 'asks'
 
         Returns:
             Dictionary of features
         """
+        # Use centralized implementation
+        features = OrderbookFeatures.extract(orderbook, return_best_bid_ask=True)
+
+        # Calculate bid_ask_imbalance (event trader specific)
         bids = orderbook.get('bids', [])
         asks = orderbook.get('asks', [])
 
-        if not bids or not asks:
-            return {}
-
-        # Best bid/ask
-        best_bid_price = float(bids[0]['price'])
-        best_ask_price = float(asks[0]['price'])
-        best_bid_size = float(bids[0]['size'])
-        best_ask_size = float(asks[0]['size'])
-
-        features = {
-            'best_bid': best_bid_price,
-            'best_ask': best_ask_price,
-            'spread': best_ask_price - best_bid_price,
-            'spread_pct': (best_ask_price - best_bid_price) / max(best_bid_price, 0.01) * 100,
-            'mid_price': (best_bid_price + best_ask_price) / 2,
-            'bid_ask_imbalance': (best_bid_size - best_ask_size) / (best_bid_size + best_ask_size)
-        }
-
-        # Depth features (top 5 levels)
-        if len(bids) >= 5 and len(asks) >= 5:
-            bid_depth = sum(float(b['size']) for b in bids[:5])
-            ask_depth = sum(float(a['size']) for a in asks[:5])
-
-            features['bid_depth_5'] = bid_depth
-            features['ask_depth_5'] = ask_depth
-            features['depth_imbalance'] = (bid_depth - ask_depth) / (bid_depth + ask_depth)
+        if bids and asks:
+            best_bid_size = float(bids[0]['size']) if isinstance(bids[0], dict) else float(bids[0][1])
+            best_ask_size = float(asks[0]['size']) if isinstance(asks[0], dict) else float(asks[0][1])
+            features['bid_ask_imbalance'] = (best_bid_size - best_ask_size) / (best_bid_size + best_ask_size)
+        else:
+            features['bid_ask_imbalance'] = 0.0
 
         return features
 

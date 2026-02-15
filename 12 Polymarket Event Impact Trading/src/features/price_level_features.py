@@ -10,6 +10,9 @@ from typing import Dict, Optional
 from datetime import datetime, timezone
 import json
 
+# Import centralized feature extractors
+from features.common_features import OrderbookFeatures, VolumeFeatures, TimeFeatures
+
 # Set up logging
 logging.basicConfig(
     level=logging.INFO,
@@ -404,7 +407,12 @@ class TimeFeatures:
 
 
 class MarketMicrostructureFeatures:
-    """Extract Polymarket-specific features."""
+    """
+    Extract Polymarket-specific features.
+
+    UPDATED: Now uses centralized OrderbookFeatures and VolumeFeatures
+    from common_features.py for consistency across all bots.
+    """
 
     @staticmethod
     def extract_market_features(market: Dict, orderbook: Dict) -> Dict[str, float]:
@@ -418,56 +426,22 @@ class MarketMicrostructureFeatures:
         Returns:
             Dict with market features
         """
-        bids = orderbook.get('bids', [])
-        asks = orderbook.get('asks', [])
+        # Use centralized orderbook extraction
+        orderbook_features = OrderbookFeatures.extract(orderbook, return_best_bid_ask=False)
 
-        if bids and asks:
-            # Handle both dict format {'price': x, 'size': y} and array format [x, y]
-            if isinstance(bids[0], dict):
-                best_bid = float(bids[0]['price'])
-                best_ask = float(asks[0]['price'])
-                bid_depth_5 = sum(float(b['size']) for b in bids[:5])
-                ask_depth_5 = sum(float(a['size']) for a in asks[:5])
-            else:
-                # Array format: [price, size]
-                best_bid = float(bids[0][0])
-                best_ask = float(asks[0][0])
-                bid_depth_5 = sum(float(b[1]) for b in bids[:5])
-                ask_depth_5 = sum(float(a[1]) for a in asks[:5])
+        # Use centralized volume extraction
+        volume_features = VolumeFeatures.extract(market)
 
-            spread = best_ask - best_bid
-            mid_price = (best_bid + best_ask) / 2
-
-            if bid_depth_5 + ask_depth_5 > 0:
-                depth_imbalance = (bid_depth_5 - ask_depth_5) / (bid_depth_5 + ask_depth_5)
-            else:
-                depth_imbalance = 0.0
-
-            spread_pct = (spread / mid_price * 100) if mid_price > 0 else 0.0
-        else:
-            mid_price = 0.5
-            spread = 0.0
-            spread_pct = 0.0
-            depth_imbalance = 0.0
-
-        # Volume features
-        volume_24h = float(market.get('volume24hr', 0))
-        volume_7d = float(market.get('volume1wk', 0))
-        liquidity = float(market.get('liquidity', 0))
-
-        # Volume trend (24h / 7d avg)
-        avg_daily_vol_7d = volume_7d / 7.0 if volume_7d > 0 else 1.0
-        volume_trend = volume_24h / avg_daily_vol_7d if avg_daily_vol_7d > 0 else 1.0
-
+        # Combine features with price-level specific naming
         return {
-            'market_price': mid_price,
-            'spread': spread,
-            'spread_pct': spread_pct,
-            'depth_imbalance': depth_imbalance,
-            'volume_24h': volume_24h,
-            'volume_7d': volume_7d,
-            'liquidity': liquidity,
-            'volume_trend': volume_trend
+            'market_price': orderbook_features['mid_price'],
+            'spread': orderbook_features['spread'],
+            'spread_pct': orderbook_features['spread_pct'],
+            'depth_imbalance': orderbook_features['depth_imbalance'],
+            'volume_24h': volume_features['volume_24h'],
+            'volume_7d': volume_features['volume_7d'],
+            'liquidity': volume_features['liquidity'],
+            'volume_trend': volume_features['volume_trend']
         }
 
 

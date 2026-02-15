@@ -4,6 +4,9 @@ Feature extraction for short-expiry markets.
 This module provides specialized feature extractors for short-expiry prediction markets
 (2 hours to 7 days). Features are designed to capture time-decay dynamics, momentum,
 microstructure signals, and crypto-specific patterns.
+
+UPDATED: Now uses centralized OrderbookFeatures and TimeFeatures from common_features.py
+for consistency across all bots.
 """
 
 import pandas as pd
@@ -11,6 +14,9 @@ import numpy as np
 from datetime import datetime, timezone, timedelta
 from typing import Dict, List, Optional
 import logging
+
+# Import centralized feature extractors
+from features.common_features import OrderbookFeatures, TimeFeatures
 
 logger = logging.getLogger(__name__)
 
@@ -162,7 +168,12 @@ class MomentumFeatures:
 
 
 class MicrostructureFeatures:
-    """Extract order book microstructure features."""
+    """
+    Extract order book microstructure features.
+
+    UPDATED: Now uses centralized OrderbookFeatures from common_features.py
+    with short-expiry specific additions (concentration, effective spread).
+    """
 
     @staticmethod
     def extract(market: Dict, orderbook: Optional[Dict] = None) -> Dict[str, float]:
@@ -178,53 +189,48 @@ class MicrostructureFeatures:
         """
         features = {}
 
-        # Get best bid/ask from market data
-        best_bid = market.get('bestBid', 0.45)
-        best_ask = market.get('bestAsk', 0.55)
-
-        if isinstance(best_bid, str):
-            best_bid = float(best_bid)
-        if isinstance(best_ask, str):
-            best_ask = float(best_ask)
-
-        # Spread features
-        spread = best_ask - best_bid
-        mid_price = (best_bid + best_ask) / 2.0
-
-        features['spread'] = spread
-        features['spread_pct'] = (spread / mid_price * 100) if mid_price > 0 else 0
-        features['mid_price'] = mid_price
-
-        # If we have orderbook data, calculate depth features
+        # Use centralized orderbook extraction if available
         if orderbook is not None:
+            orderbook_features = OrderbookFeatures.extract(orderbook, return_best_bid_ask=False)
+            features.update(orderbook_features)
+
+            # Add short-expiry specific features: concentration
             bids = orderbook.get('bids', [])
             asks = orderbook.get('asks', [])
 
-            # Depth imbalance (bid vs ask volume)
-            bid_volume = sum(float(b.get('size', 0)) for b in bids[:5])  # Top 5 levels
-            ask_volume = sum(float(a.get('size', 0)) for a in asks[:5])
+            bid_volume_top5 = orderbook_features['bid_depth_5']
+            ask_volume_top5 = orderbook_features['ask_depth_5']
 
-            total_volume = bid_volume + ask_volume
-            if total_volume > 0:
-                features['depth_imbalance'] = (bid_volume - ask_volume) / total_volume
-            else:
-                features['depth_imbalance'] = 0.0
-
-            features['bid_volume_top5'] = bid_volume
-            features['ask_volume_top5'] = ask_volume
-
-            # Liquidity ratio (volume at best vs total)
-            if len(bids) > 0 and bid_volume > 0:
-                features['bid_concentration'] = float(bids[0].get('size', 0)) / bid_volume
+            # Liquidity concentration (volume at best vs total top 5)
+            if len(bids) > 0 and bid_volume_top5 > 0:
+                best_bid_size = float(bids[0].get('size', 0)) if isinstance(bids[0], dict) else float(bids[0][1])
+                features['bid_concentration'] = best_bid_size / bid_volume_top5
             else:
                 features['bid_concentration'] = 0.0
 
-            if len(asks) > 0 and ask_volume > 0:
-                features['ask_concentration'] = float(asks[0].get('size', 0)) / ask_volume
+            if len(asks) > 0 and ask_volume_top5 > 0:
+                best_ask_size = float(asks[0].get('size', 0)) if isinstance(asks[0], dict) else float(asks[0][1])
+                features['ask_concentration'] = best_ask_size / ask_volume_top5
             else:
                 features['ask_concentration'] = 0.0
+
+            features['bid_volume_top5'] = bid_volume_top5
+            features['ask_volume_top5'] = ask_volume_top5
+
+            mid_price = orderbook_features['mid_price']
         else:
-            # No orderbook - use defaults
+            # No orderbook - use market data fallback
+            best_bid = float(market.get('bestBid', 0.45))
+            best_ask = float(market.get('bestAsk', 0.55))
+
+            spread = best_ask - best_bid
+            mid_price = (best_bid + best_ask) / 2.0
+
+            features['spread'] = spread
+            features['spread_pct'] = (spread / mid_price * 100) if mid_price > 0 else 0
+            features['mid_price'] = mid_price
+            features['bid_depth_5'] = 0.0
+            features['ask_depth_5'] = 0.0
             features['depth_imbalance'] = 0.0
             features['bid_volume_top5'] = 0.0
             features['ask_volume_top5'] = 0.0
@@ -232,10 +238,7 @@ class MicrostructureFeatures:
             features['ask_concentration'] = 0.0
 
         # Effective spread (from recent trades)
-        last_trade_price = market.get('lastTradePrice', mid_price)
-        if isinstance(last_trade_price, str):
-            last_trade_price = float(last_trade_price)
-
+        last_trade_price = float(market.get('lastTradePrice', mid_price))
         features['effective_spread'] = abs(last_trade_price - mid_price)
 
         return features
