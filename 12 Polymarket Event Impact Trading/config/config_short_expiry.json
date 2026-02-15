@@ -63,7 +63,7 @@
     "min_confidence": 0.55
   },
 
-  "orderbook_source": "websocket",
+  "orderbook_source": "rest",
   "orderbook": {
     "cache_ttl_seconds": 5
   },

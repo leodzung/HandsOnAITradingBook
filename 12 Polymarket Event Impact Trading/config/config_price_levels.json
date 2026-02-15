@@ -76,7 +76,7 @@
     "warn_threshold_bps": 3000
   },
 
-  "orderbook_source": "websocket",
+  "orderbook_source": "rest",
   "orderbook": {
     "cache_ttl_seconds": 5
   },
