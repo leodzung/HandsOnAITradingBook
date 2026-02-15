@@ -21,7 +21,7 @@ from core.polymarket_client import PolymarketClient, MarketFilter
 from core.price_fetcher import PriceFetcher
 from utils.event_detector import EventDetector
 from features.feature_extractor import FeatureEngineering
-from models.models import PriceMovementPredictor, TradingSignalGenerator, ModelPerformanceTracker
+from models.models_v2 import PriceMovementPredictor, TradingSignalGenerator, ModelPerformanceTracker
 from utils.price_tracker import PriceTracker
 from core.position_manager_v2 import PositionManager
 from monitoring.telegram_notifier import TelegramNotifier
