@@ -699,7 +699,19 @@ class ShortExpiryTrader:
             if not bucket:
                 # Fallback to metadata for old positions
                 metadata = pos.get('metadata', {})
-                bucket = metadata.get('bucket', 'short') if isinstance(metadata, dict) else 'short'
+                if isinstance(metadata, dict):
+                    bucket = metadata.get('bucket', 'short')
+                else:
+                    bucket = 'short'
+
+            # Fix pandas DataFrame dict format {'0': 'value'} -> 'value'
+            if isinstance(bucket, dict) and '0' in bucket:
+                bucket = bucket['0']
+
+            # Ensure bucket is a string
+            if not isinstance(bucket, str):
+                logger.warning(f"Invalid bucket type {type(bucket)} for position {market_id[:16]}..., defaulting to 'short'")
+                bucket = 'short'
 
             logger.debug(f"Checking position: {market_id[:16]}... | "
                         f"Outcome: {outcome} | Entry: {entry_price:.4f}")

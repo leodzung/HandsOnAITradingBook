@@ -212,7 +212,8 @@ class PolymarketClient:
             response = self.session.get(
                 f"{self.GAMMA_URL}/markets",
                 params=params,
-                headers=self._get_headers()
+                headers=self._get_headers(),
+                timeout=30  # Longer timeout for paginated requests
             )
             response.raise_for_status()
             markets = response.json()
@@ -223,32 +224,87 @@ class PolymarketClient:
                 markets = self.filter_closed_markets(markets)
 
             return markets
+        except requests.exceptions.Timeout as e:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.warning(f"Timeout fetching markets (limit={limit}, offset={offset}): {e}")
+            return []
+        except requests.exceptions.RequestException as e:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.error(f"Request error fetching markets (limit={limit}, offset={offset}): {e}")
+            return []
         except Exception as e:
-            print(f"Error fetching markets: {e}")
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.error(f"Unexpected error fetching markets: {type(e).__name__}: {e}")
             return []
 
-    def get_event(self, slug: str) -> Optional[Dict]:
+    def get_event(self, slug: str, max_retries: int = 3, timeout: int = 10) -> Optional[Dict]:
         """
         Get event details by slug (includes restricted markets).
 
         Args:
             slug: Event slug (e.g., 'what-price-will-ethereum-hit-before-2027')
+            max_retries: Maximum number of retry attempts (default: 3)
+            timeout: Request timeout in seconds (default: 10)
 
         Returns:
             Event dictionary with markets or None
         """
-        try:
-            response = self.session.get(
-                f"{self.GAMMA_URL}/events",
-                params={'slug': slug},
-                headers=self._get_headers()
-            )
-            response.raise_for_status()
-            events = response.json()
-            return events[0] if events else None
-        except Exception as e:
-            print(f"Error fetching event {slug}: {e}")
-            return None
+        import logging
+        logger = logging.getLogger(__name__)
+
+        for attempt in range(max_retries):
+            try:
+                response = self.session.get(
+                    f"{self.GAMMA_URL}/events",
+                    params={'slug': slug},
+                    headers=self._get_headers(),
+                    timeout=timeout
+                )
+                response.raise_for_status()
+                events = response.json()
+                return events[0] if events else None
+
+            except requests.exceptions.Timeout as e:
+                logger.warning(
+                    f"Timeout fetching event '{slug}' "
+                    f"(attempt={attempt+1}/{max_retries}): {e}"
+                )
+                if attempt < max_retries - 1:
+                    time.sleep(0.5 * (attempt + 1))  # Exponential backoff
+                    continue
+
+            except requests.exceptions.ConnectionError as e:
+                # DNS failures, connection refused, etc.
+                logger.warning(
+                    f"Connection error fetching event '{slug}' "
+                    f"(attempt={attempt+1}/{max_retries}): {e}"
+                )
+                if attempt < max_retries - 1:
+                    time.sleep(1.0 * (attempt + 1))  # Longer backoff for connection issues
+                    continue
+
+            except requests.exceptions.RequestException as e:
+                logger.error(
+                    f"Request error fetching event '{slug}' "
+                    f"(attempt={attempt+1}/{max_retries}): {e}"
+                )
+                if attempt < max_retries - 1:
+                    time.sleep(0.5 * (attempt + 1))
+                    continue
+
+            except Exception as e:
+                logger.error(
+                    f"Unexpected error fetching event '{slug}' "
+                    f"(attempt={attempt+1}/{max_retries}): {type(e).__name__}: {e}"
+                )
+                if attempt < max_retries - 1:
+                    time.sleep(0.5 * (attempt + 1))
+                    continue
+
+        return None
 
     def get_markets_from_event(self, slug: str, exclude_closed: bool = True) -> List[Dict]:
         """
@@ -741,7 +797,7 @@ class PolymarketClient:
             print(f"Error creating synthetic orderbook for {token_id}: {e}")
             return {'bids': [], 'asks': []}
 
-    def get_token_price(self, token_id: str, side: str = 'sell') -> Optional[float]:
+    def get_token_price(self, token_id: str, side: str = 'sell', max_retries: int = 3) -> Optional[float]:
         """
         Get accurate live price from /price endpoint (NOT stale /book data).
 
@@ -754,6 +810,7 @@ class PolymarketClient:
             token_id: Token ID
             side: 'sell' for ask prices (cost to buy tokens),
                   'buy' for bid prices (proceeds from selling tokens)
+            max_retries: Maximum number of retry attempts (default: 3)
 
         Returns:
             Current price or None
@@ -765,25 +822,61 @@ class PolymarketClient:
             # To get the price you'd RECEIVE selling YES tokens (bid price):
             bid_price = client.get_token_price(yes_token_id, side='buy')
         """
-        try:
-            response = self.session.get(
-                f"{self.BASE_URL}/price",
-                params={
-                    'token_id': token_id,
-                    'side': side
-                },
-                headers=self._get_headers(),
-                timeout=10
-            )
-            response.raise_for_status()
-            data = response.json()
-            price = data.get('price')
-            if price is not None:
-                return float(price)
-            return None
-        except Exception as e:
-            print(f"Error fetching price for {token_id[:16]}...: {e}")
-            return None
+        import logging
+        logger = logging.getLogger(__name__)
+
+        for attempt in range(max_retries):
+            try:
+                response = self.session.get(
+                    f"{self.BASE_URL}/price",
+                    params={
+                        'token_id': token_id,
+                        'side': side
+                    },
+                    headers=self._get_headers(),
+                    timeout=10
+                )
+                response.raise_for_status()
+                data = response.json()
+                price = data.get('price')
+                if price is not None:
+                    return float(price)
+
+                # Price field missing in response
+                logger.warning(
+                    f"Price field missing in response for token {token_id[:16]}... "
+                    f"(side={side}, attempt={attempt+1}/{max_retries})"
+                )
+                return None
+
+            except requests.exceptions.Timeout as e:
+                logger.warning(
+                    f"Timeout fetching price for token {token_id[:16]}... "
+                    f"(side={side}, attempt={attempt+1}/{max_retries}): {e}"
+                )
+                if attempt < max_retries - 1:
+                    time.sleep(0.5 * (attempt + 1))  # Exponential backoff
+                    continue
+
+            except requests.exceptions.RequestException as e:
+                logger.error(
+                    f"Request error fetching price for token {token_id[:16]}... "
+                    f"(side={side}, attempt={attempt+1}/{max_retries}): {e}"
+                )
+                if attempt < max_retries - 1:
+                    time.sleep(0.5 * (attempt + 1))  # Exponential backoff
+                    continue
+
+            except Exception as e:
+                logger.error(
+                    f"Unexpected error fetching price for token {token_id[:16]}... "
+                    f"(side={side}, attempt={attempt+1}/{max_retries}): {type(e).__name__}: {e}"
+                )
+                if attempt < max_retries - 1:
+                    time.sleep(0.5 * (attempt + 1))  # Exponential backoff
+                    continue
+
+        return None
 
     def get_clob_prices(self, condition_id: str, side: str = 'BUY') -> Dict[str, Optional[float]]:
         """
@@ -1535,8 +1628,9 @@ class MarketFilter:
                         if logger:
                             logger.debug(f"  + {len(event_batch)} markets from '{slug}'")
                 except Exception as e:
-                    if logger:
-                        logger.debug(f"Event {slug} not found or error: {e}")
+                    # Expected: Some event slugs may not exist yet (future dates)
+                    # Errors are already logged by get_event() with retry logic
+                    pass
 
             event_duration = time_module.time() - event_start
 

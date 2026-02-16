@@ -811,6 +811,9 @@ class PriceLevelTrader:
             market_price = entry_prices.yes_price
             no_price = entry_prices.no_price
 
+            # Calculate spread
+            spread = market_price + no_price - 1.0  # Market maker spread
+
             # Orderbook is still useful for liquidity/spread analysis (optional)
             orderbook = self.client.get_orderbook(token_id)
 
