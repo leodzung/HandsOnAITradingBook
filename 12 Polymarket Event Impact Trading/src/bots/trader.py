@@ -25,6 +25,7 @@ from models.models_v2 import PriceMovementPredictor, TradingSignalGenerator, Mod
 from utils.price_tracker import PriceTracker
 from core.position_manager_v2 import PositionManager
 from monitoring.telegram_notifier import TelegramNotifier
+from ml.snapshot_collector import MarketSnapshotCollector
 
 
 # Setup logging
@@ -287,6 +288,14 @@ class PolymarketTrader:
         )
         if telegram_config.get('enabled', False):
             logger.info("✓ Telegram notifications enabled")
+
+        # Initialize snapshot collector (centralized training data collection with alerts)
+        self.snapshot_collector = MarketSnapshotCollector(
+            db_path='data/market_snapshots.db',
+            telegram=self.telegram if telegram_config.get('enabled', False) else None
+        )
+        logger.info("✓ Snapshot collector initialized")
+
         logger.info(f"✓ Trading state initialized ({len(self.position_timers)} open positions)")
 
     def start(self):
@@ -772,6 +781,52 @@ class PolymarketTrader:
 
         logger.info(f"Signal for {market.get('question', 'Unknown')[:50]}: "
                    f"{action_display} (confidence: {signal.get('confidence', 0):.2%})")
+
+        # Log snapshot for training data collection (regardless of whether trade is executed)
+        try:
+            # Calculate spread
+            spread = yes_price + no_price - 1.0
+
+            # Parse expiry date
+            expiry_str = market.get('endDate') or market.get('end_date')
+            expiry_date = None
+            days_to_expiry = None
+            if expiry_str:
+                try:
+                    expiry_date = datetime.fromisoformat(expiry_str.replace('Z', '+00:00'))
+                    days_to_expiry = (expiry_date - datetime.now(timezone.utc)).total_seconds() / 86400
+                except:
+                    pass
+
+            self.snapshot_collector.log_snapshot(
+                market_id=market_id,
+                bot_type='event',
+                features=model_features,
+                prediction={
+                    'model_prob': signal.get('probability', 0.5),
+                    'confidence': signal.get('confidence', 0.0),
+                    'edge': signal.get('edge', 0.0),
+                    'predicted_outcome': outcome if outcome else 'HOLD'
+                },
+                market_data={
+                    'question': market.get('question', ''),
+                    'asset': market.get('asset'),
+                    'expiry_date': expiry_str,
+                    'days_to_expiry': days_to_expiry,
+                    'market_type': market.get('market_type'),
+                    'condition_id': market_id,
+                    'token_id': token_id
+                },
+                prices={
+                    'yes': yes_price,
+                    'no': no_price,
+                    'spread': spread
+                },
+                position_opened=False,  # Will update in execute_trade if trade happens
+                rejection_reason=None  # Will be filled if trade blocked
+            )
+        except Exception as e:
+            logger.warning(f"Failed to log snapshot: {e}")
 
         # Execute trade if signal is actionable
         if signal['action'] in ['BUY', 'SELL']:

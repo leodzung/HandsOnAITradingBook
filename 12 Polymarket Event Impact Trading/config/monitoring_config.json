@@ -1,0 +1,15 @@
+{
+  "expected_bots": ["event", "price_level", "short_expiry"],
+  "silence_threshold_minutes": 30,
+  "rate_drop_threshold": 0.5,
+  "asymmetry_threshold": 5.0,
+  "min_snapshots_for_rate_check": 10,
+  "lookback_hours": 2,
+  "alert_cooldown_minutes": 60,
+
+  "alchemy": {
+    "checkpoint_age_threshold_minutes": 15,
+    "trade_age_threshold_minutes": 30,
+    "min_trades_per_hour": 1
+  }
+}

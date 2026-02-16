@@ -20,6 +20,8 @@ from ml.snapshot_collector import MarketSnapshotCollector
 
 def main():
     parser = argparse.ArgumentParser(description='View market snapshot statistics')
+    parser.add_argument('--stats', action='store_true',
+                       help='Show statistics (default behavior)')
     parser.add_argument('--bot', choices=['event', 'price_level', 'short_expiry'],
                        help='Filter by bot type')
     parser.add_argument('--export', type=str, metavar='FILE',

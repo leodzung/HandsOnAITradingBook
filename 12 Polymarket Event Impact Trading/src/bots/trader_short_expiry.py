@@ -35,6 +35,7 @@ from core.slippage_estimator import SlippageEstimator
 from core.position_manager_v2 import PositionManager
 from monitoring.telegram_notifier import TelegramNotifier
 from utils.price_tracker import PriceTracker
+from ml.snapshot_collector import MarketSnapshotCollector
 
 # Configure logging
 logging.basicConfig(
@@ -171,6 +172,13 @@ class ShortExpiryTrader:
             chat_id=telegram_config.get('chat_id', ''),
             enabled=telegram_config.get('enabled', False)
         )
+
+        # Initialize snapshot collector (centralized training data collection with alerts)
+        self.snapshot_collector = MarketSnapshotCollector(
+            db_path='data/market_snapshots.db',
+            telegram=self.telegram if telegram_config.get('enabled', False) else None
+        )
+        logger.info("✓ Snapshot collector initialized")
 
         # Paper trading
         self.paper_trading = self.config['paper_trading']
@@ -443,6 +451,66 @@ class ShortExpiryTrader:
 
             # Generate signal
             signal = self._generate_signal(features, market, bucket)
+
+            # Log snapshot for training data collection (regardless of whether trade is executed)
+            try:
+                # Get prices from PriceFetcher
+                entry_prices = self.price_fetcher.get_entry_prices(market_id)
+                if entry_prices:
+                    yes_price = entry_prices.yes_price
+                    no_price = entry_prices.no_price
+                else:
+                    # Fallback to features if PriceFetcher fails
+                    yes_price = features['market_probability'].iloc[0]
+                    no_price = 1.0 - yes_price
+
+                # Calculate spread
+                spread = yes_price + no_price - 1.0
+
+                # Parse expiry date
+                expiry_str = market.get('endDate') or market.get('end_date')
+                expiry_date = None
+                days_to_expiry = features.get('days_to_expiry', pd.Series([None])).iloc[0]
+                if expiry_str:
+                    try:
+                        expiry_date = datetime.fromisoformat(expiry_str.replace('Z', '+00:00'))
+                        if days_to_expiry is None:
+                            days_to_expiry = (expiry_date - datetime.now(timezone.utc)).total_seconds() / 86400
+                    except:
+                        pass
+
+                # Convert features DataFrame to dict for storage
+                features_dict = features.iloc[0].to_dict() if not features.empty else {}
+
+                self.snapshot_collector.log_snapshot(
+                    market_id=market_id,
+                    bot_type='short_expiry',
+                    features=features_dict,
+                    prediction={
+                        'model_prob': 0.5,  # Rule-based for now, will use ML model prob later
+                        'confidence': signal.get('confidence', 0.0),
+                        'edge': signal.get('edge', 0.0),
+                        'predicted_outcome': signal.get('outcome', 'HOLD')
+                    },
+                    market_data={
+                        'question': market.get('question', ''),
+                        'asset': market.get('asset'),
+                        'expiry_date': expiry_str,
+                        'days_to_expiry': days_to_expiry,
+                        'market_type': market.get('market_type'),
+                        'condition_id': market_id,
+                        'token_id': market.get('clobTokenIds')
+                    },
+                    prices={
+                        'yes': yes_price,
+                        'no': no_price,
+                        'spread': spread
+                    },
+                    position_opened=False,  # Will update in _execute_trade if trade happens
+                    rejection_reason=None if signal['action'] != 'HOLD' else signal.get('reason', 'no_signal')
+                )
+            except Exception as e:
+                logger.warning(f"Failed to log snapshot for {market_id[:16]}...: {e}")
 
             if signal['action'] == 'HOLD':
                 continue
