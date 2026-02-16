@@ -369,15 +369,79 @@ class PriceLevelTrader:
         self.monitor_thread = threading.Thread(target=monitor_loop, daemon=True)
         self.monitor_thread.start()
 
+    @staticmethod
+    def calculate_hours_remaining(entry_time: datetime, hours_to_expiry_at_entry: float) -> float:
+        """Calculate current hours remaining until expiry.
+
+        Args:
+            entry_time: When position was opened (datetime)
+            hours_to_expiry_at_entry: Hours to expiry when position was opened
+
+        Returns:
+            Current hours remaining (can be negative if expired)
+        """
+        if hours_to_expiry_at_entry is None or hours_to_expiry_at_entry <= 0:
+            return float('inf')  # No expiry data, treat as distant
+
+        expiry_time = entry_time + timedelta(hours=hours_to_expiry_at_entry)
+        # Use timezone-aware comparison if entry_time has timezone
+        now = datetime.now(entry_time.tzinfo) if entry_time.tzinfo else datetime.now()
+        remaining = (expiry_time - now).total_seconds() / 3600
+        return remaining
+
+    def get_dynamic_tp_sl(self, hours_remaining: float) -> tuple[float, float]:
+        """Get TP/SL thresholds based on time remaining.
+
+        Args:
+            hours_remaining: Current hours until expiry
+
+        Returns:
+            (take_profit_pct, stop_loss_pct)
+        """
+        decay_config = self.config.get('time_decay_tp_sl', {})
+
+        # If disabled, return static thresholds
+        if not decay_config.get('enabled', False):
+            tp_pct = self.config.get('take_profit', {}).get('pct', 75)
+            sl_pct = self.config.get('stop_loss', {}).get('pct', 20)
+            return tp_pct, sl_pct
+
+        # Get thresholds
+        thresholds = decay_config.get('thresholds', [])
+        if not thresholds:
+            # Fallback to static if not configured
+            tp_pct = self.config.get('take_profit', {}).get('pct', 75)
+            sl_pct = self.config.get('stop_loss', {}).get('pct', 20)
+            return tp_pct, sl_pct
+
+        # Find matching threshold based on hours_remaining
+        # Thresholds should be sorted by min_hours descending
+        for threshold in thresholds:
+            if hours_remaining >= threshold['min_hours']:
+                tp_pct = threshold['tp_pct'] if decay_config.get('apply_to_tp', True) else self.config.get('take_profit', {}).get('pct', 75)
+                sl_pct = threshold['sl_pct'] if decay_config.get('apply_to_sl', True) else self.config.get('stop_loss', {}).get('pct', 20)
+                return tp_pct, sl_pct
+
+        # If below all thresholds, use most aggressive (last one)
+        if thresholds:
+            last = thresholds[-1]
+            return last['tp_pct'], last['sl_pct']
+
+        # Final fallback to static
+        tp_pct = self.config.get('take_profit', {}).get('pct', 75)
+        sl_pct = self.config.get('stop_loss', {}).get('pct', 20)
+        return tp_pct, sl_pct
+
     def _check_position_exits(self):
         """
         Check all positions for exit conditions (called by monitor thread).
 
         This is the ONLY place where positions are closed. Handles:
         - Expiry
-        - Stop-loss
-        - Take-profit
+        - Stop-loss (dynamic based on time-decay)
+        - Take-profit (dynamic based on time-decay)
         - Trailing stop
+        - Pre-expiry forced exit
         - 100% profit fallback
         """
         if not self.active_positions:
@@ -401,6 +465,25 @@ class PriceLevelTrader:
                         logger.info(f"[Monitor] Position expired: {position['question'][:40]}")
                         positions_to_close.append((market_id, 'expiry'))
                         continue
+
+                # Calculate current hours remaining until expiry
+                # Get hours_to_expiry_at_entry from position_manager database
+                db_position = self.position_manager.get_position(market_id)
+                hours_to_expiry_at_entry = db_position.get('hours_to_expiry_at_entry') if db_position else None
+                entry_time = position.get('entry_time')
+
+                hours_remaining = self.calculate_hours_remaining(
+                    entry_time,
+                    hours_to_expiry_at_entry
+                )
+
+                # Get dynamic TP/SL thresholds based on time remaining
+                take_profit_pct, stop_loss_pct = self.get_dynamic_tp_sl(hours_remaining)
+
+                # Log dynamic thresholds for monitoring
+                if hours_remaining != float('inf'):
+                    logger.debug(f"[Monitor] Dynamic TP/SL: {position['asset']}, hours_remaining={hours_remaining:.1f}h, "
+                               f"tp={take_profit_pct}%, sl={stop_loss_pct}%")
 
                 # Get current price for monitoring (use BID prices - what we could sell for)
                 exit_prices = self.price_fetcher.get_exit_prices(market_id)
@@ -426,15 +509,15 @@ class PriceLevelTrader:
                 # Update price extremes for trailing stop (V2: track by outcome)
                 extremes = self.position_manager.update_price_extremes(market_id, outcome, current_token_price)
 
-                # Check stop-loss
-                if sl_config.get('enabled') and pnl_pct <= -sl_config.get('pct', 20):
+                # Check stop-loss (using dynamic threshold)
+                if sl_config.get('enabled') and pnl_pct <= -stop_loss_pct:
                     exit_reason = 'stop_loss'
-                    logger.info(f"[Monitor] Stop-loss triggered for {position['asset']}: {pnl_pct:+.1f}%")
+                    logger.info(f"[Monitor] Stop-loss triggered for {position['asset']}: {pnl_pct:+.1f}% (threshold: {stop_loss_pct}%)")
 
-                # Check take-profit (configurable threshold)
-                elif tp_config.get('enabled') and pnl_pct >= tp_config.get('pct', 75):
+                # Check take-profit (using dynamic threshold)
+                elif tp_config.get('enabled') and pnl_pct >= take_profit_pct:
                     exit_reason = 'take_profit'
-                    logger.info(f"[Monitor] Take-profit triggered for {position['asset']}: {pnl_pct:+.1f}%")
+                    logger.info(f"[Monitor] Take-profit triggered for {position['asset']}: {pnl_pct:+.1f}% (threshold: {take_profit_pct}%)")
 
                 # Fallback: 100% profit target (2x)
                 elif pnl_pct >= 100:
@@ -449,6 +532,12 @@ class PriceLevelTrader:
                         exit_reason = 'trailing_stop'
                         logger.info(f"[Monitor] Trailing stop for {position['asset']}: "
                                    f"peak ${highest:.3f} → ${current_yes_price:.3f}")
+
+                # Force exit if very close to expiry
+                force_exit_hours = self.config.get('time_decay_tp_sl', {}).get('force_exit_hours', 1.0)
+                if hours_remaining < force_exit_hours and hours_remaining != float('inf'):
+                    exit_reason = 'pre_expiry_exit'
+                    logger.info(f"[Monitor] Pre-expiry exit for {position['asset']}: {hours_remaining:.1f}h < {force_exit_hours}h")
 
                 if exit_reason:
                     positions_to_close.append((market_id, exit_reason))

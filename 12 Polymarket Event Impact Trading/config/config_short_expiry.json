@@ -143,5 +143,33 @@
   "database": {
     "positions_db": "data/positions_short_expiry.db",
     "tracking_db": "data/tracking_short_expiry.db"
+  },
+
+  "time_decay_tp_sl": {
+    "enabled": true,
+    "ultra_short": [
+      {"min_hours": 12, "tp_pct": 30, "sl_pct": 10},
+      {"min_hours": 4, "tp_pct": 25, "sl_pct": 8},
+      {"min_hours": 1, "tp_pct": 15, "sl_pct": 5},
+      {"min_hours": 0, "tp_pct": 10, "sl_pct": 3}
+    ],
+    "short": [
+      {"min_hours": 24, "tp_pct": 50, "sl_pct": 15},
+      {"min_hours": 12, "tp_pct": 40, "sl_pct": 12},
+      {"min_hours": 4, "tp_pct": 30, "sl_pct": 10},
+      {"min_hours": 1, "tp_pct": 20, "sl_pct": 8},
+      {"min_hours": 0, "tp_pct": 10, "sl_pct": 5}
+    ],
+    "medium": [
+      {"min_hours": 72, "tp_pct": 75, "sl_pct": 20},
+      {"min_hours": 48, "tp_pct": 65, "sl_pct": 18},
+      {"min_hours": 24, "tp_pct": 50, "sl_pct": 15},
+      {"min_hours": 12, "tp_pct": 40, "sl_pct": 12},
+      {"min_hours": 4, "tp_pct": 30, "sl_pct": 10},
+      {"min_hours": 0, "tp_pct": 15, "sl_pct": 5}
+    ],
+    "force_exit_hours": 1.0,
+    "apply_to_tp": true,
+    "apply_to_sl": true
   }
 }

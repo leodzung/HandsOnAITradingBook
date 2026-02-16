@@ -56,6 +56,69 @@ class ShortExpiryRiskManager:
         self.config = config
         self.consecutive_losses = 0
 
+    @staticmethod
+    def calculate_hours_remaining(entry_time: datetime, hours_to_expiry_at_entry: float) -> float:
+        """Calculate current hours remaining until expiry.
+
+        Args:
+            entry_time: When position was opened (UTC datetime)
+            hours_to_expiry_at_entry: Hours to expiry when position was opened
+
+        Returns:
+            Current hours remaining (can be negative if expired)
+        """
+        if hours_to_expiry_at_entry is None or hours_to_expiry_at_entry <= 0:
+            return float('inf')  # No expiry data, treat as distant
+
+        expiry_time = entry_time + timedelta(hours=hours_to_expiry_at_entry)
+        now = datetime.now(timezone.utc)
+        remaining = (expiry_time - now).total_seconds() / 3600
+        return remaining
+
+    def _get_static_tp_sl(self, bucket: str) -> Tuple[float, float]:
+        """Get static TP/SL thresholds from config."""
+        tp_pct = self.config['risk_management']['take_profit_pct'][bucket]
+        sl_pct = self.config['risk_management']['stop_loss_pct'][bucket]
+        return tp_pct, sl_pct
+
+    def get_dynamic_tp_sl(self, hours_remaining: float, bucket: str) -> Tuple[float, float]:
+        """Get TP/SL thresholds based on time remaining.
+
+        Args:
+            hours_remaining: Current hours until expiry
+            bucket: Time bucket (ultra_short, short, medium)
+
+        Returns:
+            (take_profit_pct, stop_loss_pct)
+        """
+        decay_config = self.config.get('time_decay_tp_sl', {})
+
+        # If disabled, return static thresholds
+        if not decay_config.get('enabled', False):
+            return self._get_static_tp_sl(bucket)
+
+        # Get bucket-specific thresholds
+        thresholds = decay_config.get(bucket, [])
+        if not thresholds:
+            # Fallback to static if bucket not configured
+            return self._get_static_tp_sl(bucket)
+
+        # Find matching threshold based on hours_remaining
+        # Thresholds should be sorted by min_hours descending
+        for threshold in thresholds:
+            if hours_remaining >= threshold['min_hours']:
+                tp_pct = threshold['tp_pct'] if decay_config.get('apply_to_tp', True) else self._get_static_tp_sl(bucket)[0]
+                sl_pct = threshold['sl_pct'] if decay_config.get('apply_to_sl', True) else self._get_static_tp_sl(bucket)[1]
+                return tp_pct, sl_pct
+
+        # If below all thresholds, use most aggressive (last one)
+        if thresholds:
+            last = thresholds[-1]
+            return last['tp_pct'], last['sl_pct']
+
+        # Fallback to static
+        return self._get_static_tp_sl(bucket)
+
     def can_open_position(self, bucket: str, position_manager: PositionManager) -> bool:
         """Check if we can open a new position in this bucket."""
         # Check total positions
@@ -105,22 +168,44 @@ class ShortExpiryRiskManager:
         return max(size, min_size)
 
     def should_exit(self, position: Dict, current_price: float, bucket: str) -> Optional[str]:
-        """Check if we should exit this position."""
+        """Check if we should exit this position.
+
+        Args:
+            position: Position dict with entry_time, hours_to_expiry_at_entry, entry_price
+            current_price: Current token price
+            bucket: Time bucket (ultra_short, short, medium)
+
+        Returns:
+            Exit reason string or None
+        """
         entry_price = position['entry_price']
         pnl_pct = ((current_price - entry_price) / entry_price) * 100 if entry_price > 0 else 0
 
+        # Calculate current hours remaining (FIX: use current time, not entry time)
+        hours_remaining = self.calculate_hours_remaining(
+            position.get('entry_time', datetime.now(timezone.utc)),
+            position.get('hours_to_expiry_at_entry')
+        )
+
+        # Get dynamic TP/SL thresholds based on time remaining
+        take_profit_pct, stop_loss_pct = self.get_dynamic_tp_sl(hours_remaining, bucket)
+
+        # Log dynamic thresholds for monitoring
+        logger.debug(f"Dynamic TP/SL for {bucket}: hours_remaining={hours_remaining:.1f}h, "
+                    f"tp={take_profit_pct}%, sl={stop_loss_pct}%")
+
         # Stop-loss
-        stop_loss_pct = self.config['risk_management']['stop_loss_pct'][bucket]
         if pnl_pct <= -stop_loss_pct:
             return 'stop_loss'
 
         # Take-profit
-        take_profit_pct = self.config['risk_management']['take_profit_pct'][bucket]
         if pnl_pct >= take_profit_pct:
             return 'take_profit'
 
-        # Pre-expiry exit
-        if position['hours_to_expiry_at_entry'] < self.config['risk_management']['pre_expiry_exit_hours']:
+        # Pre-expiry exit (FIX: check current hours remaining, not hours_to_expiry_at_entry)
+        pre_expiry_hours = self.config['risk_management']['pre_expiry_exit_hours']
+        if hours_remaining < pre_expiry_hours:
+            logger.info(f"Pre-expiry exit triggered: {hours_remaining:.1f}h < {pre_expiry_hours}h")
             return 'pre_expiry_exit'
 
         return None

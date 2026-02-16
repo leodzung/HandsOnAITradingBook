@@ -72,5 +72,20 @@
     "enabled": true,
     "bot_token": "8068515860:AAEiKpTK0RtHo5dURsbu7ey8Xa8r3A2xEHA",
     "chat_id": "6690408994"
+  },
+
+  "time_decay_tp_sl": {
+    "enabled": true,
+    "mode": "step",
+    "thresholds": [
+      {"min_hours": 24, "tp_pct": 50, "sl_pct": 15},
+      {"min_hours": 12, "tp_pct": 40, "sl_pct": 12},
+      {"min_hours": 4, "tp_pct": 30, "sl_pct": 10},
+      {"min_hours": 1, "tp_pct": 20, "sl_pct": 8},
+      {"min_hours": 0, "tp_pct": 10, "sl_pct": 5}
+    ],
+    "force_exit_hours": 1.0,
+    "apply_to_tp": true,
+    "apply_to_sl": true
   }
 }
