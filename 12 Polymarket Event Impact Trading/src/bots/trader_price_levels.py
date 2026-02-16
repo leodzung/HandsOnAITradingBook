@@ -456,6 +456,31 @@ class PriceLevelTrader:
             try:
                 exit_reason = None
 
+                # Get outcome (YES/NO) - handle both V2 (outcome) and V1 (side) fields
+                outcome = position.get('outcome') or position.get('side')
+                if outcome in ['BUY', 'SELL']:
+                    # V1 schema: BUY → YES, SELL → NO
+                    outcome = 'YES' if outcome == 'BUY' else 'NO'
+
+                # Validate outcome is YES or NO
+                if outcome not in ['YES', 'NO']:
+                    logger.error(
+                        f"[Monitor] ❌ Invalid outcome '{outcome}' detected\n"
+                        f"  Market: {market_id[:20]}...\n"
+                        f"  Question: {position.get('question', 'N/A')[:60]}\n"
+                        f"  Asset: {position.get('asset', 'N/A')}\n"
+                        f"  Skipping position monitoring to prevent errors"
+                    )
+                    self.telegram.notify_error(
+                        f"❌ Invalid outcome in position monitoring:\n"
+                        f"Outcome: '{outcome}'\n"
+                        f"Market: {market_id[:20]}...\n"
+                        f"Asset: {position.get('asset', 'N/A')}\n"
+                        f"Position skipped - please investigate",
+                        bot_name="Price-Level Trader"
+                    )
+                    continue
+
                 # Check if market expired
                 expiry = position.get('expiry_date')
                 if expiry:
@@ -468,7 +493,7 @@ class PriceLevelTrader:
 
                 # Calculate current hours remaining until expiry
                 # Get hours_to_expiry_at_entry from position_manager database
-                db_position = self.position_manager.get_position(market_id)
+                db_position = self.position_manager.get_position(market_id, outcome)
                 hours_to_expiry_at_entry = db_position.get('hours_to_expiry_at_entry') if db_position else None
                 entry_time = position.get('entry_time')
 
@@ -491,7 +516,6 @@ class PriceLevelTrader:
                     continue
 
                 # Get current price based on position outcome
-                outcome = position.get('outcome', 'YES')
                 current_token_price = exit_prices.get_outcome_price(outcome)
                 current_yes_price = exit_prices.yes_price  # For trailing stop tracking
 
@@ -502,9 +526,6 @@ class PriceLevelTrader:
                 # Calculate P&L % based on position type
                 # entry_price and current_token_price are both actual token prices (YES or NO)
                 pnl_pct = ((current_token_price - entry_price) / entry_price) * 100
-
-                # Get outcome from position
-                outcome = position.get('outcome', position.get('side', 'YES'))
 
                 # Update price extremes for trailing stop (V2: track by outcome)
                 extremes = self.position_manager.update_price_extremes(market_id, outcome, current_token_price)
@@ -1275,7 +1296,10 @@ class PriceLevelTrader:
 
                 # Calculate unrealized P&L
                 # entry_price and current_token_price are both actual token prices (YES or NO)
-                outcome = position.get('outcome', 'YES')
+                outcome = position.get('outcome')
+                if outcome not in ['YES', 'NO']:
+                    logger.warning(f"  {asset}: Invalid outcome '{outcome}' - skipping P&L calculation")
+                    continue
                 current_token_price = exit_prices.get_outcome_price(outcome)
                 tokens = position_size / entry_price
                 current_value = tokens * current_token_price
@@ -1319,12 +1343,27 @@ class PriceLevelTrader:
 
             # Get actual exit prices from CLOB API (both YES and NO)
             exit_price = force_exit_price
-            outcome = position.get('outcome', 'YES')
+            outcome = position.get('outcome')
 
             # SAFETY: Verify outcome is valid
             if outcome not in ['YES', 'NO']:
-                logger.error(f"  Invalid outcome '{outcome}' in position data")
-                logger.error(f"  Skipping close to prevent incorrect P&L calculation")
+                error_msg = (
+                    f"  ❌ CRITICAL: Invalid outcome '{outcome}' in position data\n"
+                    f"  Market: {market_id}\n"
+                    f"  Question: {position.get('question', 'N/A')[:80]}\n"
+                    f"  Asset: {position.get('asset', 'N/A')}\n"
+                    f"  Position Size: ${position.get('position_size', 0):.2f}\n"
+                    f"  Skipping close to prevent incorrect P&L calculation"
+                )
+                logger.error(error_msg)
+                self.telegram.notify_error(
+                    f"❌ Invalid outcome in position close:\n"
+                    f"Outcome: '{outcome}'\n"
+                    f"Market: {market_id[:20]}...\n"
+                    f"Question: {position.get('question', 'N/A')[:60]}\n"
+                    f"Position NOT closed to prevent data corruption",
+                    bot_name="Price-Level Trader"
+                )
                 return
 
             if exit_price is None:

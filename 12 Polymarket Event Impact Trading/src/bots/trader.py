@@ -1058,6 +1058,23 @@ class PolymarketTrader:
             time_held = (current_time - position['entry_time']).total_seconds() / 3600
             exit_reason = None
 
+            # Get outcome (YES/NO) - stored in 'side' field in position_timers
+            outcome = position.get('side')
+            if outcome not in ['YES', 'NO']:
+                logger.error(
+                    f"[Monitor] ❌ Invalid outcome '{outcome}' detected\n"
+                    f"  Market: {market_id[:20]}...\n"
+                    f"  Skipping position monitoring to prevent errors"
+                )
+                self.telegram.notify_error(
+                    f"❌ Invalid outcome in position monitoring:\n"
+                    f"Outcome: '{outcome}'\n"
+                    f"Market: {market_id[:20]}...\n"
+                    f"Position skipped - please investigate",
+                    bot_name="Event Trader"
+                )
+                continue
+
             # Check time-based exit first
             if time_held >= hold_time:
                 exit_reason = 'time_exit'
@@ -1066,7 +1083,7 @@ class PolymarketTrader:
 
             # Calculate current hours remaining until expiry
             # Get hours_to_expiry_at_entry from position_manager database
-            db_position = self.position_manager.get_position(market_id)
+            db_position = self.position_manager.get_position(market_id, outcome)
             hours_to_expiry_at_entry = db_position.get('hours_to_expiry_at_entry') if db_position else None
             hours_remaining = self.calculate_hours_remaining(
                 position['entry_time'],
@@ -1095,14 +1112,10 @@ class PolymarketTrader:
 
             # Calculate P&L % based on position type
             # Get current token price based on outcome (YES or NO tokens)
-            outcome = position['side']  # This stores the outcome (YES or NO)
             if outcome == 'YES':
                 current_token_price = exit_prices.yes_price
             elif outcome == 'NO':
                 current_token_price = exit_prices.no_price
-            else:
-                logger.error(f"Invalid outcome '{outcome}' in position {market_id}")
-                continue
             pnl_pct = ((current_token_price - entry_price) / entry_price) * 100
 
             # Update price extremes for trailing stop (V2: track by outcome)
@@ -1160,14 +1173,27 @@ class PolymarketTrader:
             return
 
         # Use actual token price based on outcome (YES or NO tokens)
-        outcome = position['side']  # This stores the outcome (YES or NO)
+        outcome = position.get('side')  # This stores the outcome (YES or NO)
+        if outcome not in ['YES', 'NO']:
+            error_msg = (
+                f"  ❌ CRITICAL: Invalid outcome '{outcome}' in position data\n"
+                f"  Market: {market_id}\n"
+                f"  Skipping close to prevent incorrect P&L calculation"
+            )
+            logger.error(error_msg)
+            self.telegram.notify_error(
+                f"❌ Invalid outcome in position close:\n"
+                f"Outcome: '{outcome}'\n"
+                f"Market: {market_id[:20]}...\n"
+                f"Position NOT closed to prevent data corruption",
+                bot_name="Event Trader"
+            )
+            return
+
         if outcome == 'YES':
             exit_price = exit_prices.yes_price
         elif outcome == 'NO':
             exit_price = exit_prices.no_price
-        else:
-            logger.error(f"Invalid outcome '{outcome}' in position {market_id} - skipping close")
-            return
 
         if exit_price is None:
             logger.warning(f"Cannot get exit price for {outcome} position {market_id} - skipping close")
