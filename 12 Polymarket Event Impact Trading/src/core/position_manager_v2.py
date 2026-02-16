@@ -81,6 +81,7 @@ class PositionManager:
                     confidence REAL,
                     signal_reason TEXT,
                     hours_to_expiry_at_entry REAL,
+                    bucket TEXT,
 
                     -- Price tracking
                     current_price REAL,
@@ -145,6 +146,7 @@ class PositionManager:
                 confidence REAL,
                 signal_reason TEXT,
                 hours_to_expiry_at_entry REAL,
+                bucket TEXT,
                 current_price REAL,
                 highest_price_seen REAL,
                 lowest_price_seen REAL,
@@ -229,6 +231,7 @@ class PositionManager:
             ('confidence', 'REAL'),
             ('signal_reason', 'TEXT'),
             ('hours_to_expiry_at_entry', 'REAL'),
+            ('bucket', 'TEXT'),
             ('current_price', 'REAL'),
             ('pnl_pct', 'REAL'),
         ]

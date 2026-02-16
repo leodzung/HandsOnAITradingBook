@@ -694,9 +694,12 @@ class ShortExpiryTrader:
             entry_time = pos['entry_time']  # Already a datetime in V2
             hours_to_expiry = pos.get('hours_to_expiry_at_entry', 0)
 
-            # Get bucket from metadata (V2 stores it there)
-            metadata = pos.get('metadata', {})
-            bucket = metadata.get('bucket', 'unknown') if isinstance(metadata, dict) else 'unknown'
+            # Get bucket from column (V2 stores it as a column, not in metadata)
+            bucket = pos.get('bucket')
+            if not bucket:
+                # Fallback to metadata for old positions
+                metadata = pos.get('metadata', {})
+                bucket = metadata.get('bucket', 'short') if isinstance(metadata, dict) else 'short'
 
             logger.debug(f"Checking position: {market_id[:16]}... | "
                         f"Outcome: {outcome} | Entry: {entry_price:.4f}")
