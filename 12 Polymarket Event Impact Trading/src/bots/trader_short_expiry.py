@@ -55,6 +55,7 @@ class ShortExpiryRiskManager:
     def __init__(self, config: Dict):
         self.config = config
         self.consecutive_losses = 0
+        self.circuit_breaker_triggered_at: Optional[datetime] = None
 
     @staticmethod
     def calculate_hours_remaining(entry_time: datetime, hours_to_expiry_at_entry: float) -> float:
@@ -131,10 +132,36 @@ class ShortExpiryRiskManager:
         if bucket_count >= self.config['position_limits']['max_positions_per_bucket'][bucket]:
             return False
 
-        # Check circuit breaker
-        if self.consecutive_losses >= self.config['risk_management']['circuit_breaker_losses']:
-            logger.warning(f"Circuit breaker triggered: {self.consecutive_losses} consecutive losses")
-            return False
+        # Check circuit breaker with cooldown
+        cb_losses = self.config['risk_management']['circuit_breaker_losses']
+        if self.consecutive_losses >= cb_losses:
+            cooldown_hours = self.config['risk_management'].get('circuit_breaker_cooldown_hours', 4.0)
+
+            # Record when it first triggered
+            if self.circuit_breaker_triggered_at is None:
+                self.circuit_breaker_triggered_at = datetime.now(timezone.utc)
+                logger.warning(
+                    f"Circuit breaker triggered: {self.consecutive_losses} consecutive losses. "
+                    f"Pausing for {cooldown_hours}h."
+                )
+
+            # Check if cooldown has elapsed
+            elapsed_hours = (datetime.now(timezone.utc) - self.circuit_breaker_triggered_at).total_seconds() / 3600
+            if elapsed_hours >= cooldown_hours:
+                logger.info(
+                    f"Circuit breaker cooldown elapsed ({elapsed_hours:.1f}h >= {cooldown_hours}h). "
+                    f"Resetting consecutive losses and resuming trading."
+                )
+                self.consecutive_losses = 0
+                self.circuit_breaker_triggered_at = None
+            else:
+                remaining = cooldown_hours - elapsed_hours
+                logger.warning(
+                    f"Circuit breaker active: {self.consecutive_losses} losses. "
+                    f"Cooldown: {elapsed_hours:.1f}h / {cooldown_hours}h elapsed "
+                    f"({remaining:.1f}h remaining)."
+                )
+                return False
 
         return True
 
@@ -216,6 +243,7 @@ class ShortExpiryRiskManager:
             self.consecutive_losses += 1
         else:
             self.consecutive_losses = 0
+            self.circuit_breaker_triggered_at = None  # Reset cooldown timer on a win
 
 
 class ShortExpiryTrader:
