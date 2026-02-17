@@ -21,6 +21,8 @@
   "max_position_size": 100,
   "max_positions": 10,
   "max_daily_loss": 500,
+  "circuit_breaker_losses": 3,
+  "circuit_breaker_cooldown_hours": 4.0,
   "kelly_multiplier": 0.5,
 
   "min_market_volume": 1000,
