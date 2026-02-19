@@ -1250,9 +1250,8 @@ class PolymarketTrader:
         # Update database (persistence!)
         self.position_manager.close_position(
             market_id=market_id,
-            exit_time=datetime.now(timezone.utc),
+            outcome=outcome,
             exit_price=exit_price,
-            pnl=pnl,
             exit_reason=exit_reason
         )
 

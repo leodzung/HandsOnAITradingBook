@@ -1455,10 +1455,6 @@ class PriceLevelTrader:
                     logger.error(f"  Skipping close to prevent data corruption")
                     return
 
-            # Update balance (add the payout)
-            self.balance += payout
-            self._save_balance(self.balance)
-
             # Log with exit reason
             reason_str = f" [{exit_reason}]" if exit_reason else ""
             logger.info(f"  Closing position{reason_str}: {market_id}")
@@ -1478,14 +1474,17 @@ class PriceLevelTrader:
                     bot_name="Price-Level Trader"
                 )
 
-            # Close in database with exit reason
+            # Close in database BEFORE updating balance to prevent inflation on failure
             self.position_manager.close_position(
                 market_id=market_id,
-                exit_time=datetime.now().isoformat(),
+                outcome=outcome,
                 exit_price=exit_price,
-                pnl=pnl,
                 exit_reason=exit_reason
             )
+
+            # Update balance (add the payout) - only after DB close succeeds
+            self.balance += payout
+            self._save_balance(self.balance)
 
             # Record outcome in snapshot collector for ML training
             try:
