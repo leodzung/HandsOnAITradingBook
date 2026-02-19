@@ -1393,6 +1393,71 @@ with tab6:
 
     st.divider()
 
+    # Balance Management
+    st.write("### 💰 Balance Management")
+    st.warning("⚠️ Resetting a balance will overwrite the balance file immediately. The running bot will pick up the new value on its next cycle.")
+
+    BALANCE_CONFIGS = [
+        {
+            "label": "Price Level Trader",
+            "file": PRICE_LEVEL_BALANCE,
+            "key": "price_level",
+            "default": 500.0,
+        },
+        {
+            "label": "Event Trader",
+            "file": EVENT_BALANCE,
+            "key": "event",
+            "default": 1000.0,
+        },
+        {
+            "label": "Short Expiry Trader",
+            "file": SHORT_EXPIRY_BALANCE,
+            "key": "short_expiry",
+            "default": 500.0,
+        },
+    ]
+
+    for cfg in BALANCE_CONFIGS:
+        current = load_balance(cfg["file"])
+        current_balance = current.get("balance", 0)
+        last_updated = current.get("last_updated", "N/A")
+
+        with st.expander(f"{cfg['label']} — current: **${current_balance:,.2f}**"):
+            st.caption(f"File: `{cfg['file']}` | Last updated: {last_updated}")
+
+            new_amount = st.number_input(
+                "New balance ($)",
+                min_value=0.0,
+                max_value=100_000.0,
+                value=float(cfg["default"]),
+                step=50.0,
+                format="%.2f",
+                key=f"reset_amount_{cfg['key']}",
+            )
+
+            confirm = st.checkbox(
+                f"I confirm I want to reset {cfg['label']} balance to ${new_amount:,.2f}",
+                key=f"reset_confirm_{cfg['key']}",
+            )
+
+            if st.button(f"Reset {cfg['label']} Balance", key=f"reset_btn_{cfg['key']}", disabled=not confirm):
+                try:
+                    cfg["file"].parent.mkdir(parents=True, exist_ok=True)
+                    with open(cfg["file"], "w") as f:
+                        json.dump({
+                            "balance": new_amount,
+                            "last_updated": datetime.now().isoformat(),
+                            "reset_by": "dashboard",
+                            "previous_balance": current_balance,
+                        }, f, indent=2)
+                    st.success(f"✅ {cfg['label']} balance reset from ${current_balance:,.2f} → ${new_amount:,.2f}")
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"Failed to reset balance: {e}")
+
+    st.divider()
+
     # Load configs
     col1, col2 = st.columns(2)
 
