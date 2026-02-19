@@ -1395,25 +1395,29 @@ with tab6:
 
     # Balance Management
     st.write("### 💰 Balance Management")
-    st.warning("⚠️ Resetting a balance will overwrite the balance file immediately. The running bot will pick up the new value on its next cycle.")
+
+    MANAGE_BOTS_SCRIPT = Path("manage_bots.sh")
 
     BALANCE_CONFIGS = [
         {
             "label": "Price Level Trader",
             "file": PRICE_LEVEL_BALANCE,
             "key": "price_level",
+            "bot_arg": "price-level",   # manage_bots.sh argument
             "default": 500.0,
         },
         {
             "label": "Event Trader",
             "file": EVENT_BALANCE,
             "key": "event",
+            "bot_arg": "event",
             "default": 1000.0,
         },
         {
             "label": "Short Expiry Trader",
             "file": SHORT_EXPIRY_BALANCE,
             "key": "short_expiry",
+            "bot_arg": "short-expiry",
             "default": 500.0,
         },
     ]
@@ -1436,12 +1440,20 @@ with tab6:
                 key=f"reset_amount_{cfg['key']}",
             )
 
+            restart_bot = st.checkbox(
+                "Restart bot after reset (recommended — picks up new balance immediately)",
+                value=True,
+                key=f"restart_check_{cfg['key']}",
+            )
+
             confirm = st.checkbox(
-                f"I confirm I want to reset {cfg['label']} balance to ${new_amount:,.2f}",
+                f"I confirm I want to reset {cfg['label']} balance to ${new_amount:,.2f}"
+                + (" and restart the bot" if restart_bot else ""),
                 key=f"reset_confirm_{cfg['key']}",
             )
 
             if st.button(f"Reset {cfg['label']} Balance", key=f"reset_btn_{cfg['key']}", disabled=not confirm):
+                # 1. Write new balance file
                 try:
                     cfg["file"].parent.mkdir(parents=True, exist_ok=True)
                     with open(cfg["file"], "w") as f:
@@ -1451,10 +1463,32 @@ with tab6:
                             "reset_by": "dashboard",
                             "previous_balance": current_balance,
                         }, f, indent=2)
-                    st.success(f"✅ {cfg['label']} balance reset from ${current_balance:,.2f} → ${new_amount:,.2f}")
-                    st.rerun()
+                    st.success(f"✅ Balance reset: ${current_balance:,.2f} → ${new_amount:,.2f}")
                 except Exception as e:
-                    st.error(f"Failed to reset balance: {e}")
+                    st.error(f"Failed to write balance file: {e}")
+                    continue
+
+                # 2. Optionally restart the bot via manage_bots.sh
+                if restart_bot:
+                    if not MANAGE_BOTS_SCRIPT.exists():
+                        st.warning("⚠️ manage_bots.sh not found — bot not restarted. Reload the balance file manually.")
+                    else:
+                        with st.spinner(f"Restarting {cfg['label']}…"):
+                            result = subprocess.run(
+                                ["bash", str(MANAGE_BOTS_SCRIPT), "restart", cfg["bot_arg"]],
+                                capture_output=True,
+                                text=True,
+                                timeout=30,
+                            )
+                        combined = (result.stdout + result.stderr).strip()
+                        if result.returncode == 0:
+                            st.success(f"✅ {cfg['label']} restarted")
+                        else:
+                            st.error(f"❌ Restart failed (exit {result.returncode})")
+                        if combined:
+                            st.code(combined, language="text")
+
+                st.rerun()
 
     st.divider()
 
