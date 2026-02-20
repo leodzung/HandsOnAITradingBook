@@ -827,22 +827,35 @@ class ShortExpiryTrader:
             self._save_balance(self.balance)
 
         # Record position using PositionManager V2
-        self.position_manager.save_position(
-            market_id=market_id,
-            token_id=f"{market_id}_{outcome}",
-            outcome=outcome,
-            entry_time=datetime.now(timezone.utc),
-            entry_price=entry_price,
-            size=size,
-            edge=signal['edge'],
-            confidence=signal['confidence'],
-            signal_reason=signal['reason'],
-            hours_to_expiry=features['hours_to_expiry'].iloc[0],
-            bucket=bucket,
-            metadata={
-                'features_json': features.to_json()
-            }
-        )
+        try:
+            self.position_manager.save_position(
+                market_id=market_id,
+                token_id=f"{market_id}_{outcome}",
+                outcome=outcome,
+                entry_time=datetime.now(timezone.utc),
+                entry_price=entry_price,
+                size=size,
+                edge=signal['edge'],
+                confidence=signal['confidence'],
+                signal_reason=signal['reason'],
+                hours_to_expiry=features['hours_to_expiry'].iloc[0],
+                bucket=bucket,
+                metadata={
+                    'features_json': features.to_json()
+                }
+            )
+        except sqlite3.IntegrityError:
+            # Position already exists (likely from another bucket processing the same market)
+            # Refund the balance and skip this trade
+            logger.warning(
+                f"DUPLICATE POSITION SKIPPED | Market: {market.get('question', '')[:50]} | "
+                f"Bucket: {bucket} | Outcome: {outcome} | "
+                f"Position already exists (likely opened by another bucket)"
+            )
+            if self.paper_trading:
+                self.balance += size  # Refund
+                self._save_balance(self.balance)
+            return
 
         logger.info(f"TRADE OPENED | Market: {market.get('question', '')[:50]} | "
                    f"Bucket: {bucket} | Outcome: {outcome} | Size: ${size:.2f} | "

@@ -321,7 +321,8 @@ class PriceLevelTrader:
         for pos in positions:
             market_id = pos['market_id']
             # Parse expiry_date from string back to datetime
-            expiry_str = pos.get('metadata', {}).get('expiry_date')
+            metadata = pos.get('metadata') or {}
+            expiry_str = metadata.get('expiry_date')
             expiry_date = datetime.fromisoformat(expiry_str) if expiry_str else None
 
             # entry_time is already a datetime from position_manager.get_open_positions()
@@ -339,15 +340,15 @@ class PriceLevelTrader:
             self.active_positions[market_id] = {
                 'market_id': market_id,
                 'token_id': pos['token_id'],
-                'asset': pos.get('metadata', {}).get('asset', 'UNKNOWN'),
-                'question': pos.get('metadata', {}).get('question', ''),
+                'asset': metadata.get('asset', 'UNKNOWN'),
+                'question': metadata.get('question', ''),
                 'outcome': outcome,  # YES or NO
                 'entry_price': pos['entry_price'],
                 'position_size': pos['size'],
                 'entry_time': entry_time,
                 'expiry_date': expiry_date,
-                'strike_price': pos.get('metadata', {}).get('strike_price'),
-                'slug': pos.get('metadata', {}).get('slug')  # For restricted market price lookups
+                'strike_price': metadata.get('strike_price'),
+                'slug': metadata.get('slug')  # For restricted market price lookups
             }
         logger.info(f"✓ Loaded {len(positions)} open positions from database")
 

@@ -93,12 +93,18 @@ class PositionManager:
                     take_profit_pct REAL,
 
                     -- Flexible metadata
-                    metadata TEXT,
-
-                    -- Allow multiple positions per market (YES and NO)
-                    UNIQUE(market_id, outcome)
+                    metadata TEXT
                 )
             ''')
+
+            # Create partial unique index: only one OPEN position per (market_id, outcome)
+            # This allows re-entering after closing a position
+            conn.execute('''
+                CREATE UNIQUE INDEX IF NOT EXISTS idx_open_positions
+                ON positions(market_id, outcome)
+                WHERE UPPER(status) = 'OPEN'
+            ''')
+
             conn.commit()
 
         conn.close()
@@ -152,9 +158,15 @@ class PositionManager:
                 lowest_price_seen REAL,
                 stop_loss_pct REAL,
                 take_profit_pct REAL,
-                metadata TEXT,
-                UNIQUE(market_id, outcome)
+                metadata TEXT
             )
+        ''')
+
+        # Create partial unique index for open positions only
+        conn.execute('''
+            CREATE UNIQUE INDEX idx_open_positions
+            ON positions(market_id, outcome)
+            WHERE UPPER(status) = 'OPEN'
         ''')
 
         # 4. Migrate data (side → outcome)
