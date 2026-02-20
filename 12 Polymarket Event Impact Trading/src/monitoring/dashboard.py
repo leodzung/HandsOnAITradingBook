@@ -1473,6 +1473,25 @@ with tab6:
                     if not MANAGE_BOTS_SCRIPT.exists():
                         st.warning("⚠️ manage_bots.sh not found — bot not restarted. Reload the balance file manually.")
                     else:
+                        # Kill ALL instances of the bot (not just the PID file one)
+                        bot_script = {
+                            "price_level": "trader_price_levels.py",
+                            "event": "trader.py",
+                            "short_expiry": "trader_short_expiry.py"
+                        }.get(cfg["key"])
+
+                        if bot_script:
+                            with st.spinner(f"Stopping all {cfg['label']} instances…"):
+                                # Kill all instances matching the script name
+                                subprocess.run(
+                                    ["pkill", "-f", bot_script],
+                                    capture_output=True,
+                                    timeout=10
+                                )
+                                # Wait for processes to die
+                                import time
+                                time.sleep(3)
+
                         with st.spinner(f"Restarting {cfg['label']}…"):
                             result = subprocess.run(
                                 ["bash", str(MANAGE_BOTS_SCRIPT), "restart", cfg["bot_arg"]],
