@@ -83,7 +83,9 @@ class AlchemyDataCollector:
         # Use Alchemy first (free tier: 9 blocks max), public RPC as fallback
         self.endpoints = [
             f"https://polygon-mainnet.g.alchemy.com/v2/{api_key}",
-            "https://polygon-rpc.com"
+            "https://polygon.drpc.org",  # dRPC
+            "https://1rpc.io/matic",  # 1RPC
+            "https://polygon.meowrpc.com"  # MeowRPC
         ]
         self.current_endpoint_idx = 0
 
@@ -765,7 +767,7 @@ def main():
     args = parser.parse_args()
 
     # Load config
-    config_path = Path(__file__).parent / "config.json"
+    config_path = Path(__file__).parent.parent.parent / "config" / "config.json"
     api_key = args.api_key
 
     if not api_key and config_path.exists():
