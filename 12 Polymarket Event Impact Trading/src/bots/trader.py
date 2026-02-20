@@ -931,6 +931,22 @@ class PolymarketTrader:
             # Deduct from paper balance
             self._update_paper_balance(-position_size, f"Open BUY {outcome} position")
 
+            # Extract question and asset from market for dashboard display
+            question = market.get('question', '') if market else ''
+            asset = 'EVENT'  # Default for event-based markets
+
+            # Try to infer asset from question for better dashboard categorization
+            if market and question:
+                question_lower = question.lower()
+                if 'bitcoin' in question_lower or 'btc' in question_lower:
+                    asset = 'BTC'
+                elif 'ethereum' in question_lower or 'eth' in question_lower:
+                    asset = 'ETH'
+                elif any(keyword in question_lower for keyword in ['trump', 'biden', 'election', 'president']):
+                    asset = 'POLITICS'
+                elif any(keyword in question_lower for keyword in ['nfl', 'nba', 'sports', 'super bowl']):
+                    asset = 'SPORTS'
+
             # Save to database (persistence!) - store actual token price
             self.position_manager.save_position(
                 market_id=market_id,
@@ -942,7 +958,12 @@ class PolymarketTrader:
                 edge=signal.get('edge', 0),  # V2: track expected edge
                 confidence=signal.get('confidence', 0),  # V2: track confidence
                 signal_reason='event',  # V2: track which strategy
-                metadata={'signal_action': signal['action'], 'event_source': signal.get('source', 'unknown')}
+                metadata={
+                    'question': question,
+                    'asset': asset,
+                    'signal_action': signal['action'],
+                    'event_source': signal.get('source', 'unknown')
+                }
             )
 
             # Track paper position (in memory)

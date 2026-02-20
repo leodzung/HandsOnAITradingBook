@@ -826,6 +826,19 @@ class ShortExpiryTrader:
             self.balance -= size
             self._save_balance(self.balance)
 
+        # Extract asset from market question for dashboard display
+        question = market.get('question', '')
+        asset = 'CRYPTO'  # Default for short-expiry markets
+
+        # Try to infer specific crypto asset from question
+        question_lower = question.lower()
+        if 'bitcoin' in question_lower or 'btc' in question_lower:
+            asset = 'BTC'
+        elif 'ethereum' in question_lower or 'eth' in question_lower:
+            asset = 'ETH'
+        elif 'solana' in question_lower or 'sol' in question_lower:
+            asset = 'SOL'
+
         # Record position using PositionManager V2
         try:
             self.position_manager.save_position(
@@ -841,6 +854,8 @@ class ShortExpiryTrader:
                 hours_to_expiry=features['hours_to_expiry'].iloc[0],
                 bucket=bucket,
                 metadata={
+                    'question': question,
+                    'asset': asset,
                     'features_json': features.to_json()
                 }
             )
