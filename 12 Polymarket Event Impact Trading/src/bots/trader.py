@@ -758,6 +758,12 @@ class PolymarketTrader:
 
         # Transform features to match training format
         model_features = self._transform_features_for_model(features, market)
+
+        # Check if feature transformation failed (returns empty dict when price fetching fails)
+        if not model_features:
+            logger.warning(f"Feature transformation failed for {market.get('question', '')[:60]} - skipping signal")
+            return
+
         features_df = pd.DataFrame([model_features])
 
         # Track this event-market pair for later labeling
