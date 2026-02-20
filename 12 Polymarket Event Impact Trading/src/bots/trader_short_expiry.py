@@ -830,9 +830,11 @@ class ShortExpiryTrader:
         question = market.get('question', '')
         asset = 'CRYPTO'  # Default for short-expiry markets
 
-        # Try to infer specific crypto asset from question
+        # Try to infer specific asset from question
         question_lower = question.lower()
-        if 'bitcoin' in question_lower or 'btc' in question_lower:
+        if 'gold' in question_lower or 'gc' in question_lower or 'xau' in question_lower:
+            asset = 'GOLD'
+        elif 'bitcoin' in question_lower or 'btc' in question_lower:
             asset = 'BTC'
         elif 'ethereum' in question_lower or 'eth' in question_lower:
             asset = 'ETH'

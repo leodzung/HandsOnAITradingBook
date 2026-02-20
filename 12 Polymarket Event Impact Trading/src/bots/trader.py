@@ -938,7 +938,9 @@ class PolymarketTrader:
             # Try to infer asset from question for better dashboard categorization
             if market and question:
                 question_lower = question.lower()
-                if 'bitcoin' in question_lower or 'btc' in question_lower:
+                if 'gold' in question_lower or 'gc' in question_lower or 'xau' in question_lower:
+                    asset = 'GOLD'
+                elif 'bitcoin' in question_lower or 'btc' in question_lower:
                     asset = 'BTC'
                 elif 'ethereum' in question_lower or 'eth' in question_lower:
                     asset = 'ETH'
