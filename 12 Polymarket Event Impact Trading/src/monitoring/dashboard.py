@@ -601,8 +601,8 @@ event_positions = load_positions(EVENT_POSITIONS_DB)
 short_expiry_positions = load_positions(SHORT_EXPIRY_POSITIONS_DB)
 
 # Calculate metrics
-pl_open = price_level_positions[price_level_positions['status'] == 'OPEN'].copy() if not price_level_positions.empty else pd.DataFrame()
-pl_closed = price_level_positions[price_level_positions['status'] == 'CLOSED'].copy() if not price_level_positions.empty else pd.DataFrame()
+pl_open = price_level_positions[price_level_positions['status'] == 'open'].copy() if not price_level_positions.empty else pd.DataFrame()
+pl_closed = price_level_positions[price_level_positions['status'] == 'closed'].copy() if not price_level_positions.empty else pd.DataFrame()
 
 total_deployed = pl_open['size'].sum() if not pl_open.empty else 0
 total_pnl = pl_closed['pnl'].sum() if not pl_closed.empty and 'pnl' in pl_closed.columns else 0
