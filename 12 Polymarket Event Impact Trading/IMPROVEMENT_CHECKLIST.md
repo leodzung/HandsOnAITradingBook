@@ -2,6 +2,29 @@
 
 ## Completed ✅
 
+### 2026-02-20: Forward-Validation for Short Expiry Trader
+- ✅ **Implemented walk-forward validation framework**: Reuses existing `WalkForwardValidator` infrastructure
+- ✅ **Created training script**: `scripts/train_short_expiry_forward_validation.py`
+  - Loads labeled snapshots from `MarketSnapshotCollector`
+  - Uses expanding window temporal cross-validation
+  - Trains bucket-specific models (ultra_short, short, medium)
+  - Evaluates on out-of-sample future data
+  - Saves validation reports with degradation metrics
+- ✅ **Created labeling script**: `scripts/label_snapshots.py`
+  - Backfills resolved market outcomes
+  - Checks markets via Polymarket API
+  - Updates snapshot database with labels
+  - Tracks labeling progress with Telegram alerts
+- ✅ **Full infrastructure reuse**:
+  - WalkForwardValidator (temporal CV)
+  - ModelTrainer (centralized training)
+  - MarketSnapshotCollector (data source)
+  - TelegramNotifier (progress alerts)
+- ✅ **Prevents lookahead bias**: Only trains on past data, validates on future periods
+- ✅ **Production ready**: 5-fold validation with 30-day windows, automatic model saving
+- ✅ **Documentation**: Comprehensive docstrings and CLI help
+- ✅ **Benefit**: Realistic performance estimates before deploying ML models to live trading
+
 ### 2026-02-14: WebSocket Reconnection Logic - Exponential Backoff
 - ✅ **Implemented exponential backoff**: 1s → 2s → 4s → 8s → 16s → 32s → 60s (max)
 - ✅ **Random jitter (±30%)**: Prevents thundering herd when multiple clients reconnect
@@ -145,10 +168,16 @@ price_history_no = self.price_tracker.get_price_history(f"{market_id}_NO", hours
 ### Signal Generation
 
 #### **ML Model Integration** (Priority: High)
-**Status:** Planned (Phase 2)
-- GBM model with walk-forward validation
-- Train on historical short-expiry market outcomes
-- Features: time decay, momentum, microstructure, volatility
+**Status:** ✅ Framework Complete (2026-02-20)
+- ✅ Walk-forward validation framework implemented
+- ✅ Training pipeline with `MarketSnapshotCollector` data
+- ✅ Bucket-specific GBM models with calibration
+- 📊 **Next Steps**:
+  1. Collect 200+ labeled snapshots (run `label_snapshots.py`)
+  2. Train initial models: `python3 scripts/train_short_expiry_forward_validation.py --bucket all`
+  3. Review validation metrics (ROC-AUC, degradation)
+  4. Integrate best models into `trader_short_expiry.py`
+  5. A/B test: ML signals vs rule-based signals
 
 #### **Cross-Market Correlation Signals** (Priority: Medium)
 **Status:** Planned (Phase 3)
@@ -188,8 +217,14 @@ price_history_no = self.price_tracker.get_price_history(f"{market_id}_NO", hours
 - Market selection quality metrics
 
 #### **Backtesting Framework** (Priority: High)
-- Simulate historical performance using price_tracking.db
-- Validate signal logic before deploying
+**Status:** Partially Implemented (2026-02-20)
+- ✅ Walk-forward validation provides out-of-sample performance estimates
+- ✅ Snapshot-based evaluation (real market conditions)
+- 🔄 **TODO**: Historical replay backtester
+  - Simulate trades using `price_tracking.db`
+  - Walk-forward equity curve generation
+  - Validate signal logic before deploying
+  - Compare rule-based vs ML strategies
 
 ---
 
@@ -204,7 +239,7 @@ price_history_no = self.price_tracker.get_price_history(f"{market_id}_NO", hours
 
 ## Notes
 
-**Last Updated:** 2026-02-14 (Post-WebSocket & PositionManager V2 deployment)
+**Last Updated:** 2026-02-20 (Post Forward-Validation Implementation)
 **Active Bots:** Event-based, Price-level, Short-expiry (all using WebSocket + V2)
 **Paper Trading Balance:** Event=$1000, Price-level=$500, Short-expiry=$470
 **Key Infrastructure:**
@@ -212,3 +247,6 @@ price_history_no = self.price_tracker.get_price_history(f"{market_id}_NO", hours
 - PositionManager V2 (unified across all bots)
 - PriceFetcher (centralized price source)
 - TradeExecutor (centralized validation)
+- WalkForwardValidator (temporal CV for ML)
+- MarketSnapshotCollector (training data collection)
+- ModelTrainer (centralized training engine)
