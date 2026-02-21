@@ -71,7 +71,8 @@ class WalkForwardValidator:
                  val_period_days: int = 30,
                  gap_days: int = 0,
                  min_train_samples: int = 500,
-                 min_val_samples: int = 50):
+                 min_val_samples: int = 50,
+                 feature_importance_tracker: Any = None):
         """
         Initialize walk-forward validator.
 
@@ -81,12 +82,14 @@ class WalkForwardValidator:
             gap_days: Optional embargo period between train/val (default: 0)
             min_train_samples: Minimum samples required for training
             min_val_samples: Minimum samples required for validation
+            feature_importance_tracker: Optional FeatureImportanceTracker for drift detection
         """
         self.n_folds = n_folds
         self.val_period_days = val_period_days
         self.gap_days = gap_days
         self.min_train_samples = min_train_samples
         self.min_val_samples = min_val_samples
+        self.feature_importance_tracker = feature_importance_tracker
 
     def split(self, X: pd.DataFrame, y: pd.Series,
               date_column: str = 'entry_date') -> List[Tuple[np.ndarray, np.ndarray]]:
@@ -217,7 +220,8 @@ class WalkForwardValidator:
     def validate(self, X: pd.DataFrame, y: pd.Series,
                 model_factory: Callable[[], Any],
                 eval_fn: Callable[[Any, pd.DataFrame, pd.Series], Dict[str, float]],
-                date_column: str = 'entry_date') -> ValidationReport:
+                date_column: str = 'entry_date',
+                bot_type: str = 'walk_forward') -> ValidationReport:
         """
         Run full validation across all folds.
 
@@ -227,6 +231,7 @@ class WalkForwardValidator:
             model_factory: Function that returns untrained model
             eval_fn: Function(model, X, y) -> Dict[str, float] returning metrics
             date_column: Name of date column for temporal ordering
+            bot_type: Bot type for feature importance tracking (default: 'walk_forward')
 
         Returns:
             ValidationReport with aggregate metrics
@@ -283,6 +288,34 @@ class WalkForwardValidator:
             # Evaluate
             logger.info(f"Evaluating on validation set...")
             metrics = eval_fn(model, X_val, y_val)
+
+            # Track feature importance for drift detection (after fit, after eval)
+            if self.feature_importance_tracker and hasattr(model, 'feature_importances_'):
+                try:
+                    feature_names = [col for col in X_train.columns if col != date_column]
+
+                    fold_context = {
+                        'train_start': train_start,
+                        'train_end': train_end,
+                        'val_start': val_start,
+                        'val_end': val_end,
+                        'train_samples': len(X_train),
+                        'val_samples': len(X_val)
+                    }
+
+                    # Store fold-level importance
+                    self.feature_importance_tracker.store_fold_importance(
+                        model=model,
+                        feature_names=feature_names,
+                        fold_id=fold_id,
+                        fold_context=fold_context,
+                        metrics=metrics,
+                        bot_type=bot_type
+                    )
+
+                    logger.debug(f"Feature importance tracked for fold {fold_id}")
+                except Exception as e:
+                    logger.warning(f"Failed to track feature importance for fold {fold_id}: {e}")
 
             # Log metrics
             logger.info(f"\nValidation Metrics:")

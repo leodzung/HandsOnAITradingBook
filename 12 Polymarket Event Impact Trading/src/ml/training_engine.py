@@ -114,23 +114,32 @@ class ModelTrainer:
         trainer.save_model(model, metrics, 'model.pkl')
     """
 
-    def __init__(self, config: ModelConfig = None, telegram_notifier: Optional[Any] = None):
+    def __init__(
+        self,
+        config: ModelConfig = None,
+        telegram_notifier: Optional[Any] = None,
+        feature_importance_tracker: Optional[Any] = None
+    ):
         """
         Initialize trainer.
 
         Args:
             config: Model configuration (uses defaults if None)
             telegram_notifier: Optional TelegramNotifier for training alerts
+            feature_importance_tracker: Optional FeatureImportanceTracker for drift detection
         """
         self.config = config or ModelConfig()
         self.scaler = StandardScaler() if self.config.use_scaler else None
         self.feature_names = []
         self.telegram = telegram_notifier
+        self.feature_importance_tracker = feature_importance_tracker
 
         if self.config.verbose:
             logger.info(f"ModelTrainer initialized: {self.config.model_type}")
             if self.telegram:
                 logger.info("Telegram notifications enabled for training")
+            if self.feature_importance_tracker:
+                logger.info("Feature importance tracking enabled for drift detection")
 
     def _send_telegram(self, message: str):
         """Send Telegram notification if configured."""
@@ -260,7 +269,8 @@ class ModelTrainer:
 
     def train(self, X_train: pd.DataFrame, y_train: np.ndarray,
               X_val: Optional[pd.DataFrame] = None,
-              y_val: Optional[np.ndarray] = None) -> Tuple[Any, Dict[str, TrainingMetrics]]:
+              y_val: Optional[np.ndarray] = None,
+              **kwargs) -> Tuple[Any, Dict[str, TrainingMetrics]]:
         """
         Train model with optional validation set.
 
@@ -269,6 +279,7 @@ class ModelTrainer:
             y_train: Training labels
             X_val: Validation features (optional)
             y_val: Validation labels (optional)
+            **kwargs: Additional parameters (bot_type, model_path, etc. for feature tracking)
 
         Returns:
             Tuple of (trained_model, metrics_dict)
@@ -349,6 +360,41 @@ class ModelTrainer:
             # Notify training completed
             duration = (datetime.now() - start_time).total_seconds()
             self._notify_training_completed(metrics, duration)
+
+            # Track feature importance for drift detection
+            if self.feature_importance_tracker and hasattr(base_model, 'feature_importances_'):
+                try:
+                    # Extract bot_type from kwargs (passed by training scripts)
+                    bot_type = kwargs.get('bot_type', 'unified')
+
+                    # Prepare metrics dict for tracker
+                    importance_metrics = {
+                        'train_roc_auc': metrics['train'].roc_auc,
+                        'val_roc_auc': metrics.get('val', metrics['train']).roc_auc,
+                        'test_roc_auc': metrics.get('test', metrics.get('val', metrics['train'])).roc_auc
+                    }
+
+                    # Prepare training context
+                    training_context = {
+                        'training_samples': len(X_train),
+                        'validation_samples': len(X_val) if X_val is not None else 0,
+                        'model_config': asdict(self.config)
+                    }
+
+                    # Store feature importance (use base_model before calibration)
+                    self.feature_importance_tracker.store_importance(
+                        bot_type=bot_type,
+                        model=base_model,
+                        feature_names=self.feature_names,
+                        metrics=importance_metrics,
+                        training_context=training_context,
+                        model_path=kwargs.get('model_path')
+                    )
+
+                    if self.config.verbose:
+                        logger.info(f"Feature importance tracked for {bot_type}")
+                except Exception as e:
+                    logger.warning(f"Failed to track feature importance: {e}")
 
             return model, metrics
 

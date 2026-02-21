@@ -638,7 +638,7 @@ with col4:
 st.divider()
 
 # Tabs for different views
-tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(["📊 Positions", "⚡ Short Expiry", "📈 Performance", "🔄 Arbitrage", "📦 Data Collection", "⚙️ Settings"])
+tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs(["📊 Positions", "⚡ Short Expiry", "📈 Performance", "🔄 Arbitrage", "📦 Data Collection", "⚙️ Settings", "🔍 Feature Drift"])
 
 with tab1:
     st.subheader("Open Positions")
@@ -1548,6 +1548,270 @@ with tab6:
         st.code(result.stdout, language="text")
     except Exception as e:
         st.error(f"Could not read log: {e}")
+
+with tab7:
+    st.subheader("🔍 Feature Importance & Drift Monitoring")
+
+    # Import drift detection modules
+    try:
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path(__file__).parent.parent))
+
+        from ml.feature_importance_tracker import FeatureImportanceTracker
+        from ml.drift_detector import DriftDetector
+
+        # Bot type selector
+        bot_type = st.selectbox(
+            "Select Bot Type",
+            ['event', 'price_level', 'short_expiry'],
+            key='drift_bot_type'
+        )
+
+        # Initialize tracker and detector
+        tracker = FeatureImportanceTracker(db_path='data/training_history.db')
+        detector = DriftDetector(db_path='data/training_history.db')
+
+        # Check if data exists
+        timestamps = tracker.get_training_timestamps(bot_type)
+
+        if not timestamps:
+            st.warning(f"No training data found for {bot_type} bot. Train a model first to see drift metrics.")
+        else:
+            st.success(f"Found {len(timestamps)} training runs for {bot_type}")
+
+            # === SECTION 1: Drift Metrics Dashboard ===
+            st.subheader("Current Drift Metrics")
+
+            col1, col2, col3 = st.columns(3)
+
+            try:
+                # Get current and baseline
+                current = tracker.get_latest_importance(bot_type)
+                baseline = detector.get_baseline(bot_type, strategy='ewma', lookback_runs=5)
+
+                if not current.empty and not baseline.empty:
+                    # Calculate metrics
+                    current_ranks = current.set_index('feature_name')['importance_rank']
+                    baseline_ranks = baseline.set_index('feature_name')['importance_rank']
+                    current_imp = current.set_index('feature_name')['normalized_importance']
+                    baseline_imp = baseline.set_index('feature_name')['normalized_importance']
+
+                    tau, p_value = detector.calculate_rank_stability(baseline_ranks, current_ranks)
+                    l1_dist = detector.calculate_importance_shift(baseline_imp, current_imp)
+
+                    current_top_5 = current.nsmallest(5, 'importance_rank')['feature_name'].tolist()
+                    baseline_top_5 = baseline.nsmallest(5, 'importance_rank')['feature_name'].tolist()
+                    top_5_overlap = detector.calculate_top_k_overlap(baseline_top_5, current_top_5, k=5)
+
+                    # Display metrics
+                    with col1:
+                        color = "normal"
+                        if tau < 0.5:
+                            color = "inverse"
+                        elif tau < 0.7:
+                            color = "off"
+
+                        st.metric(
+                            "Rank Stability (Kendall's Tau)",
+                            f"{tau:.3f}",
+                            delta=None,
+                            help="1.0 = perfect stability, <0.7 = warning, <0.5 = critical"
+                        )
+
+                    with col2:
+                        color = "normal"
+                        if l1_dist > 0.6:
+                            color = "inverse"
+                        elif l1_dist > 0.4:
+                            color = "off"
+
+                        st.metric(
+                            "L1 Distribution Shift",
+                            f"{l1_dist:.3f}",
+                            delta=None,
+                            help="0.0 = identical, >0.4 = warning, >0.6 = critical"
+                        )
+
+                    with col3:
+                        st.metric(
+                            "Top-5 Overlap",
+                            f"{top_5_overlap*100:.0f}%",
+                            delta=None,
+                            help="100% = perfect overlap, <60% = warning, <40% = critical"
+                        )
+                else:
+                    st.info("Not enough data to calculate drift metrics (need at least 2 training runs)")
+
+            except Exception as e:
+                st.error(f"Could not calculate drift metrics: {e}")
+
+            st.divider()
+
+            # === SECTION 2: Feature Importance Timeline ===
+            st.subheader("Feature Importance Timeline")
+
+            try:
+                history = tracker.get_importance_history(bot_type, last_n_runs=10)
+
+                if not history.empty:
+                    # Get top 10 features
+                    top_features = (
+                        history.groupby('feature_name')['normalized_importance']
+                        .mean()
+                        .nlargest(10)
+                        .index
+                        .tolist()
+                    )
+
+                    # Filter to top features
+                    plot_data = history[history['feature_name'].isin(top_features)]
+
+                    # Create line chart using plotly
+                    import plotly.express as px
+
+                    fig = px.line(
+                        plot_data,
+                        x='training_timestamp',
+                        y='normalized_importance',
+                        color='feature_name',
+                        title=f'Top 10 Features - Importance Over Time ({bot_type})',
+                        labels={
+                            'training_timestamp': 'Training Timestamp',
+                            'normalized_importance': 'Normalized Importance',
+                            'feature_name': 'Feature'
+                        },
+                        markers=True
+                    )
+
+                    fig.update_layout(
+                        height=500,
+                        hovermode='x unified',
+                        legend=dict(
+                            orientation="v",
+                            yanchor="top",
+                            y=1,
+                            xanchor="left",
+                            x=1.02
+                        )
+                    )
+
+                    st.plotly_chart(fig, use_container_width=True)
+                else:
+                    st.info("No historical importance data available")
+
+            except Exception as e:
+                st.error(f"Could not plot timeline: {e}")
+
+            st.divider()
+
+            # === SECTION 3: Current vs Baseline Comparison ===
+            st.subheader("Current vs Baseline Feature Importance")
+
+            try:
+                current = tracker.get_latest_importance(bot_type)
+                baseline = detector.get_baseline(bot_type, strategy='ewma', lookback_runs=5)
+
+                if not current.empty and not baseline.empty:
+                    # Merge current and baseline
+                    comparison = current[['feature_name', 'normalized_importance', 'importance_rank']].merge(
+                        baseline[['feature_name', 'normalized_importance', 'importance_rank']],
+                        on='feature_name',
+                        how='outer',
+                        suffixes=('_current', '_baseline')
+                    ).fillna(0)
+
+                    # Sort by current importance
+                    comparison = comparison.sort_values('normalized_importance_current', ascending=False).head(15)
+
+                    # Create grouped bar chart
+                    import plotly.graph_objects as go
+
+                    fig = go.Figure()
+
+                    fig.add_trace(go.Bar(
+                        name='Baseline (EWMA)',
+                        x=comparison['feature_name'],
+                        y=comparison['normalized_importance_baseline'],
+                        marker_color='lightblue'
+                    ))
+
+                    fig.add_trace(go.Bar(
+                        name='Current',
+                        x=comparison['feature_name'],
+                        y=comparison['normalized_importance_current'],
+                        marker_color='darkblue'
+                    ))
+
+                    fig.update_layout(
+                        title=f'Top 15 Features - Current vs Baseline ({bot_type})',
+                        xaxis_title='Feature Name',
+                        yaxis_title='Normalized Importance',
+                        barmode='group',
+                        height=500,
+                        hovermode='x unified'
+                    )
+
+                    fig.update_xaxes(tickangle=45)
+
+                    st.plotly_chart(fig, use_container_width=True)
+                else:
+                    st.info("Not enough data for comparison")
+
+            except Exception as e:
+                st.error(f"Could not create comparison chart: {e}")
+
+            st.divider()
+
+            # === SECTION 4: Recent Drift Alerts ===
+            st.subheader("Recent Drift Alerts")
+
+            try:
+                recent_alerts = detector.get_recent_alerts(
+                    bot_type=bot_type,
+                    hours=168,  # Last 7 days
+                    acknowledged=False
+                )
+
+                if not recent_alerts.empty:
+                    # Color-code by severity
+                    def severity_color(severity):
+                        if severity == 'critical':
+                            return '🚨'
+                        elif severity == 'warning':
+                            return '⚠️'
+                        else:
+                            return 'ℹ️'
+
+                    recent_alerts['icon'] = recent_alerts['severity'].apply(severity_color)
+
+                    # Display alerts
+                    for _, alert in recent_alerts.iterrows():
+                        with st.expander(
+                            f"{alert['icon']} {alert['alert_type']} - {alert['alert_timestamp'][:19]}",
+                            expanded=(alert['severity'] == 'critical')
+                        ):
+                            st.markdown(f"**Severity:** {alert['severity'].upper()}")
+                            st.markdown(f"**Drift Score:** {alert['drift_score']:.3f}")
+                            st.markdown(f"**Message:** {alert['message']}")
+                            st.markdown(f"**Affected Features:** {', '.join(alert['affected_features'][:5])}")
+
+                            # Acknowledge button
+                            if st.button(f"Acknowledge Alert #{alert['id']}", key=f"ack_{alert['id']}"):
+                                detector.acknowledge_alert(alert['id'])
+                                st.success("Alert acknowledged!")
+                                st.rerun()
+                else:
+                    st.success("✅ No unacknowledged drift alerts in the last 7 days")
+
+            except Exception as e:
+                st.error(f"Could not load alerts: {e}")
+
+    except ImportError as e:
+        st.error(f"Feature drift detection not available: {e}")
+        st.info("Install required dependencies or train ML models to enable drift detection.")
+    except Exception as e:
+        st.error(f"Error loading drift detection: {e}")
 
 # Footer
 st.divider()

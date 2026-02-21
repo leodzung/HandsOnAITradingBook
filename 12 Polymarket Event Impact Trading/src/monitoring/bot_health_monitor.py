@@ -84,6 +84,15 @@ class BotHealthMonitor:
         self.alert_state_file = Path('data/bot_health_alerts.json')
         self._load_alert_state()
 
+        # Feature drift detection
+        try:
+            from ml.drift_detector import DriftDetector
+            self.drift_detector = DriftDetector(db_path='data/training_history.db')
+            logger.info("Feature drift detection enabled")
+        except Exception as e:
+            logger.warning(f"Could not initialize drift detector: {e}")
+            self.drift_detector = None
+
         logger.info(f"BotHealthMonitor initialized: {self.db_path}")
 
     def _load_alert_state(self):
@@ -401,9 +410,77 @@ class BotHealthMonitor:
 
         return issues
 
+    def check_feature_drift(self) -> Dict[str, List[str]]:
+        """
+        Check for feature importance drift across all bots.
+
+        Returns:
+            Dictionary of drift issues by bot type
+        """
+        if not self.drift_detector:
+            return {}
+
+        results = {}
+
+        for bot_type in self.config['expected_bots']:
+            issues = []
+
+            try:
+                # Detect drift
+                alerts = self.drift_detector.detect_drift(
+                    bot_type=bot_type,
+                    baseline_strategy='ewma',
+                    lookback_runs=5
+                )
+
+                # Process alerts
+                for alert in alerts:
+                    if alert['severity'] == 'critical':
+                        # Send Telegram for critical drift
+                        self._send_alert(
+                            f"drift_{bot_type}_{alert['alert_type']}",
+                            f"<b>🚨 CRITICAL FEATURE DRIFT</b>\n\n"
+                            f"<b>Bot:</b> {bot_type}\n"
+                            f"<b>Type:</b> {alert['alert_type']}\n"
+                            f"<b>Drift Score:</b> {alert['drift_score']:.3f}\n"
+                            f"<b>Affected Features:</b> {', '.join(alert['affected_features'][:5])}\n\n"
+                            f"<b>Recommendation:</b> Review model performance and consider retraining",
+                            severity='critical'
+                        )
+                        issues.append(
+                            f"🚨 CRITICAL: {alert['message']} "
+                            f"(score={alert['drift_score']:.3f})"
+                        )
+
+                    elif alert['severity'] == 'warning':
+                        # Log warning, don't spam Telegram
+                        logger.warning(
+                            f"Feature drift warning for {bot_type}: {alert['message']} "
+                            f"(score={alert['drift_score']:.3f})"
+                        )
+                        issues.append(
+                            f"⚠️  WARNING: {alert['message']} "
+                            f"(score={alert['drift_score']:.3f})"
+                        )
+
+                    elif alert['severity'] == 'info':
+                        # Just log info alerts
+                        logger.info(
+                            f"Feature drift info for {bot_type}: {alert['message']}"
+                        )
+
+            except Exception as e:
+                logger.warning(f"Could not check drift for {bot_type}: {e}")
+                continue
+
+            if issues:
+                results[f'{bot_type}_drift'] = issues
+
+        return results
+
     def run_all_checks(self) -> Dict[str, List[str]]:
         """
-        Run all health checks (including Alchemy collector).
+        Run all health checks (including Alchemy collector and feature drift).
 
         Returns:
             Dictionary of check results: {check_name: [issues]}
@@ -414,6 +491,10 @@ class BotHealthMonitor:
             'asymmetry': self.check_bot_asymmetry(),
             'database': self.check_database_health()
         }
+
+        # Add feature drift checks
+        drift_results = self.check_feature_drift()
+        results.update(drift_results)
 
         # Add Alchemy collector checks
         alchemy_monitor = AlchemyCollectorMonitor(
