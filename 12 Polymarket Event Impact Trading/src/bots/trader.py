@@ -25,6 +25,7 @@ from models.models_v2 import PriceMovementPredictor, TradingSignalGenerator, Mod
 from utils.price_tracker import PriceTracker
 from core.position_manager_v2 import PositionManager
 from monitoring.telegram_notifier import TelegramNotifier
+from ml.ml_predictor import MLPredictor, MLPredictorFactory
 from ml.snapshot_collector import MarketSnapshotCollector
 
 
@@ -199,6 +200,15 @@ class PolymarketTrader:
             config: Configuration dictionary
         """
         self.config = config
+        # Initialize ML predictor
+        bot_name = self.config.get('bot_type', 'event')  # Default to event if not specified
+        self.ml_predictor = MLPredictorFactory.create_for_bot(bot_name, self.config)
+        
+        if self.ml_predictor.enabled:
+            logger.info("✅ ML predictor initialized and enabled")
+        else:
+            logger.info("ML predictor disabled - using rule-based trading only")
+        
 
         # Initialize components
         self.client = PolymarketClient(

@@ -21,9 +21,9 @@
   "use_transformers": true,
   "paper_trading": true,
   "paper_trading_balance": 1000.0,
-  "min_confidence": 0.60,
+  "min_confidence": 0.6,
   "min_expected_return": 0.03,
-  "max_entry_price": 0.90,
+  "max_entry_price": 0.9,
   "max_position_size": 100,
   "max_positions": 10,
   "max_daily_loss": 500,
@@ -58,36 +58,57 @@
     "pct": 50
   },
   "position_check_interval_seconds": 60,
-
   "slippage_estimation": {
     "enabled": true,
     "max_slippage_bps": 100,
     "max_slippage_dollars": 5.0,
     "orderbook_staleness_seconds": 10,
-    "depth_buffer_pct": 0.10,
+    "depth_buffer_pct": 0.1,
     "volatility_adjustment": true,
     "volume_limit_pct": 0.01,
     "warn_threshold_bps": 50
   },
-
   "telegram": {
     "enabled": true,
     "bot_token": "8068515860:AAEiKpTK0RtHo5dURsbu7ey8Xa8r3A2xEHA",
     "chat_id": "6690408994"
   },
-
   "time_decay_tp_sl": {
     "enabled": true,
     "mode": "step",
     "thresholds": [
-      {"min_hours": 24, "tp_pct": 50, "sl_pct": 15},
-      {"min_hours": 12, "tp_pct": 40, "sl_pct": 12},
-      {"min_hours": 4, "tp_pct": 30, "sl_pct": 10},
-      {"min_hours": 1, "tp_pct": 20, "sl_pct": 8},
-      {"min_hours": 0, "tp_pct": 10, "sl_pct": 5}
+      {
+        "min_hours": 24,
+        "tp_pct": 50,
+        "sl_pct": 15
+      },
+      {
+        "min_hours": 12,
+        "tp_pct": 40,
+        "sl_pct": 12
+      },
+      {
+        "min_hours": 4,
+        "tp_pct": 30,
+        "sl_pct": 10
+      },
+      {
+        "min_hours": 1,
+        "tp_pct": 20,
+        "sl_pct": 8
+      },
+      {
+        "min_hours": 0,
+        "tp_pct": 10,
+        "sl_pct": 5
+      }
     ],
     "force_exit_hours": 1.0,
     "apply_to_tp": true,
     "apply_to_sl": true
-  }
+  },
+  "use_ml_model": true,
+  "ml_model_path": "data/models/event_model.pkl",
+  "ml_confidence_threshold": 0.6,
+  "ml_position_size_scaling": true
 }

@@ -35,6 +35,7 @@ from core.slippage_estimator import SlippageEstimator
 from core.position_manager_v2 import PositionManager
 from monitoring.telegram_notifier import TelegramNotifier
 from utils.price_tracker import PriceTracker
+from ml.ml_predictor import MLPredictor, MLPredictorFactory
 from ml.snapshot_collector import MarketSnapshotCollector
 
 # Configure logging
@@ -334,6 +335,53 @@ class ShortExpiryTrader:
         os.makedirs(os.path.dirname(balance_file), exist_ok=True)
         with open(balance_file, 'w') as f:
             json.dump({'balance': balance, 'updated': datetime.now(timezone.utc).isoformat()}, f)
+
+    
+    def _ml_should_trade(self, market: dict, additional_context: dict = None) -> tuple[bool, str]:
+        """
+        Check if ML model recommends trading this market.
+        
+        Args:
+            market: Market dictionary
+            additional_context: Optional context (event info, etc.)
+        
+        Returns:
+            Tuple of (should_trade, reason)
+        """
+        if not self.ml_predictor.enabled:
+            return True, "ML disabled - using rules only"
+        
+        should_trade, reason = self.ml_predictor.should_trade(market, additional_context)
+        
+        if should_trade:
+            confidence = self.ml_predictor.get_confidence(market, additional_context)
+            logger.info(f"ML: ✅ TRADE - {reason}")
+            return True, reason
+        else:
+            logger.info(f"ML: ❌ SKIP - {reason}")
+            return False, reason
+    
+    def _ml_get_position_size(self, base_size: float, market: dict) -> float:
+        """
+        Adjust position size based on ML confidence.
+        
+        Args:
+            base_size: Base position size
+            market: Market dictionary
+        
+        Returns:
+            Adjusted position size
+        """
+        if not self.ml_predictor.enabled:
+            return base_size
+        
+        confidence = self.ml_predictor.get_confidence(market)
+        multiplier = self.ml_predictor.get_position_size_multiplier(confidence)
+        adjusted_size = base_size * multiplier
+        
+        logger.debug(f"Position size: ${base_size:.0f} × {multiplier:.2f} = ${adjusted_size:.0f}")
+        
+        return adjusted_size
 
     def run(self):
         """Main loop."""

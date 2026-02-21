@@ -29,6 +29,7 @@ from core.trade_executor import TradeExecutor, TradeRequest
 from utils.conditional_resolution import ConditionalResolutionAnalyzer
 from core.exposure_manager import ExposureManager
 from monitoring.telegram_notifier import TelegramNotifier
+from ml.ml_predictor import MLPredictor, MLPredictorFactory
 from ml.snapshot_collector import MarketSnapshotCollector
 
 
@@ -574,6 +575,53 @@ class PriceLevelTrader:
         # Close triggered positions
         for market_id, exit_reason in positions_to_close:
             self._close_position(market_id, exit_reason=exit_reason)
+
+    
+    def _ml_should_trade(self, market: dict, additional_context: dict = None) -> tuple[bool, str]:
+        """
+        Check if ML model recommends trading this market.
+        
+        Args:
+            market: Market dictionary
+            additional_context: Optional context (event info, etc.)
+        
+        Returns:
+            Tuple of (should_trade, reason)
+        """
+        if not self.ml_predictor.enabled:
+            return True, "ML disabled - using rules only"
+        
+        should_trade, reason = self.ml_predictor.should_trade(market, additional_context)
+        
+        if should_trade:
+            confidence = self.ml_predictor.get_confidence(market, additional_context)
+            logger.info(f"ML: ✅ TRADE - {reason}")
+            return True, reason
+        else:
+            logger.info(f"ML: ❌ SKIP - {reason}")
+            return False, reason
+    
+    def _ml_get_position_size(self, base_size: float, market: dict) -> float:
+        """
+        Adjust position size based on ML confidence.
+        
+        Args:
+            base_size: Base position size
+            market: Market dictionary
+        
+        Returns:
+            Adjusted position size
+        """
+        if not self.ml_predictor.enabled:
+            return base_size
+        
+        confidence = self.ml_predictor.get_confidence(market)
+        multiplier = self.ml_predictor.get_position_size_multiplier(confidence)
+        adjusted_size = base_size * multiplier
+        
+        logger.debug(f"Position size: ${base_size:.0f} × {multiplier:.2f} = ${adjusted_size:.0f}")
+        
+        return adjusted_size
 
     def run(self):
         """Run trading bot main loop."""
