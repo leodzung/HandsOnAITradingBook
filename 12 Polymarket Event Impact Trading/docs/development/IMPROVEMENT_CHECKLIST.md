@@ -202,24 +202,41 @@ Key papers that can improve the bots:
     - JSON export of reports and summaries
   - Result: All training paths support CV, 15/15 tests passing, backward compatible
   - Full documentation in `CV_IMPLEMENTATION.md`
-- [ ] **Apply WalkForwardValidator to short-expiry model training** - Use same validation framework as other bots
-  - Files: `train_short_expiry.py`, `train_short_expiry_from_live.py`
-  - Current: Uses basic `TimeSeriesSplit` from sklearn (less rigorous)
-  - Target: Replace with `WalkForwardValidator` for consistency
-  - Benefits:
-    - Expanding window validation (prevents lookahead bias)
-    - Gap/embargo period support
-    - Comprehensive ValidationReport with AUC degradation tracking
-    - Standardized metrics across all models (event, price-level, short-expiry)
-    - Production readiness checks (same as other bots)
-  - Implementation:
-    - Add `entry_date` column to training data (use position entry_time)
-    - Create `run_with_walk_forward()` method (like price_level_model)
-    - Use same parameters: `n_folds=5, val_period_days=30, gap_days=0`
-    - Generate ValidationReport for each bucket (ultra_short, short, medium)
-  - Blocked by: Need 100+ closed positions per bucket for training data
-  - Priority: Do this BEFORE first model training (after live data collection)
-- [ ] Track feature importance over time to detect data drift
+- [x] **Apply WalkForwardValidator to short-expiry model training** - ✅ COMPLETE (2026-02-20)
+  - Files: `scripts/train_short_expiry_forward_validation.py`, `scripts/label_snapshots.py`
+  - **Status**: Walk-forward validation fully integrated into short-expiry training pipeline
+  - **Implementation**:
+    - Created `train_short_expiry_forward_validation.py` with expanding window CV
+    - Reuses existing `WalkForwardValidator` infrastructure (5-fold, 30-day windows)
+    - Loads labeled snapshots from `MarketSnapshotCollector` database
+    - Trains bucket-specific models (ultra_short, short, medium)
+    - Evaluates on out-of-sample future data (prevents lookahead bias)
+    - Saves validation reports with degradation metrics
+  - **Benefits Realized**:
+    - ✅ Expanding window validation (prevents lookahead bias)
+    - ✅ Comprehensive ValidationReport with AUC degradation tracking
+    - ✅ Standardized metrics across all models (event, price-level, short-expiry)
+    - ✅ Production readiness checks (ROC-AUC >= 0.70)
+  - **Documentation**: See root `IMPROVEMENT_CHECKLIST.md` section "2026-02-20: Forward-Validation for Short Expiry Trader"
+  - **Next Step**: Collect 200+ labeled snapshots to train initial models
+- [x] **Track feature importance over time to detect data drift** - ✅ COMPLETE (2026-02-21)
+  - **Status**: Comprehensive feature drift detection system implemented
+  - **Implementation**:
+    - Created `FeatureImportanceTracker` for automated tracking after each training run
+    - Created `DriftDetector` with 4 metrics (rank stability, L1 shift, top-K overlap, drops)
+    - Integrated with `ModelTrainer` (opt-in, zero breaking changes)
+    - Integrated with `WalkForwardValidator` (fold-level tracking)
+    - Added `BotHealthMonitor` drift checks with Telegram alerts
+    - Created dashboard "Feature Drift" tab with interactive visualizations
+    - Created CLI analysis tool (`scripts/analyze_feature_drift.py`)
+  - **Testing**: 26/26 tests passing (20 unit + 6 integration)
+  - **Benefits**:
+    - ✅ Proactive detection of model staleness
+    - ✅ Early warning for data quality issues
+    - ✅ Market regime change detection
+    - ✅ Tiered alerting (Info/Warning/Critical) with 24h cooldown
+  - **Documentation**: See `FEATURE_DRIFT_IMPLEMENTATION_COMPLETE.md`
+  - **Database**: `data/training_history.db` with importance history and alerts
 - [ ] Build A/B testing framework to compare model versions in parallel
 
 ### Risk Management Hardening
