@@ -2,6 +2,15 @@
 
 ## Completed ✅
 
+### 2026-02-20: Dashboard Balance Reset Fix
+- ✅ **Fixed balance reset restart logic**: Now kills ALL bot instances before restart
+- ✅ **Multiple instance handling**: Uses `pkill -f` to ensure clean restart
+- ✅ **Balance persistence**: Bots reload balance from JSON on restart
+- ✅ **Manual cleanup procedure**: Documented process for fixing duplicate instances
+- ✅ **Prevention guidelines**: Best practices for using `manage_bots.sh`
+- ✅ **Documentation**: Complete guide in BALANCE_RESET_FIX.md
+- ✅ **Benefit**: Dashboard balance reset now works correctly, no more stuck balances
+
 ### 2026-02-20: Forward-Validation for Short Expiry Trader
 - ✅ **Implemented walk-forward validation framework**: Reuses existing `WalkForwardValidator` infrastructure
 - ✅ **Created training script**: `scripts/train_short_expiry_forward_validation.py`
@@ -24,6 +33,43 @@
 - ✅ **Production ready**: 5-fold validation with 30-day windows, automatic model saving
 - ✅ **Documentation**: Comprehensive docstrings and CLI help
 - ✅ **Benefit**: Realistic performance estimates before deploying ML models to live trading
+
+### 2026-02-15: Bot Health Monitoring Service
+- ✅ **Created dedicated monitoring service**: Proactive health checks for all bots
+- ✅ **Liveness detection**: Identifies silent/crashed bots (>30 min threshold)
+- ✅ **Collection rate monitoring**: Alerts on >50% rate drops
+- ✅ **Bot asymmetry detection**: Identifies imbalanced collection patterns
+- ✅ **Database health checks**: Corruption detection and size monitoring
+- ✅ **Telegram integration**: Critical, warning, and info alerts with cooldowns
+- ✅ **Alert deduplication**: Persistent state prevents spam (60 min cooldown)
+- ✅ **Multiple running modes**: Daemon (15 min checks), cron, or manual
+- ✅ **Configuration**: All thresholds configurable in `monitoring_config.json`
+- ✅ **Documentation**: Complete guide in BOT_HEALTH_MONITORING.md
+- ✅ **Benefit**: Proactive detection of bot issues within 30 minutes
+
+### 2026-02-15: Market Snapshot Collector Integration
+- ✅ **All three bots integrated**: Event, Price-level, and Short-expiry
+- ✅ **Bot differentiation**: Each uses unique `bot_type` identifier
+- ✅ **Centralized database**: Single `market_snapshots.db` for all bots
+- ✅ **Strategy-specific data**: Enables per-bot ML model training
+- ✅ **Performance attribution**: Track which strategy performs best
+- ✅ **Telegram alerts**: Milestones, labeling progress, training readiness
+- ✅ **Database schema**: Indexed for fast filtering by bot_type, market_id
+- ✅ **Testing**: Integration tests verify all bot types
+- ✅ **Documentation**: Complete guide in SNAPSHOT_COLLECTOR_INTEGRATION_COMPLETE.md
+- ✅ **Benefit**: Systematic training data collection for ML model improvement
+
+### 2026-02-14: Feature Centralization - Phase 1 Complete
+- ✅ **Eliminated 650 lines of duplicate code**: 35% code reduction across all bots
+- ✅ **Created common_features.py**: Centralized OrderbookFeatures, VolumeFeatures, TimeFeatures
+- ✅ **Migrated all 3 bots**: Event, Price-level, and Short-expiry traders
+- ✅ **100% backward compatible**: All feature values match old implementations (±1e-6 tolerance)
+- ✅ **Comprehensive testing**: 27 tests passing (21 new + 6 migration tests)
+- ✅ **Consistency**: Single source of truth for common calculations
+- ✅ **Maintainability**: Bug fixes propagate to all bots automatically (67% less effort)
+- ✅ **Strategy-specific logic preserved**: Sentiment, technical indicators, ultra-short features kept separate
+- ✅ **Documentation**: Complete technical guide in FEATURE_CENTRALIZATION_COMPLETE.md
+- ✅ **Benefit**: Easier maintenance, guaranteed consistency, better code organization
 
 ### 2026-02-14: WebSocket Reconnection Logic - Exponential Backoff
 - ✅ **Implemented exponential backoff**: 1s → 2s → 4s → 8s → 16s → 32s → 60s (max)
@@ -51,6 +97,37 @@
 - ✅ **Comprehensive testing**: 100% test coverage with V1→V2 migration validation (commit 7326b86)
 - ✅ **Full deployment**: All 3 bots migrated to PositionManager V2 (commit bea0cfe)
 - ✅ **Metadata filtering**: Flexible bucket counting and strategy filtering
+
+### 2026-02-21: Feature Drift Detection System
+- ✅ **Automated feature importance tracking**: Tracks importance after each training run (commit 3869d9c)
+- ✅ **Four drift metrics**: Rank stability (Kendall's Tau), L1 distribution shift, top-K overlap, importance drops
+- ✅ **Intelligent alerting**: Tiered severity (Info/Warning/Critical) with 24-hour cooldown
+- ✅ **Dashboard visualization**: Interactive "Feature Drift" tab with 4 chart types
+- ✅ **CLI analysis tool**: Manual drift analysis and reporting (`scripts/analyze_feature_drift.py`)
+- ✅ **ModelTrainer integration**: Auto-tracking via optional parameter (zero breaking changes)
+- ✅ **WalkForwardValidator integration**: Fold-level importance tracking for CV
+- ✅ **BotHealthMonitor integration**: Daily drift checks with Telegram alerts
+- ✅ **Database persistence**: `training_history.db` with feature_importance_history and drift_detection_alerts tables
+- ✅ **Baseline strategies**: EWMA (default), latest_n, best_auc for drift comparison
+- ✅ **Comprehensive testing**: 26/26 tests passing (20 unit + 6 integration)
+- ✅ **Documentation**: Complete implementation guide in FEATURE_DRIFT_IMPLEMENTATION_COMPLETE.md
+- ✅ **Benefits**:
+  - Proactive detection of model staleness and data quality issues
+  - Early warning for market regime changes
+  - Prevents performance degradation before it impacts trading
+  - ~3,000 lines of production-ready code with full test coverage
+
+### 2026-02-20 - 2026-02-13: Recent Bug Fixes & Enhancements
+- ✅ **Dashboard case mismatch fix** (commit 0ea91cd): Fixed open positions not showing due to 'outcome' vs 'side' field mismatch
+- ✅ **GOLD asset detection** (commit dcbf02f): Added GOLD asset detection and backfill script for existing positions
+- ✅ **Dashboard Unknown fields fix** (commit 449ff0e): Fixed dashboard showing "Unknown" for market/asset fields
+- ✅ **Position re-entry fix** (commit ab49e53): Fixed database constraint to allow re-entry after closing positions
+- ✅ **Balance inflation fix** (commit 6483177): Fixed infinite balance inflation from missing `outcome` argument in `close_position()`
+- ✅ **Circuit breaker config** (commit eeb84bb): Made circuit breaker config explicit in all bot configs
+- ✅ **Circuit breaker deadlock fix** (commit 23a3c75): Fixed short-expiry bot circuit breaker deadlock and added cooldown
+- ✅ **Dynamic time-decay TP/SL** (commit 495a89c): Added dynamic time-decay take-profit/stop-loss across all bots
+- ✅ **Event trader crash fix** (commit 46039cb): Fixed crash when price fetching fails
+- ✅ **Alchemy collector fixes** (commit 8f16ad5): Fixed config path and updated fallback RPCs
 
 ### 2026-02-14: Short Expiry Bot Price History Fix
 - ✅ Added PriceTracker integration to short expiry bot
@@ -168,12 +245,12 @@ price_history_no = self.price_tracker.get_price_history(f"{market_id}_NO", hours
 ### Signal Generation
 
 #### **ML Model Integration** (Priority: High)
-**Status:** ✅ Framework Complete (2026-02-20)
-- ✅ Walk-forward validation framework implemented
-- ✅ Training pipeline with `MarketSnapshotCollector` data
-- ✅ Bucket-specific GBM models with calibration
-- 📊 **Next Steps**:
-  1. Collect 200+ labeled snapshots (run `label_snapshots.py`)
+**Status:** 🔄 In Progress - Framework complete, awaiting sufficient training data
+- ✅ **COMPLETE**: Walk-forward validation framework implemented (2026-02-20)
+- ✅ **COMPLETE**: Training pipeline with `MarketSnapshotCollector` data (2026-02-20)
+- ✅ **COMPLETE**: Bucket-specific GBM models with calibration (2026-02-20)
+- 📊 **Next Steps** (Blocked by data collection):
+  1. Collect 200+ labeled snapshots per bucket (run `label_snapshots.py`)
   2. Train initial models: `python3 scripts/train_short_expiry_forward_validation.py --bucket all`
   3. Review validation metrics (ROC-AUC, degradation)
   4. Integrate best models into `trader_short_expiry.py`
@@ -239,9 +316,9 @@ price_history_no = self.price_tracker.get_price_history(f"{market_id}_NO", hours
 
 ## Notes
 
-**Last Updated:** 2026-02-20 (Post Forward-Validation Implementation)
+**Last Updated:** 2026-02-21 (Feature Drift Detection Complete)
 **Active Bots:** Event-based, Price-level, Short-expiry (all using WebSocket + V2)
-**Paper Trading Balance:** Event=$1000, Price-level=$500, Short-expiry=$470
+**Paper Trading Balance:** Event=$1000, Price-level=$500, Short-expiry=$500
 **Key Infrastructure:**
 - OrderbookManager (WebSocket + REST fallback)
 - PositionManager V2 (unified across all bots)
@@ -250,3 +327,7 @@ price_history_no = self.price_tracker.get_price_history(f"{market_id}_NO", hours
 - WalkForwardValidator (temporal CV for ML)
 - MarketSnapshotCollector (training data collection)
 - ModelTrainer (centralized training engine)
+- BotHealthMonitor (proactive health checks)
+- Common Features (centralized feature extraction)
+- FeatureImportanceTracker (drift detection & monitoring)
+- DriftDetector (4 drift metrics with intelligent alerting)
