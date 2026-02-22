@@ -295,8 +295,13 @@ Examples:
         print(f"\nBest Score:       {results['best_score']:.4f}")
         print(f"Baseline Score:   {results['baseline_score']:.4f}")
         print(f"Improvement:      {results['improvement']:.2f}%")
-        print(f"\nBest Parameters:")
-        print(json.dumps(results['best_params'], indent=2))
+
+        if results['best_params'] is not None:
+            print(f"\nBest Parameters:")
+            print(json.dumps(results['best_params'], indent=2))
+        else:
+            print(f"\n⚠️ Warning: Optimization did not find better parameters than baseline")
+            print(f"   Using baseline parameters")
         print()
 
         # Export config if requested
@@ -314,15 +319,22 @@ Examples:
         # Send completion notification
         if args.notify:
             improvement_emoji = "🚀" if results['improvement'] > 15 else "✅"
-            send_telegram_message(
+            msg = (
                 f"{improvement_emoji} *Optimization Complete*\n"
                 f"Bucket: `{args.bucket}`\n"
                 f"Best score: {results['best_score']:.4f}\n"
                 f"Improvement: {results['improvement']:.2f}%\n"
-                f"TP: {results['best_params']['take_profit_pct']:.1f}%\n"
-                f"SL: {results['best_params']['stop_loss_pct']:.1f}%",
-                args.config_path
             )
+
+            if results['best_params'] is not None:
+                msg += (
+                    f"TP: {results['best_params']['take_profit_pct']:.1f}%\n"
+                    f"SL: {results['best_params']['stop_loss_pct']:.1f}%"
+                )
+            else:
+                msg += "⚠️ Using baseline parameters"
+
+            send_telegram_message(msg, args.config_path)
 
         print("\n✓ Optimization completed successfully!")
         return 0

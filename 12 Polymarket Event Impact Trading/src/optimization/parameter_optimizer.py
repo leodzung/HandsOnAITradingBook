@@ -202,20 +202,30 @@ class ParameterOptimizer:
             # Return negative score (Bayesian opt minimizes)
             return -total_score
 
-        # Run Bayesian optimization
-        logger.info(f"Starting Bayesian optimization: {self.n_calls} iterations")
-        result = gp_minimize(
-            objective,
-            self.param_space,
-            n_calls=self.n_calls,
-            random_state=self.random_state,
-            n_initial_points=10,  # Random exploration first
-            verbose=False,
-        )
-
-        # Evaluate baseline parameters
+        # Evaluate baseline parameters first
         logger.info("Evaluating baseline parameters...")
         baseline_score = self._evaluate_params(self.baseline_params, date_column)
+
+        # Initialize best with baseline if optimization hasn't found anything
+        if self.best_params is None:
+            self.best_params = self.baseline_params.copy()
+            self.best_score = baseline_score
+            logger.info(f"Initialized best params with baseline: score={baseline_score:.4f}")
+
+        # Run Bayesian optimization
+        logger.info(f"Starting Bayesian optimization: {self.n_calls} iterations")
+        try:
+            result = gp_minimize(
+                objective,
+                self.param_space,
+                n_calls=self.n_calls,
+                random_state=self.random_state,
+                n_initial_points=10,  # Random exploration first
+                verbose=False,
+            )
+        except Exception as e:
+            logger.error(f"Bayesian optimization failed: {e}", exc_info=True)
+            logger.warning("Using baseline parameters as best")
 
         # Compile results
         results = {
@@ -263,9 +273,13 @@ class ParameterOptimizer:
                 fold_metrics.append(metrics)
 
         if not fold_metrics:
+            logger.warning(f"No valid folds for params: {params_dict}")
             return 0.0
 
+        # If we have at least one valid fold, compute score
+        # (multi_fold_score handles single fold case)
         total_score, _ = multi_fold_score(fold_metrics)
+        logger.debug(f"Evaluated params: {len(fold_metrics)} valid folds, score={total_score:.4f}")
         return total_score
 
     def _evaluate_fold(
@@ -292,18 +306,29 @@ class ParameterOptimizer:
 
             splits = self.validator.split(self.data, y_dummy, date_column=date_column)
 
-            if fold_idx >= len(splits):
-                logger.warning(f"Fold {fold_idx} exceeds available splits")
-                return None
+            # If walk-forward fails, fall back to simple train/test split
+            if not splits or len(splits) == 0:
+                logger.warning(f"Walk-forward validation failed, using simple train/test split")
+                # Use simple 80/20 split
+                split_idx = int(len(self.data) * 0.8)
+                val_data = self.data.iloc[split_idx:].copy()
 
-            train_idx, val_idx = splits[fold_idx]
+                if len(val_data) < 20:
+                    logger.warning(f"Insufficient data for simple split ({len(val_data)} samples)")
+                    return None
+            else:
+                if fold_idx >= len(splits):
+                    logger.warning(f"Fold {fold_idx} exceeds available splits ({len(splits)} folds)")
+                    return None
 
-            # Get validation data
-            val_data = self.data.iloc[val_idx].copy()
+                train_idx, val_idx = splits[fold_idx]
 
-            if len(val_data) < 20:
-                logger.warning(f"Fold {fold_idx}: insufficient validation data ({len(val_data)} samples)")
-                return None
+                # Get validation data
+                val_data = self.data.iloc[val_idx].copy()
+
+                if len(val_data) < 20:
+                    logger.warning(f"Fold {fold_idx}: insufficient validation data ({len(val_data)} samples)")
+                    return None
 
             # Run backtest on validation data
             backtester = RealisticBacktester(
@@ -316,8 +341,8 @@ class ParameterOptimizer:
                 data=val_data,
                 params=params_dict,
                 bucket=self.bucket,
-                ml_predictions=self.ml_predictions.iloc[val_idx] if self.ml_predictions is not None else None,
-                ml_confidence=self.ml_confidence.iloc[val_idx] if self.ml_confidence is not None else None,
+                ml_predictions=self.ml_predictions.iloc[val_idx] if self.ml_predictions is not None and len(splits) > 0 else None,
+                ml_confidence=self.ml_confidence.iloc[val_idx] if self.ml_confidence is not None and len(splits) > 0 else None,
             )
 
             # Convert trades to metrics format
@@ -340,7 +365,7 @@ class ParameterOptimizer:
             return metrics
 
         except Exception as e:
-            logger.error(f"Error evaluating fold {fold_idx}: {e}")
+            logger.error(f"Error evaluating fold {fold_idx}: {e}", exc_info=True)
             return None
 
     def _filter_to_bucket(self, data: pd.DataFrame) -> pd.DataFrame:
