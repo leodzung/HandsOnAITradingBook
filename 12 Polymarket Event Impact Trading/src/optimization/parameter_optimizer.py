@@ -136,6 +136,18 @@ class ParameterOptimizer:
         if len(data) < 100:
             raise ValueError(f"Insufficient data for bucket {self.bucket}: {len(data)} samples")
 
+        # Check temporal span
+        date_range = (data[date_column].max() - data[date_column].min()).days
+        logger.info(f"Data temporal span: {date_range} days")
+
+        # If insufficient temporal diversity, switch to simple validation
+        if date_range < self.val_period_days * 2:
+            logger.warning(f"Temporal span ({date_range} days) insufficient for walk-forward validation")
+            logger.warning(f"Switching to simple train/test split (80/20)")
+            self.use_simple_split = True
+        else:
+            self.use_simple_split = False
+
         # Store data for objective function
         self.data = data
         self.ml_predictions = ml_predictions
@@ -300,35 +312,50 @@ class ParameterOptimizer:
             Performance metrics dictionary or None if fold failed
         """
         try:
-            # Get train/val split for this fold
-            # Create dummy y for split (we don't use it for backtest)
-            y_dummy = pd.Series(0, index=self.data.index)
-
-            splits = self.validator.split(self.data, y_dummy, date_column=date_column)
-
-            # If walk-forward fails, fall back to simple train/test split
-            if not splits or len(splits) == 0:
-                logger.warning(f"Walk-forward validation failed, using simple train/test split")
-                # Use simple 80/20 split
+            # Use simple split if temporal diversity is insufficient
+            if hasattr(self, 'use_simple_split') and self.use_simple_split:
+                # Use simple 80/20 split (same for all "folds")
                 split_idx = int(len(self.data) * 0.8)
                 val_data = self.data.iloc[split_idx:].copy()
 
                 if len(val_data) < 20:
                     logger.warning(f"Insufficient data for simple split ({len(val_data)} samples)")
                     return None
+
+                logger.debug(f"Fold {fold_idx}: Using simple split, val_size={len(val_data)}")
             else:
-                if fold_idx >= len(splits):
-                    logger.warning(f"Fold {fold_idx} exceeds available splits ({len(splits)} folds)")
-                    return None
+                # Get train/val split for this fold
+                # Create dummy y for split (we don't use it for backtest)
+                y_dummy = pd.Series(0, index=self.data.index)
 
-                train_idx, val_idx = splits[fold_idx]
+                try:
+                    splits = self.validator.split(self.data, y_dummy, date_column=date_column)
+                except ValueError as e:
+                    logger.warning(f"Walk-forward validation failed: {e}")
+                    logger.warning(f"Falling back to simple train/test split")
+                    # Use simple 80/20 split
+                    split_idx = int(len(self.data) * 0.8)
+                    val_data = self.data.iloc[split_idx:].copy()
 
-                # Get validation data
-                val_data = self.data.iloc[val_idx].copy()
+                    if len(val_data) < 20:
+                        logger.warning(f"Insufficient data for simple split ({len(val_data)} samples)")
+                        return None
+                else:
+                    if not splits or len(splits) == 0:
+                        logger.warning(f"No splits generated, using simple train/test split")
+                        split_idx = int(len(self.data) * 0.8)
+                        val_data = self.data.iloc[split_idx:].copy()
+                    else:
+                        if fold_idx >= len(splits):
+                            logger.warning(f"Fold {fold_idx} exceeds available splits ({len(splits)} folds)")
+                            return None
 
-                if len(val_data) < 20:
-                    logger.warning(f"Fold {fold_idx}: insufficient validation data ({len(val_data)} samples)")
-                    return None
+                        train_idx, val_idx = splits[fold_idx]
+                        val_data = self.data.iloc[val_idx].copy()
+
+                    if len(val_data) < 20:
+                        logger.warning(f"Fold {fold_idx}: insufficient validation data ({len(val_data)} samples)")
+                        return None
 
             # Run backtest on validation data
             backtester = RealisticBacktester(
