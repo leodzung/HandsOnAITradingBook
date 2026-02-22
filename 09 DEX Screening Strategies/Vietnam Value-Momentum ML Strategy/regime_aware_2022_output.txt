@@ -1,0 +1,155 @@
+Vui lòng chuyển đổi sang Vnstock3 thế hệ mới (3.2.1) với câu lệnh: `pip install vnstock3 --upgrade`.
+Từ 1/1/2025, vnstock3 sẽ được cài đặt khi sử dụng cú pháp `pip install vnstock` thay cho Vnstock Legacy hiện tại.
+Xem chi tiết [chuyển đổi sang vnstock3](https://vnstocks.com/docs/tai-lieu/migration-chuyen-doi-sang-vnstock3).
+Phiên bản Vnstock Legacy (0.2.9.2.3) bạn đang sử dụng sẽ không được nâng cấp thêm.
+Từ 7/10/2024 Vnstock giới thiệu nhóm Facebook Cộng đồng Vnstock, tham gia thảo luận tại đây: https://www.facebook.com/groups/vnstock.official
+X does not have valid feature names, but StandardScaler was fitted with feature names
+X does not have valid feature names, but StandardScaler was fitted with feature names
+X does not have valid feature names, but StandardScaler was fitted with feature names
+X does not have valid feature names, but StandardScaler was fitted with feature names
+X does not have valid feature names, but StandardScaler was fitted with feature names
+X does not have valid feature names, but StandardScaler was fitted with feature names
+X does not have valid feature names, but StandardScaler was fitted with feature names
+X does not have valid feature names, but StandardScaler was fitted with feature names
+X does not have valid feature names, but StandardScaler was fitted with feature names
+X does not have valid feature names, but StandardScaler was fitted with feature names
+X does not have valid feature names, but StandardScaler was fitted with feature names
+X does not have valid feature names, but StandardScaler was fitted with feature names
+X does not have valid feature names, but StandardScaler was fitted with feature names
+X does not have valid feature names, but StandardScaler was fitted with feature names
+X does not have valid feature names, but StandardScaler was fitted with feature names
+X does not have valid feature names, but StandardScaler was fitted with feature names
+X does not have valid feature names, but StandardScaler was fitted with feature names
+X does not have valid feature names, but StandardScaler was fitted with feature names
+X does not have valid feature names, but StandardScaler was fitted with feature names
+X does not have valid feature names, but StandardScaler was fitted with feature names
+X does not have valid feature names, but StandardScaler was fitted with feature names
+X does not have valid feature names, but StandardScaler was fitted with feature names
+X does not have valid feature names, but StandardScaler was fitted with feature names
+X does not have valid feature names, but StandardScaler was fitted with feature names
+X does not have valid feature names, but StandardScaler was fitted with feature names
+X does not have valid feature names, but StandardScaler was fitted with feature names
+X does not have valid feature names, but StandardScaler was fitted with feature names
+X does not have valid feature names, but StandardScaler was fitted with feature names
+X does not have valid feature names, but StandardScaler was fitted with feature names
+X does not have valid feature names, but StandardScaler was fitted with feature names
+X does not have valid feature names, but StandardScaler was fitted with feature names
+X does not have valid feature names, but StandardScaler was fitted with feature names
+X does not have valid feature names, but StandardScaler was fitted with feature names
+X does not have valid feature names, but StandardScaler was fitted with feature names
+X does not have valid feature names, but StandardScaler was fitted with feature names
+X does not have valid feature names, but StandardScaler was fitted with feature names
+
+🚀 Starting Regime-Aware Backtest for 2022
+This uses market regime detection to adapt strategy dynamically.
+======================================================================
+
+======================================================================
+REGIME-AWARE BACKTEST - 2022
+======================================================================
+
+📋 Backtest Configuration:
+   Initial capital: 100,000,000 VND
+   Period: 2022-01-01 to 2022-12-31
+   Concentrated universe: 5 stocks
+   Diversified universe: 15 stocks
+
+======================================================================
+STEP 1: Initialize Data Provider & Regime Detector
+======================================================================
+✅ Legacy vnstock initialized successfully
+⚠️  Consider upgrading: pip install git+https://github.com/thinh-vu/vnstock.git@main
+
+Loading market index data for regime detection...
+Error fetching index VNINDEX: module 'vnstock' has no attribute 'stock'
+⚠️  VN-Index data not available, using fallback
+
+Fetching historical data for 5 stocks...
+Period: 2021-01-01 to 2022-12-31
+
+✅ Successfully fetched: 5/5 stocks
+
+======================================================================
+STEP 2: Load Historical Price Data
+======================================================================
+
+Fetching historical data for 15 stocks...
+Period: 2021-01-01 to 2022-12-31
+  Progress: 10/15 stocks
+
+✅ Successfully fetched: 15/15 stocks
+✅ Loaded data for 15 stocks
+
+======================================================================
+STEP 3: Train ML Model
+======================================================================
+✅ Model trained successfully!
+   Training samples: 1,350
+   Accuracy: 60.96%
+
+======================================================================
+STEP 4: Run Regime-Aware Backtest
+======================================================================
+
+🔄 Rebalancing on 2022-01-04
+   📊 Regime: CHOPPY (was: N/A)
+   Confidence: medium
+   Strategy: Diversified (15 stocks, select top 5)
+   Predictions calculated for 15 stocks
+   Top predictions: [('MSN', '0.979'), ('FPT', '0.797'), ('HPG', '0.687')]
+   Selected: ['MSN', 'FPT', 'HPG', 'VNM', 'VIC']
+
+🔄 Rebalancing on 2022-04-04
+   Strategy: Diversified (15 stocks, select top 5)
+   Predictions calculated for 15 stocks
+   Top predictions: [('POW', '0.794'), ('HPG', '0.787'), ('VCB', '0.675')]
+   Selected: ['POW', 'HPG', 'VCB', 'PLX', 'CTG']
+
+🔄 Rebalancing on 2022-07-04
+   📊 Regime: BEAR (was: choppy)
+   Confidence: medium
+   Strategy: Defensive (3 stocks, select top 2)
+   Predictions calculated for 3 stocks
+   BEAR market detected - staying in cash for safety
+   No predictions available - staying in cash
+
+🔄 Rebalancing on 2022-10-03
+   Strategy: Defensive (3 stocks, select top 2)
+   Predictions calculated for 3 stocks
+   BEAR market detected - staying in cash for safety
+   No predictions available - staying in cash
+
+======================================================================
+REGIME-AWARE BACKTEST RESULTS
+======================================================================
+
+📊 Performance Summary:
+   Total Return:          -26.18%
+   Annual Return:         -35.80%
+   Annual Volatility:     370.41%
+   Sharpe Ratio:          -0.10
+   Max Drawdown:          -28.05%
+
+💰 Portfolio Values:
+   Initial:                 100,000,000 VND
+   Final:                   73,816,861 VND
+   Profit/Loss:             -26,183,138 VND
+
+🎯 Regime Summary:
+   BEAR: 129 days (51.6%)
+   CHOPPY: 121 days (48.4%)
+
+🔄 Regime Changes: 2
+   2022-01-04: START → choppy
+   2022-07-04: choppy → bear
+
+💾 Results saved to regime_aware_2022_results.csv
+
+======================================================================
+✅ REGIME-AWARE BACKTEST COMPLETED!
+======================================================================
+
+✅ Backtest for 2022 completed successfully!
+   Total Return: -26.18%
+   Sharpe Ratio: -0.10
+   Max Drawdown: -28.05%

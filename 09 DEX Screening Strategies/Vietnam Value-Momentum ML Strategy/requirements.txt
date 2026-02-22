@@ -1,0 +1,20 @@
+# Vietnam Value-Momentum ML Strategy - Requirements
+# Install with: pip install -r requirements.txt
+
+# Core dependencies
+pandas>=1.3.0
+numpy>=1.21.0
+scikit-learn>=0.24.0
+
+# Vietnamese stock market data
+vnstock3
+
+# Optional: For charts and visualization
+matplotlib>=3.3.0
+
+# Optional: For Jupyter notebooks
+jupyter
+ipykernel
+
+# Note: For FiinGroup API, contact fiingroup.vn for credentials
+# No additional package needed - uses requests (included with Python)

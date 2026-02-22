@@ -1,0 +1,20 @@
+# Agentic Portfolio Manager - MVP Requirements
+
+# LLM Provider
+openai==1.10.0
+
+# Brokerage Integration
+alpaca-trade-api==3.0.0
+
+# Data Processing
+pandas==2.1.0
+yfinance==0.2.35
+
+# Configuration
+python-dotenv==1.0.0
+
+# CLI Interface
+rich==13.7.0
+
+# Utilities
+pytz==2023.3

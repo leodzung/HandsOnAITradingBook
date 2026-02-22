@@ -1,0 +1,15 @@
+{
+  "email_settings": {
+    "to_email": "ltd@bu.edu",
+    "from_email": "dzung.letien@gmail.com",
+    "smtp_server": "smtp.gmail.com",
+    "smtp_port": 587,
+    "smtp_password": "vaux loay hziw diyj",
+    "subject_prefix": "[DEX Scanner]"
+  },
+  "alert_settings": {
+    "min_score_to_alert": 70,
+    "max_alerts_per_run": 5,
+    "include_chart_links": true
+  }
+}

@@ -258,7 +258,12 @@ class RealisticBacktester:
             )
 
         # 4. Calculate effective entry price after slippage
-        effective_entry_price = entry_price + entry_slippage_est['slippage_dollars'] / position_size
+        # Cap at 0.99 since prediction market shares can't cost more than $1.00
+        # Don't reject - just cap the price
+        effective_entry_price = min(
+            entry_price + entry_slippage_est['slippage_dollars'] / position_size,
+            0.99
+        )
 
         # 5. Calculate entry fee (1% of position size)
         entry_fee = position_size * self.fee_pct
@@ -268,34 +273,69 @@ class RealisticBacktester:
         sl_pct = params['stop_loss_pct'] / 100.0
 
         # 7. Simulate holding period and exit
-        # For simplicity, use actual outcome to determine exit
-        # In reality, we'd need historical price paths (not available in labels)
-        if actual_outcome == 1.0:
-            # Market resolved YES - profitable if we bought YES
-            if outcome == 'YES':
-                # Winner - exit at TP
-                exit_price = min(effective_entry_price * (1 + tp_pct), 0.99)
+        # For prediction markets: winner pays $1.00, loser pays $0.00
+        # Label semantics: 1.0 = profitable trade, -1.0 = losing trade
+        # We simulate early exit if TP/SL would be hit before resolution
+
+        if actual_outcome == 1.0:  # Profitable trade
+            # Trade will profit - take profit or hold to resolution
+            # TP price = entry_price + (TP% of entry)
+            tp_price = min(effective_entry_price + (effective_entry_price * tp_pct), 0.99)
+            # If TP < 1.0, we might exit early at TP
+            # Otherwise hold to resolution and get paid
+            if tp_price < 0.99:
+                exit_price = tp_price
                 exit_reason = 'TP'
             else:
-                # Loser - exit at SL
-                exit_price = max(effective_entry_price * (1 - sl_pct), 0.01)
-                exit_reason = 'SL'
+                exit_price = 0.99  # Effectively 1.0 at resolution (capped for fees)
+                exit_reason = 'RESOLUTION'
+        elif actual_outcome == -1.0:  # Losing trade
+            # Trade will lose - hit stop loss
+            sl_price = max(effective_entry_price - (effective_entry_price * sl_pct), 0.01)
+            exit_price = sl_price
+            exit_reason = 'SL'
         else:
-            # Market resolved NO - profitable if we bought NO
-            if outcome == 'NO':
-                # Winner - exit at TP
-                exit_price = min(effective_entry_price * (1 + tp_pct), 0.99)
-                exit_reason = 'TP'
-            else:
-                # Loser - exit at SL
-                exit_price = max(effective_entry_price * (1 - sl_pct), 0.01)
-                exit_reason = 'SL'
+            # Unknown outcome (shouldn't happen with labeled data)
+            logger.warning(f"Unknown outcome: {actual_outcome}")
+            exit_price = effective_entry_price
+            exit_reason = 'UNKNOWN'
 
         # 8. Estimate exit slippage
         exit_slippage_est = self._estimate_exit_slippage(
             position_size, exit_price, row, params
         )
-        effective_exit_price = exit_price - exit_slippage_est['slippage_dollars'] / position_size
+
+        # Check if exit slippage exceeds limits (same as entry check)
+        if exit_slippage_est['slippage_bps'] > params['max_slippage_bps']:
+            # Exit slippage too high - use entry slippage limit as proxy
+            # This prevents trades where we can't exit profitably
+            return TradeSimulation(
+                market_id=market_id,
+                entry_time=entry_time,
+                exit_time=end_time,
+                entry_price=entry_price,
+                exit_price=entry_price,
+                gross_pnl=0.0,
+                net_pnl=0.0,
+                entry_slippage=0.0,
+                exit_slippage=0.0,
+                entry_fee=0.0,
+                exit_fee=0.0,
+                position_size=0.0,
+                outcome=outcome,
+                actual_outcome=actual_outcome,
+                tp_threshold=0.0,
+                sl_threshold=0.0,
+                exit_reason='REJECTED',
+                rejected=True,
+                rejection_reason=f"Exit slippage {exit_slippage_est['slippage_bps']:.0f}bps exceeds limit",
+            )
+
+        # Cap exit price at 0.01 (minimum possible in prediction markets)
+        effective_exit_price = max(
+            exit_price - exit_slippage_est['slippage_dollars'] / position_size,
+            0.01
+        )
 
         # 9. Calculate exit fee
         exit_fee = position_size * self.fee_pct
@@ -345,10 +385,11 @@ class RealisticBacktester:
         if 'spread_pct' in row and row['spread_pct'] > params['max_spread_pct']:
             return f"Spread {row['spread_pct']:.2f}% > threshold {params['max_spread_pct']:.2f}%"
 
-        # Check price limits
+        # Check price limits (very relaxed for prediction markets)
+        # Prediction markets often have prices near 0 or 1 as events become certain/unlikely
         entry_price = float(row['trade_price'])
-        if entry_price < 0.05 or entry_price > 0.95:
-            return f"Price {entry_price:.3f} outside [0.05, 0.95] range"
+        if entry_price <= 0.001 or entry_price >= 0.999:
+            return f"Price {entry_price:.3f} outside (0.001, 0.999) range"
 
         return None
 
@@ -371,38 +412,38 @@ class RealisticBacktester:
         params: Dict
     ) -> Dict:
         """
-        Estimate entry slippage.
+        Estimate entry slippage using EMPIRICAL estimates from actual trade data.
 
-        For backtesting, we use simplified slippage model since we don't have
-        historical orderbooks. Assumes slippage scales with:
-        - Position size relative to market volume
-        - Spread width
+        Based on analysis of 500K real Polymarket trades (analyze_actual_trade_performance_v2.py):
+        - P75 price change: 10 bps (typical slippage)
+        - P90 price change: 20 bps
+        - P95 price change: 37 bps
+
+        IMPORTANT: Previous approach used spread/2 with synthetic defaults (5% spread)
+        which created 2500 bps slippage. Real slippage is 10-37 bps (100x lower!).
 
         Returns:
             Dict with 'slippage_dollars' and 'slippage_bps'
         """
-        # Get market metrics
-        volume_24h = row.get('volume_24h', 1000)  # Default if not available
-        spread_pct = row.get('spread_pct', 5.0) / 100.0  # Default 5%
+        # Empirical base slippage from real trade data (P75 = 10 bps)
+        base_slippage_bps = 10.0
 
-        # Estimate slippage as function of order impact
-        # Base slippage = spread / 2 (crossing the spread)
-        base_slippage_pct = spread_pct / 2.0
-
-        # Additional slippage from market impact (position size / volume)
+        # Additional slippage from market impact (for large positions)
+        # Use volume if available, otherwise assume high liquidity
+        volume_24h = row.get('volume_24h', 10000)  # Assume $10K daily volume if unknown
         impact_factor = position_size / max(volume_24h, 1)
-        impact_slippage_pct = impact_factor * 0.5  # 50% impact coefficient
+        impact_slippage_bps = impact_factor * 500  # 500 bps per 1.0 impact ratio
 
-        # Total slippage percentage
-        total_slippage_pct = base_slippage_pct + impact_slippage_pct
+        # Total slippage in basis points
+        total_slippage_bps = base_slippage_bps + impact_slippage_bps
 
-        # Convert to dollars
+        # Convert to percentage and dollars
+        total_slippage_pct = total_slippage_bps / 10000
         slippage_dollars = position_size * total_slippage_pct
-        slippage_bps = total_slippage_pct * 10000
 
         return {
             'slippage_dollars': slippage_dollars,
-            'slippage_bps': slippage_bps,
+            'slippage_bps': total_slippage_bps,
         }
 
     def _estimate_exit_slippage(
@@ -413,16 +454,33 @@ class RealisticBacktester:
         params: Dict
     ) -> Dict:
         """
-        Estimate exit slippage (similar to entry, but may be worse in stressed markets).
+        Estimate exit slippage using EMPIRICAL estimates from actual trade data.
+
+        Based on analysis of 500K real Polymarket trades:
+        - P90 price change: 20 bps (exit slippage, slightly worse than entry)
+
+        Exit slippage is typically higher than entry due to worse execution
+        when closing positions (especially losers).
 
         Returns:
             Dict with 'slippage_dollars' and 'slippage_bps'
         """
-        # Exit slippage typically 1.2x entry slippage (wider spreads when exiting)
-        entry_slippage = self._estimate_entry_slippage(position_size, exit_price, row, params)
+        # Empirical base slippage for exits (P90 = 20 bps)
+        base_slippage_bps = 20.0
+
+        # Additional slippage from market impact
+        volume_24h = row.get('volume_24h', 10000)
+        impact_factor = position_size / max(volume_24h, 1)
+        impact_slippage_bps = impact_factor * 500
+
+        # Total slippage
+        total_slippage_bps = base_slippage_bps + impact_slippage_bps
+        total_slippage_pct = total_slippage_bps / 10000
+        slippage_dollars = position_size * total_slippage_pct
+
         return {
-            'slippage_dollars': entry_slippage['slippage_dollars'] * 1.2,
-            'slippage_bps': entry_slippage['slippage_bps'] * 1.2,
+            'slippage_dollars': slippage_dollars,
+            'slippage_bps': total_slippage_bps,
         }
 
     def get_trades_dataframe(self) -> pd.DataFrame:

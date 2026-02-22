@@ -1,0 +1,8 @@
+{
+  "twitter_bearer_token": "AAAAAAAAAAAAAAAAAAAAADFl5QEAAAAA7BtLI0DaKcMQzjKlaWz7XOYd+E0=Y270n2nnM4jNkT5R3SIsDmxnfcVklTaVFsfuFsA3BBZBvuDAJS",
+  "notes": {
+    "how_to_get": "Visit https://developer.twitter.com/en/portal/dashboard",
+    "tier": "Free tier allows 500,000 tweets per month",
+    "rate_limits": "300 requests per 15 minutes for user lookup"
+  }
+}

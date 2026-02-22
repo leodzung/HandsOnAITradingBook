@@ -1,0 +1,10 @@
+{
+  "min_profit_pct": 0.02,
+  "scan_interval_seconds": 60,
+  "max_markets": 100,
+  "embedding_model": "intfloat/e5-large-v2",
+  "similarity_threshold": 0.7,
+  "log_dir": "data/arbitrage",
+  "paper_trading": true,
+  "max_position_size": 100
+}

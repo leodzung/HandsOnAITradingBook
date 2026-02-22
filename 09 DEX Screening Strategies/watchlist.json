@@ -1,0 +1,5 @@
+{
+  "comment": "Add token addresses you want to monitor here",
+  "tokens": [],
+  "instructions": "When you find interesting tokens on DexScreener, add their contract address here. The scanner will analyze them automatically."
+}

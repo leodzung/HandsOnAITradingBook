@@ -1,0 +1,22 @@
+{
+  "api_keys": {
+    "etherscan": "YOUR_ETHERSCAN_API_KEY",
+    "bscscan": "YOUR_BSCSCAN_API_KEY",
+    "moralis": "YOUR_MORALIS_API_KEY",
+    "alchemy": "YOUR_ALCHEMY_API_KEY",
+    "dexscreener": "",
+    "coingecko": ""
+  },
+  "strategy_settings": {
+    "chains": ["ethereum", "bsc"],
+    "min_liquidity_usd": 20000,
+    "max_pool_age_hours": 24,
+    "min_safety_score": 65,
+    "scan_interval_seconds": 300
+  },
+  "notifications": {
+    "discord_webhook": "",
+    "telegram_bot_token": "",
+    "telegram_chat_id": ""
+  }
+}

@@ -1,0 +1,132 @@
+version: '3.8'
+
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:16-alpine
+    container_name: agentic-pm-postgres
+    environment:
+      POSTGRES_USER: agentic_pm
+      POSTGRES_PASSWORD: your_password_change_me
+      POSTGRES_DB: agentic_pm
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./scripts/init_db.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U agentic_pm"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - agentic-pm-network
+
+  # Redis for caching and message bus
+  redis:
+    image: redis:7-alpine
+    container_name: agentic-pm-redis
+    command: redis-server --appendonly yes
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - agentic-pm-network
+
+  # Prometheus for metrics
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: agentic-pm-prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+    networks:
+      - agentic-pm-network
+
+  # Grafana for visualization
+  grafana:
+    image: grafana/grafana:latest
+    container_name: agentic-pm-grafana
+    ports:
+      - "3000:3000"
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: admin_change_me
+      GF_INSTALL_PLUGINS: grafana-clock-panel
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./monitoring/grafana/dashboards:/etc/grafana/provisioning/dashboards
+      - ./monitoring/grafana/datasources:/etc/grafana/provisioning/datasources
+    depends_on:
+      - prometheus
+    networks:
+      - agentic-pm-network
+
+  # FastAPI Application (uncomment when ready)
+  # api:
+  #   build:
+  #     context: .
+  #     dockerfile: Dockerfile
+  #   container_name: agentic-pm-api
+  #   ports:
+  #     - "8000:8000"
+  #   environment:
+  #     - DATABASE_URL=postgresql://agentic_pm:your_password_change_me@postgres:5432/agentic_pm
+  #     - REDIS_URL=redis://redis:6379/0
+  #   env_file:
+  #     - .env
+  #   volumes:
+  #     - ./src:/app/src
+  #   depends_on:
+  #     postgres:
+  #       condition: service_healthy
+  #     redis:
+  #       condition: service_healthy
+  #   command: uvicorn src.api.main:app --host 0.0.0.0 --port 8000 --reload
+  #   networks:
+  #     - agentic-pm-network
+
+  # Streamlit Dashboard (uncomment when ready)
+  # dashboard:
+  #   build:
+  #     context: .
+  #     dockerfile: Dockerfile.streamlit
+  #   container_name: agentic-pm-dashboard
+  #   ports:
+  #     - "8501:8501"
+  #   environment:
+  #     - API_URL=http://api:8000
+  #   env_file:
+  #     - .env
+  #   volumes:
+  #     - ./src/ui:/app/src/ui
+  #   depends_on:
+  #     - api
+  #   command: streamlit run src/ui/app.py --server.port 8501 --server.address 0.0.0.0
+  #   networks:
+  #     - agentic-pm-network
+
+networks:
+  agentic-pm-network:
+    driver: bridge
+
+volumes:
+  postgres_data:
+    driver: local
+  redis_data:
+    driver: local
+  prometheus_data:
+    driver: local
+  grafana_data:
+    driver: local

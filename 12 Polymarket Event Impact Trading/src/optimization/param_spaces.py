@@ -7,12 +7,14 @@ for all optimizable parameters across three time buckets.
 
 from skopt.space import Real, Integer
 
-# Current baseline parameters (from config_short_expiry.json)
+# Current baseline parameters
+# NOTE: Slippage thresholds updated based on empirical analysis of 500K real trades
+# which showed P75=10bps, P90=20bps, P95=37bps (was using synthetic 1500-3000bps)
 BASELINE_PARAMS = {
     'ultra_short': {
         'take_profit_pct': 30,
         'stop_loss_pct': 10,
-        'max_slippage_bps': 3000,
+        'max_slippage_bps': 100,  # Updated from 3000 based on empirical data
         'max_position_size': 50,
         'max_spread_pct': 10.0,
         'min_volume': 100,
@@ -21,7 +23,7 @@ BASELINE_PARAMS = {
     'short': {
         'take_profit_pct': 50,
         'stop_loss_pct': 15,
-        'max_slippage_bps': 2000,
+        'max_slippage_bps': 100,  # Updated from 2000 based on empirical data
         'max_position_size': 75,
         'max_spread_pct': 8.0,
         'min_volume': 200,
@@ -30,7 +32,7 @@ BASELINE_PARAMS = {
     'medium': {
         'take_profit_pct': 75,
         'stop_loss_pct': 20,
-        'max_slippage_bps': 1500,
+        'max_slippage_bps': 100,  # Updated from 1500 based on empirical data
         'max_position_size': 100,
         'max_spread_pct': 6.0,
         'min_volume': 300,
@@ -39,11 +41,13 @@ BASELINE_PARAMS = {
 }
 
 # Search space definitions (moderate ±50-100% ranges)
+# NOTE: max_slippage_bps ranges updated to 50-300 bps based on empirical data
+# (P95=37bps from actual trades, was using unrealistic 1500-5000bps)
 SHORT_EXPIRY_SPACE = {
     'ultra_short': {
         'take_profit_pct': Real(15, 60, name='take_profit_pct'),  # ±50% from 30%
         'stop_loss_pct': Real(3, 15, name='stop_loss_pct'),  # -70% to +50% from 10%
-        'max_slippage_bps': Integer(1500, 5000, name='max_slippage_bps'),  # -50% to +67% from 3000
+        'max_slippage_bps': Integer(50, 300, name='max_slippage_bps'),  # -50% to +200% from 100bps
         'max_position_size': Real(25, 100, name='max_position_size'),  # -50% to +100% from $50
         'max_spread_pct': Real(6.0, 15.0, name='max_spread_pct'),  # -40% to +50% from 10%
         'min_volume': Integer(50, 200, name='min_volume'),  # -50% to +100% from 100
@@ -52,7 +56,7 @@ SHORT_EXPIRY_SPACE = {
     'short': {
         'take_profit_pct': Real(25, 100, name='take_profit_pct'),  # -50% to +100% from 50%
         'stop_loss_pct': Real(5, 25, name='stop_loss_pct'),  # -67% to +67% from 15%
-        'max_slippage_bps': Integer(1000, 4000, name='max_slippage_bps'),  # -50% to +100% from 2000
+        'max_slippage_bps': Integer(50, 300, name='max_slippage_bps'),  # -50% to +200% from 100bps
         'max_position_size': Real(40, 150, name='max_position_size'),  # -47% to +100% from $75
         'max_spread_pct': Real(4.0, 12.0, name='max_spread_pct'),  # -50% to +50% from 8%
         'min_volume': Integer(100, 400, name='min_volume'),  # -50% to +100% from 200
@@ -61,7 +65,7 @@ SHORT_EXPIRY_SPACE = {
     'medium': {
         'take_profit_pct': Real(40, 150, name='take_profit_pct'),  # -47% to +100% from 75%
         'stop_loss_pct': Real(8, 30, name='stop_loss_pct'),  # -60% to +50% from 20%
-        'max_slippage_bps': Integer(750, 3000, name='max_slippage_bps'),  # -50% to +100% from 1500
+        'max_slippage_bps': Integer(50, 300, name='max_slippage_bps'),  # -50% to +200% from 100bps
         'max_position_size': Real(50, 200, name='max_position_size'),  # -50% to +100% from $100
         'max_spread_pct': Real(3.0, 10.0, name='max_spread_pct'),  # -50% to +67% from 6%
         'min_volume': Integer(150, 600, name='min_volume'),  # -50% to +100% from 300

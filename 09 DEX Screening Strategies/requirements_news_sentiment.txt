@@ -1,0 +1,26 @@
+# News Sentiment Analysis Dependencies
+# =====================================
+
+# Core dependencies
+requests>=2.31.0
+beautifulsoup4>=4.12.0
+feedparser>=6.0.10
+python-dateutil>=2.8.2
+
+# Optional: NLP (for production sentiment analysis)
+# Uncomment if using FinBERT instead of keyword-based sentiment
+# transformers>=4.35.0
+# torch>=2.1.0
+# sentencepiece>=0.1.99
+
+# Optional: GitHub API wrapper (alternative to direct API calls)
+# PyGithub>=2.1.1
+
+# Optional: OpenAI GPT (for advanced sentiment analysis)
+# openai>=1.3.0
+
+# Optional: Caching (for production optimization)
+# redis>=5.0.0
+
+# Utilities
+pyyaml>=6.0

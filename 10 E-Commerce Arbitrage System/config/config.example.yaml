@@ -1,0 +1,239 @@
+# E-Commerce Arbitrage System Configuration
+
+# General Settings
+general:
+  database_path: "data/deals.db"
+  log_level: "INFO"
+  log_path: "logs/arbitrage.log"
+  timezone: "America/New_York"
+
+# Scanning Settings
+scanning:
+  # How often to run scans (in minutes)
+  scan_interval: 120
+
+  # Which scanners to enable
+  enabled_scanners:
+    - amazon
+    - retail
+    - wholesale
+    - deal_apis
+
+  # Maximum concurrent API requests
+  max_concurrent_requests: 10
+
+  # Request timeout (seconds)
+  request_timeout: 30
+
+# Amazon API Credentials
+amazon:
+  # Amazon SP-API (Selling Partner API)
+  sp_api:
+    refresh_token: "YOUR_REFRESH_TOKEN"
+    client_id: "YOUR_CLIENT_ID"
+    client_secret: "YOUR_CLIENT_SECRET"
+    marketplace_id: "ATVPDKIKX0DER"  # US marketplace
+
+  # Amazon Product Advertising API
+  pa_api:
+    access_key: "YOUR_ACCESS_KEY"
+    secret_key: "YOUR_SECRET_KEY"
+    partner_tag: "YOUR_PARTNER_TAG"
+    region: "us-east-1"
+
+  # Amazon marketplace to sell on
+  target_marketplace: "amazon.com"
+
+# Keepa API (Price tracking)
+keepa:
+  api_key: "YOUR_KEEPA_API_KEY"
+  # Number of tokens per minute (depends on subscription)
+  rate_limit: 120
+
+# Rainforest API (Alternative Amazon data)
+rainforest:
+  api_key: "YOUR_RAINFOREST_API_KEY"
+  enabled: false
+
+# Retail APIs
+retail:
+  walmart:
+    api_key: "YOUR_WALMART_API_KEY"
+    enabled: true
+
+  target:
+    api_key: "YOUR_TARGET_API_KEY"  # Via RedCircle or similar
+    enabled: false
+
+  bestbuy:
+    api_key: "YOUR_BESTBUY_API_KEY"
+    enabled: false
+
+# Wholesale/Liquidation Sources
+wholesale:
+  # Add your wholesale platform credentials
+  sources:
+    - name: "liquidation.com"
+      api_key: "YOUR_API_KEY"
+      enabled: false
+
+# Deal Aggregator APIs
+deal_apis:
+  # Commercial deal-finding services
+  sources: []
+
+# Profit Calculation Settings
+profit:
+  # Minimum ROI percentage to consider a deal
+  min_roi: 30.0
+
+  # Amazon FBA fee estimates (category-based)
+  amazon_fees:
+    referral_fee_percent: 15.0  # Default, varies by category
+    fulfillment_fee_small: 3.22  # Small standard size
+    fulfillment_fee_large: 4.75  # Large standard size
+    storage_per_cubic_ft_monthly: 0.83  # Per month
+
+  # Additional costs
+  costs:
+    shipping_to_amazon_per_item: 2.50
+    prep_fee_per_item: 0.50
+    sales_tax_percent: 0.0  # Varies by state
+    average_return_rate_percent: 2.0
+
+  # Profit margins
+  target_profit_margin: 0.35  # 35% margin after costs
+
+# Filtering Criteria
+filters:
+  # Sales rank thresholds (lower is better)
+  max_sales_rank:
+    toys_games: 50000
+    electronics: 30000
+    home_kitchen: 40000
+    books: 100000
+    default: 50000
+
+  # Competition
+  max_number_of_sellers: 10
+  prefer_fba_sellers_under: 5
+
+  # Price ranges
+  min_source_price: 5.0
+  max_source_price: 200.0
+  min_amazon_price: 15.0
+
+  # Product criteria
+  min_review_count: 10
+  min_average_rating: 3.5
+
+  # Exclude certain conditions
+  exclude_used: true
+  exclude_refurbished: false
+
+  # Categories to avoid (restricted/gated)
+  excluded_categories:
+    - "Grocery & Gourmet Food"
+    - "Health & Personal Care"
+    - "Beauty"
+    - "Jewelry"
+
+  # Brands to avoid (without approval)
+  excluded_brands:
+    - "Apple"
+    - "Nike"
+    - "Sony"
+
+# Risk Analysis
+risk:
+  # Price volatility thresholds
+  max_price_volatility_percent: 20.0
+
+  # Sales rank stability (standard deviation)
+  max_rank_volatility: 10000
+
+  # Historical data requirements
+  min_price_history_days: 30
+
+  # IP/Patent risk keywords to flag
+  risky_keywords:
+    - "Disney"
+    - "Marvel"
+    - "Star Wars"
+    - "NFL"
+    - "NBA"
+
+# Notifications
+notifications:
+  # Email alerts
+  email:
+    enabled: true
+    smtp_server: "smtp.gmail.com"
+    smtp_port: 587
+    sender_email: "your-email@gmail.com"
+    sender_password: "YOUR_APP_PASSWORD"
+    recipient_emails:
+      - "your-email@gmail.com"
+
+    # Alert thresholds
+    alert_min_roi: 50.0
+    alert_min_profit: 20.0
+    daily_digest: true
+    digest_time: "08:00"
+
+  # Telegram bot
+  telegram:
+    enabled: false
+    bot_token: "YOUR_BOT_TOKEN"
+    chat_id: "YOUR_CHAT_ID"
+    alert_min_roi: 40.0
+
+  # SMS (Twilio)
+  sms:
+    enabled: false
+    account_sid: "YOUR_TWILIO_SID"
+    auth_token: "YOUR_TWILIO_TOKEN"
+    from_number: "+1234567890"
+    to_numbers:
+      - "+1234567890"
+    alert_min_roi: 60.0
+
+# Scheduler
+scheduler:
+  # Scan schedules (cron format)
+  amazon_scan: "0 */2 * * *"      # Every 2 hours
+  retail_scan: "0 */4 * * *"       # Every 4 hours
+  wholesale_scan: "0 9,17 * * *"   # 9 AM and 5 PM
+
+  # Daily report
+  daily_report: "0 8 * * *"        # 8 AM daily
+
+  # Weekly cleanup
+  cleanup_old_deals: "0 0 * * 0"   # Midnight Sunday
+
+# Dashboard (Optional)
+dashboard:
+  enabled: false
+  host: "127.0.0.1"
+  port: 5000
+  debug: false
+
+# Logging & Monitoring
+monitoring:
+  # Sentry error tracking
+  sentry_dsn: ""
+
+  # Performance metrics
+  track_api_latency: true
+  track_scan_duration: true
+
+# Development Settings
+development:
+  # Enable test mode (doesn't save to DB)
+  test_mode: false
+
+  # Limit number of products to scan
+  max_products_per_scan: 100
+
+  # Mock API responses
+  mock_apis: false

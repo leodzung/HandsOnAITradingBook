@@ -1,0 +1,118 @@
+════════════════════════════════════════════════════════════════════════
+ MORALIS INTEGRATION - 5 MINUTE SETUP
+════════════════════════════════════════════════════════════════════════
+
+🎯 WHAT THIS DOES:
+   Auto-discovers trending tokens (like KOGE) instead of manual searching
+
+💰 COST:
+   FREE (40,000 API calls/day - you only need ~12,500)
+
+⏱️  SETUP TIME:
+   5 minutes
+
+════════════════════════════════════════════════════════════════════════
+
+📋 STEP 1: SIGN UP (2 minutes)
+────────────────────────────────────────────────────────────────────────
+1. Go to: https://moralis.com
+2. Click "Start for Free"
+3. Enter email + password
+4. Verify email
+
+════════════════════════════════════════════════════════════════════════
+
+🔑 STEP 2: GET API KEY (1 minute)
+────────────────────────────────────────────────────────────────────────
+1. Log into Moralis dashboard
+2. Click profile (top right) → "Account Settings"
+3. Go to "API Keys" section
+4. Copy "Web3 API Key" (starts with eyJhbGci...)
+
+════════════════════════════════════════════════════════════════════════
+
+⚙️  STEP 3: UPDATE CONFIG (1 minute)
+────────────────────────────────────────────────────────────────────────
+1. Open: moralis_config.json
+2. Replace YOUR_MORALIS_API_KEY_HERE with your actual key
+3. Save file
+
+Example:
+{
+  "api_key": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+  "base_url": "https://deep-index.moralis.io/api/v2.2"
+}
+
+════════════════════════════════════════════════════════════════════════
+
+🧪 STEP 4: TEST (1 minute)
+────────────────────────────────────────────────────────────────────────
+Run:
+    python3 run_moralis_discovery.py
+
+Expected output:
+    ✅ Added 25 high market cap tokens
+    ✅ Found 15 gainers, 10 losers
+    ✅ Total unique tokens discovered: 35
+    #1 KOGE/USDT - 71.8/100
+    ✅ HIGH QUALITY
+
+════════════════════════════════════════════════════════════════════════
+
+🚀 STEP 5: ENABLE IN CRON (Optional)
+────────────────────────────────────────────────────────────────────────
+To use Moralis discovery in your hourly scanner:
+
+1. Open: run_with_email_alerts.py
+2. Find line: from run_combined import fetch_and_analyze
+3. Replace with: from run_moralis_discovery import discover_and_analyze as fetch_and_analyze
+4. Save file
+
+Now your cron job will auto-discover tokens every hour!
+
+════════════════════════════════════════════════════════════════════════
+
+📊 WHAT YOU GET:
+────────────────────────────────────────────────────────────────────────
+Before:  Manually browse DexScreener → Find 3-5 tokens/day
+After:   Auto-discover 500 tokens/day → Get alerts for score ≥70
+
+Time saved: 10 minutes/day browsing
+Opportunities: Never miss the next KOGE ($270M volume!)
+
+════════════════════════════════════════════════════════════════════════
+
+⚠️  TROUBLESHOOTING:
+────────────────────────────────────────────────────────────────────────
+"Authentication failed"
+  → Check API key is copied correctly (no spaces)
+
+"Access forbidden"
+  → Try chain="eth" instead of chain="bsc"
+
+"No tokens discovered"
+  → Verify email is confirmed in Moralis account
+
+════════════════════════════════════════════════════════════════════════
+
+💡 PRO TIP:
+────────────────────────────────────────────────────────────────────────
+Keep BOTH approaches:
+- Moralis: Auto-discovery (trending tokens)
+- Watchlist: Manual picks (your research)
+
+Best of both worlds!
+
+════════════════════════════════════════════════════════════════════════
+
+📚 MORE INFO:
+────────────────────────────────────────────────────────────────────────
+Full guide: MORALIS_SETUP.md
+Docs: https://docs.moralis.com
+
+════════════════════════════════════════════════════════════════════════
+
+✅ YOU'RE DONE!
+   Your scanner can now auto-discover opportunities like KOGE!
+
+════════════════════════════════════════════════════════════════════════

@@ -1,0 +1,83 @@
+{
+  "fold_metrics": [
+    {
+      "fold_id": 1,
+      "train_start": "2025-02-18",
+      "train_end": "2025-07-24",
+      "val_start": "2025-02-18",
+      "val_end": "2025-07-24",
+      "train_samples": 847,
+      "val_samples": 376,
+      "accuracy": 0.8297872340425532,
+      "precision": 0.7991071428571429,
+      "recall": 0.9040404040404041,
+      "f1": 0.8483412322274881,
+      "roc_auc": 0.9059839972761321,
+      "brier_score": 0.12843619537226877,
+      "train_class_distribution": {
+        "1": 429,
+        "0": 418
+      },
+      "val_class_distribution": {
+        "1": 198,
+        "0": 178
+      }
+    },
+    {
+      "fold_id": 2,
+      "train_start": "2025-02-18",
+      "train_end": "2025-07-24",
+      "val_start": "2025-02-18",
+      "val_end": "2025-07-24",
+      "train_samples": 1223,
+      "val_samples": 404,
+      "accuracy": 0.8960396039603961,
+      "precision": 0.8521739130434782,
+      "recall": 0.9607843137254902,
+      "f1": 0.9032258064516129,
+      "roc_auc": 0.934142156862745,
+      "brier_score": 0.1056889931186809,
+      "train_class_distribution": {
+        "1": 627,
+        "0": 596
+      },
+      "val_class_distribution": {
+        "1": 204,
+        "0": 200
+      }
+    },
+    {
+      "fold_id": 3,
+      "train_start": "2025-02-18",
+      "train_end": "2025-07-24",
+      "val_start": "2025-02-18",
+      "val_end": "2025-07-24",
+      "train_samples": 1627,
+      "val_samples": 373,
+      "accuracy": 0.8176943699731903,
+      "precision": 0.7512437810945274,
+      "recall": 0.893491124260355,
+      "f1": 0.8162162162162162,
+      "roc_auc": 0.8936796612135979,
+      "brier_score": 0.1408362503890228,
+      "train_class_distribution": {
+        "1": 831,
+        "0": 796
+      },
+      "val_class_distribution": {
+        "0": 204,
+        "1": 169
+      }
+    }
+  ],
+  "mean_roc_auc": 0.9112686051174917,
+  "std_roc_auc": 0.01693612900610276,
+  "mean_accuracy": 0.8478404026587132,
+  "std_accuracy": 0.03443768860749448,
+  "mean_f1": 0.8559277516317724,
+  "std_f1": 0.035924306124002776,
+  "auc_degradation": -0.012304336062534227,
+  "created_at": "2026-02-07T14:32:26.673917",
+  "n_folds": 3,
+  "val_period_days": 30
+}

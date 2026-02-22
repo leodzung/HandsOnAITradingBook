@@ -1,0 +1,56 @@
+# ============================================================================
+# DEX SCANNER AUTOMATED CRON JOB
+# ============================================================================
+#
+# This runs the DEX scanner hourly during peak trading hours (9AM-6PM UTC)
+# and sends email alerts to ltd@bu.edu when opportunities are found.
+#
+# To install:
+#   1. Run: crontab -e
+#   2. Copy the lines below (excluding comments starting with #)
+#   3. Paste into your crontab
+#   4. Save and exit
+#
+# ============================================================================
+
+# Set working directory (update if your path is different)
+SCANNER_DIR=/Users/leole/workspace/HandsOnAITradingBook/09 DEX Screening Strategies
+
+# Run every hour from 9AM to 6PM UTC, Monday-Friday
+# This covers US market open (9AM EST = 2PM UTC) through close
+0 9-18 * * 1-5 cd "$SCANNER_DIR" && /usr/bin/python3 run_with_email_alerts.py >> cron_log.txt 2>&1
+
+# ============================================================================
+# ALTERNATIVE SCHEDULES (uncomment one if you prefer):
+# ============================================================================
+
+# Every 2 hours (recommended to start - less API usage)
+# 0 9,11,13,15,17 * * 1-5 cd "$SCANNER_DIR" && /usr/bin/python3 run_with_email_alerts.py >> cron_log.txt 2>&1
+
+# Every 4 hours (9AM, 1PM, 5PM UTC)
+# 0 9,13,17 * * 1-5 cd "$SCANNER_DIR" && /usr/bin/python3 run_with_email_alerts.py >> cron_log.txt 2>&1
+
+# Twice daily (9AM and 3PM UTC)
+# 0 9,15 * * 1-5 cd "$SCANNER_DIR" && /usr/bin/python3 run_with_email_alerts.py >> cron_log.txt 2>&1
+
+# 24/7 every hour (not recommended - high API usage)
+# 0 * * * * cd "$SCANNER_DIR" && /usr/bin/python3 run_with_email_alerts.py >> cron_log.txt 2>&1
+
+# Weekend trading (include Saturday and Sunday)
+# 0 9-18 * * 0-6 cd "$SCANNER_DIR" && /usr/bin/python3 run_with_email_alerts.py >> cron_log.txt 2>&1
+
+# ============================================================================
+# TIMEZONE REFERENCE
+# ============================================================================
+#
+# Cron uses UTC time. Here's the conversion:
+#
+# UTC  | EST   | PST   | Market Event
+# -----|-------|-------|-------------
+# 9AM  | 4AM   | 1AM   | Pre-market
+# 12PM | 7AM   | 4AM   | Early trading
+# 2PM  | 9AM   | 6AM   | US Market Open
+# 6PM  | 1PM   | 10AM  | Mid-day
+# 9PM  | 4PM   | 1PM   | US Market Close
+#
+# ============================================================================

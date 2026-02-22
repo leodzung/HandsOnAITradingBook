@@ -1,0 +1,12 @@
+{
+    "python.defaultInterpreterPath": "/usr/bin/python3",
+    "jupyter.jupyterServerType": "local",
+    "jupyter.widgetScriptSources": ["jsdelivr.com", "unpkg.com"],
+    "notebook.cellToolbarLocation": {
+        "default": "right",
+        "jupyter-notebook": "left"
+    },
+    "python.analysis.extraPaths": [
+        "/Users/leole/Library/Python/3.9/lib/python/site-packages"
+    ]
+}

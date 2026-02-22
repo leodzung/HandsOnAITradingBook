@@ -1,0 +1,236 @@
+{
+  "paper_trading": true,
+  "paper_trading_balance": 500.0,
+  "paper_trading_balance_file": "data/paper_trading_balance_short_expiry.json",
+  "max_entry_price": 0.9,
+  "discovery": {
+    "ultra_short_hours": [
+      0,
+      24
+    ],
+    "short_hours": [
+      24,
+      72
+    ],
+    "medium_hours": [
+      72,
+      168
+    ],
+    "category_filter": "crypto",
+    "min_volume": {
+      "ultra_short": 100,
+      "short": 200,
+      "medium": 300
+    },
+    "min_liquidity": {
+      "ultra_short": 50,
+      "short": 100,
+      "medium": 150
+    },
+    "max_spread_pct": {
+      "ultra_short": 10.0,
+      "short": 8.0,
+      "medium": 6.0
+    },
+    "min_price": 0.05,
+    "max_price": 0.95,
+    "api_cache_ttl_seconds": 300,
+    "crypto_only": true
+  },
+  "position_limits": {
+    "max_total_positions": 15,
+    "max_positions_per_bucket": {
+      "ultra_short": 5,
+      "short": 7,
+      "medium": 8
+    },
+    "max_position_size": {
+      "ultra_short": 50,
+      "short": 75,
+      "medium": 100
+    },
+    "min_position_size": 10
+  },
+  "risk_management": {
+    "stop_loss_pct": {
+      "ultra_short": 10,
+      "short": 15,
+      "medium": 20
+    },
+    "take_profit_pct": {
+      "ultra_short": 30,
+      "short": 50,
+      "medium": 75
+    },
+    "pre_expiry_exit_hours": 2,
+    "circuit_breaker_losses": 4,
+    "circuit_breaker_cooldown_hours": 4.0,
+    "min_edge": 0.03,
+    "min_confidence": 0.55
+  },
+  "orderbook_source": "rest",
+  "orderbook": {
+    "cache_ttl_seconds": 5
+  },
+  "slippage_estimation": {
+    "enabled": true,
+    "max_slippage_bps": {
+      "ultra_short": 3000,
+      "short": 2000,
+      "medium": 1500
+    },
+    "max_slippage_dollars": {
+      "ultra_short": 15.0,
+      "short": 20.0,
+      "medium": 25.0
+    },
+    "orderbook_staleness_seconds": 10,
+    "depth_buffer_pct": 0.1,
+    "volatility_adjustment": false,
+    "volume_limit_pct": 0.05,
+    "warn_threshold_bps": {
+      "ultra_short": 2000,
+      "short": 1500,
+      "medium": 1000
+    }
+  },
+  "execution": {
+    "cycle_interval_seconds": 300,
+    "position_check_interval_seconds": 60,
+    "order_timeout_seconds": 30
+  },
+  "rules": {
+    "arbitrage": {
+      "enabled": true,
+      "max_total_price": 0.98,
+      "min_edge": 0.02
+    },
+    "mean_reversion": {
+      "enabled": true,
+      "min_spread_pct": 5.0,
+      "min_volume_24h": 1000,
+      "price_threshold_low": 0.45,
+      "price_threshold_high": 0.55,
+      "bucket": "ultra_short"
+    },
+    "momentum": {
+      "enabled": true,
+      "min_price_change_1h": 0.02,
+      "min_volume_24h": 500
+    }
+  },
+  "features": {
+    "enable_time_decay": true,
+    "enable_momentum": true,
+    "enable_microstructure": true,
+    "enable_volatility": true,
+    "enable_technical": true,
+    "enable_event_velocity": true
+  },
+  "logging": {
+    "level": "INFO",
+    "log_file": "logs/short_expiry.log",
+    "log_trades": true,
+    "log_features": true
+  },
+  "telegram": {
+    "enabled": true,
+    "bot_token": "8068515860:AAEiKpTK0RtHo5dURsbu7ey8Xa8r3A2xEHA",
+    "chat_id": "6690408994"
+  },
+  "database": {
+    "positions_db": "data/positions_short_expiry.db",
+    "tracking_db": "data/tracking_short_expiry.db"
+  },
+  "time_decay_tp_sl": {
+    "enabled": true,
+    "ultra_short": [
+      {
+        "min_hours": 12,
+        "tp_pct": 30,
+        "sl_pct": 10
+      },
+      {
+        "min_hours": 4,
+        "tp_pct": 25,
+        "sl_pct": 8
+      },
+      {
+        "min_hours": 1,
+        "tp_pct": 15,
+        "sl_pct": 5
+      },
+      {
+        "min_hours": 0,
+        "tp_pct": 10,
+        "sl_pct": 3
+      }
+    ],
+    "short": [
+      {
+        "min_hours": 24,
+        "tp_pct": 50,
+        "sl_pct": 15
+      },
+      {
+        "min_hours": 12,
+        "tp_pct": 40,
+        "sl_pct": 12
+      },
+      {
+        "min_hours": 4,
+        "tp_pct": 30,
+        "sl_pct": 10
+      },
+      {
+        "min_hours": 1,
+        "tp_pct": 20,
+        "sl_pct": 8
+      },
+      {
+        "min_hours": 0,
+        "tp_pct": 10,
+        "sl_pct": 5
+      }
+    ],
+    "medium": [
+      {
+        "min_hours": 72,
+        "tp_pct": 75,
+        "sl_pct": 20
+      },
+      {
+        "min_hours": 48,
+        "tp_pct": 65,
+        "sl_pct": 18
+      },
+      {
+        "min_hours": 24,
+        "tp_pct": 50,
+        "sl_pct": 15
+      },
+      {
+        "min_hours": 12,
+        "tp_pct": 40,
+        "sl_pct": 12
+      },
+      {
+        "min_hours": 4,
+        "tp_pct": 30,
+        "sl_pct": 10
+      },
+      {
+        "min_hours": 0,
+        "tp_pct": 15,
+        "sl_pct": 5
+      }
+    ],
+    "force_exit_hours": 1.0,
+    "apply_to_tp": true,
+    "apply_to_sl": true
+  },
+  "use_ml_model": true,
+  "ml_model_path": "data/models/short_expiry_model.pkl",
+  "ml_confidence_threshold": 0.6,
+  "ml_position_size_scaling": true
+}

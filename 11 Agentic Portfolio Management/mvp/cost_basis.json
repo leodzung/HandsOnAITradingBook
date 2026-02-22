@@ -1,0 +1,612 @@
+{
+  "positions": {
+    "SPY": {
+      "original_qty": 71.893789,
+      "original_avg_cost": 681.92,
+      "original_value": 49025.81259487999,
+      "weight": 0.16935307564527755,
+      "target_value": 45668.31536014175,
+      "order_id": "91c49d8f-1dd2-455d-af59-9f9b8db399b8",
+      "order_type": "notional"
+    },
+    "QQQ": {
+      "original_qty": 71.191324,
+      "original_avg_cost": 614.31,
+      "original_value": 43733.542246439996,
+      "weight": 0.15107163953608352,
+      "target_value": 40738.482309930856,
+      "order_id": "d2195ef8-bda2-49c4-8cd0-a95609d1ae07",
+      "order_type": "notional"
+    },
+    "VOO": {
+      "original_qty": 58.742551,
+      "original_avg_cost": 627.13,
+      "original_value": 36839.21600863,
+      "weight": 0.12725611683331461,
+      "target_value": 34316.30900653745,
+      "order_id": "b3a637de-c299-41ca-ae13-eaba54dc6662",
+      "order_type": "notional"
+    },
+    "HOOD": {
+      "original_qty": 180.898348,
+      "original_avg_cost": 113.1,
+      "original_value": 20459.6031588,
+      "weight": 0.07067494729881278,
+      "target_value": 19058.442068474968,
+      "order_id": "ed2a805d-fc0a-4ea1-805d-3f90a63a2dc3",
+      "order_type": "notional"
+    },
+    "TQQQ": {
+      "original_qty": 281.324184,
+      "original_avg_cost": 52.72,
+      "original_value": 14831.41098048,
+      "weight": 0.05123311440972919,
+      "target_value": 13815.692551379887,
+      "order_id": "5f3b441d-a803-4ac1-b35e-193f3740812e",
+      "order_type": "notional"
+    },
+    "SKYY": {
+      "original_qty": 112.217746,
+      "original_avg_cost": 130.08,
+      "original_value": 14597.284399680002,
+      "weight": 0.05042435562634223,
+      "target_value": 13597.599959738018,
+      "order_id": "c992f1ae-fc42-43ac-8b4f-2126c7969e9e",
+      "order_type": "notional"
+    },
+    "ARKK": {
+      "original_qty": 172.042433,
+      "original_avg_cost": 76.92,
+      "original_value": 13233.503946359999,
+      "weight": 0.04571335947859508,
+      "target_value": 12327.217022103256,
+      "order_id": "e64fbb5d-931b-4760-ac5a-910da6bb0dc7",
+      "order_type": "notional"
+    },
+    "META": {
+      "original_qty": 12.532484,
+      "original_avg_cost": 660.09,
+      "original_value": 8272.56736356,
+      "weight": 0.02857647129846742,
+      "target_value": 7706.026584789935,
+      "order_id": "78e88f0b-721c-4b09-87fd-419f310376eb",
+      "order_type": "notional"
+    },
+    "TSLA": {
+      "original_qty": 11.567791,
+      "original_avg_cost": 449.72,
+      "original_value": 5202.26696852,
+      "weight": 0.017970531538700193,
+      "target_value": 4845.993486517579,
+      "order_id": "8ecfb820-ab8d-4304-b157-4818e5f7ae0a",
+      "order_type": "notional"
+    },
+    "NVDA": {
+      "original_qty": 24.197394,
+      "original_avg_cost": 186.5,
+      "original_value": 4512.813981,
+      "weight": 0.015588908924625848,
+      "target_value": 4203.757187035142,
+      "order_id": "cc0248f9-1a20-4b6b-9890-9484654e82ba",
+      "order_type": "notional"
+    },
+    "HIMS": {
+      "original_qty": 120.0,
+      "original_avg_cost": 32.47,
+      "original_value": 3896.3999999999996,
+      "weight": 0.013459589734840469,
+      "target_value": 3629.5578706601523,
+      "order_id": "8da8b0ce-541d-465f-b626-04b239dd9dce",
+      "order_type": "notional"
+    },
+    "VIPS": {
+      "original_qty": 191.540931,
+      "original_avg_cost": 17.69,
+      "original_value": 3388.35906939,
+      "weight": 0.011704630671469884,
+      "target_value": 3156.309754883273,
+      "order_id": "dbe7176d-b7d3-4361-9a39-61e38361fa69",
+      "order_type": "notional"
+    },
+    "INTU": {
+      "original_qty": 4.121568,
+      "original_avg_cost": 662.42,
+      "original_value": 2730.20907456,
+      "weight": 0.009431140035395769,
+      "target_value": 2543.232685329283,
+      "order_id": "2cde98ae-1635-4d4b-9e79-ceb1e3a1c685",
+      "order_type": "notional"
+    },
+    "ANET": {
+      "original_qty": 20.0,
+      "original_avg_cost": 131.03,
+      "original_value": 2620.6,
+      "weight": 0.00905251022973076,
+      "target_value": 2441.1301087804113,
+      "order_id": "8257e3d7-a17a-4460-8207-62eaef08121c",
+      "order_type": "notional"
+    },
+    "HYG": {
+      "original_qty": 32.339875,
+      "original_avg_cost": 80.63,
+      "original_value": 2607.56412125,
+      "weight": 0.009007479539912435,
+      "target_value": 2428.9869827363623,
+      "order_id": "c1c25c33-b674-4916-b7e4-9c7d39bb9ec2",
+      "order_type": "notional"
+    },
+    "BOND": {
+      "original_qty": 27.804831,
+      "original_avg_cost": 93.08,
+      "original_value": 2588.07366948,
+      "weight": 0.008940152395735528,
+      "target_value": 2410.8313204264023,
+      "order_id": "57497f62-bc37-4da6-8554-6cc74895660f",
+      "order_type": "notional"
+    },
+    "HTZ": {
+      "original_qty": 400.0,
+      "original_avg_cost": 5.14,
+      "original_value": 2056.0,
+      "weight": 0.007102175468337955,
+      "target_value": 1915.1963304787173,
+      "order_id": "dbf74e3e-6877-43dd-91c8-8eed8c092753",
+      "order_type": "notional"
+    },
+    "PBI": {
+      "original_qty": 186.384652,
+      "original_avg_cost": 10.57,
+      "original_value": 1970.0857716399998,
+      "weight": 0.006805396321917926,
+      "target_value": 1835.1658757652042,
+      "order_id": "8bdebf4c-8fbe-4a8d-a421-c62a23c07af4",
+      "order_type": "notional"
+    },
+    "INFY": {
+      "original_qty": 106.448715,
+      "original_avg_cost": 17.82,
+      "original_value": 1896.9161013000003,
+      "weight": 0.006552641537037031,
+      "target_value": 1767.0071772547446,
+      "order_id": "d2d677dc-7563-43be-9770-d10b775b4aeb",
+      "order_type": "notional"
+    },
+    "QCOM": {
+      "original_qty": 11.087824,
+      "original_avg_cost": 171.05,
+      "original_value": 1896.5722952,
+      "weight": 0.006551453905106444,
+      "target_value": 1766.686916466264,
+      "order_id": "8bcafbc3-0a1b-428c-921c-b34250acb0a0",
+      "order_type": "notional"
+    },
+    "PHM": {
+      "original_qty": 16.066973,
+      "original_avg_cost": 117.26,
+      "original_value": 1884.0132539800002,
+      "weight": 0.006508070386400934,
+      "target_value": 1754.9879720796514,
+      "order_id": "dea72e0e-cc29-4b5e-9e1d-ebc942d8d0f2",
+      "order_type": "notional"
+    },
+    "NFLX": {
+      "original_qty": 20.0,
+      "original_avg_cost": 93.76,
+      "original_value": 1875.2,
+      "weight": 0.006477626185908236,
+      "target_value": 1746.7782874093828,
+      "order_id": "aef82ec2-4e97-4117-88ee-9ba8c387a660",
+      "order_type": "notional"
+    },
+    "VRTX": {
+      "original_qty": 4.0,
+      "original_avg_cost": 453.36,
+      "original_value": 1813.44,
+      "weight": 0.006264284572618084,
+      "target_value": 1689.247876237026,
+      "order_id": "75878e53-7545-4092-8103-6b79aae4bfab",
+      "order_type": "notional"
+    },
+    "LEN": {
+      "original_qty": 17.132957,
+      "original_avg_cost": 102.8,
+      "original_value": 1761.2679796,
+      "weight": 0.006084063345274452,
+      "target_value": 1640.6488188324827,
+      "order_id": "58907454-6852-4f77-9fa6-29e0a26fcf62",
+      "order_type": "notional"
+    },
+    "UBER": {
+      "original_qty": 21.0,
+      "original_avg_cost": 81.71,
+      "original_value": 1715.9099999999999,
+      "weight": 0.005927380305387052,
+      "target_value": 1598.3971475835287,
+      "order_id": "a93c49b1-1c24-42b7-8013-dd62748eff46",
+      "order_type": "notional"
+    },
+    "CHKP": {
+      "original_qty": 9.0,
+      "original_avg_cost": 185.56,
+      "original_value": 1670.04,
+      "weight": 0.005768928559894512,
+      "target_value": 1555.6685212804848,
+      "order_id": "b3beb922-3e64-4948-b629-925cd39592b4",
+      "order_type": "notional"
+    },
+    "JNJ": {
+      "original_qty": 8.019498,
+      "original_avg_cost": 206.95,
+      "original_value": 1659.6351111,
+      "weight": 0.005732986270645309,
+      "target_value": 1545.9762036538707,
+      "order_id": "6d02e868-4eaa-4470-874d-08454532bb74",
+      "order_type": "notional"
+    },
+    "FTNT": {
+      "original_qty": 20.0,
+      "original_avg_cost": 79.41,
+      "original_value": 1588.1999999999998,
+      "weight": 0.00548622328736106,
+      "target_value": 1479.4332743513125,
+      "order_id": "88c06338-8bcd-4344-b0bc-5401eade198c",
+      "order_type": "notional"
+    },
+    "BULL": {
+      "original_qty": 200.0,
+      "original_avg_cost": 7.77,
+      "original_value": 1554.0,
+      "weight": 0.005368083987255438,
+      "target_value": 1447.5754365583298,
+      "order_id": "c5aed969-702a-4879-b27f-14a275e31f00",
+      "order_type": "notional"
+    },
+    "REGN": {
+      "original_qty": 2.011786,
+      "original_avg_cost": 771.87,
+      "original_value": 1552.8372598199999,
+      "weight": 0.005364067457691991,
+      "target_value": 1446.4923257966393,
+      "order_id": "b6e67b5c-d57a-4ee8-a2f8-2a60bbcce20c",
+      "order_type": "notional"
+    },
+    "BABA": {
+      "original_qty": 10.550518,
+      "original_avg_cost": 146.58,
+      "original_value": 1546.4949284400002,
+      "weight": 0.00534215872698231,
+      "target_value": 1440.5843443833826,
+      "order_id": "d925a680-fe14-441c-9feb-90f47290d685",
+      "order_type": "notional"
+    },
+    "A": {
+      "original_qty": 11.360089,
+      "original_avg_cost": 136.07,
+      "original_value": 1545.76731023,
+      "weight": 0.005339645267740395,
+      "target_value": 1439.9065565790143,
+      "order_id": "75e7d339-bdeb-4dce-aae6-028f3147031e",
+      "order_type": "notional"
+    },
+    "DOX": {
+      "original_qty": 18.726298,
+      "original_avg_cost": 80.51,
+      "original_value": 1507.65425198,
+      "weight": 0.005207988834215839,
+      "target_value": 1404.4036434935463,
+      "order_id": "4c749429-4d08-433d-ae5a-4024fd5fdbbe",
+      "order_type": "notional"
+    },
+    "EA": {
+      "original_qty": 7.184313,
+      "original_avg_cost": 204.33,
+      "original_value": 1467.9706752900001,
+      "weight": 0.0050709072559747765,
+      "target_value": 1367.4377677849088,
+      "order_id": "befb990b-bf24-4ac5-892f-f82eafb33747",
+      "order_type": "notional"
+    },
+    "ACN": {
+      "original_qty": 5.384531,
+      "original_avg_cost": 268.3,
+      "original_value": 1444.6696673000001,
+      "weight": 0.004990417057855066,
+      "target_value": 1345.7325124352478,
+      "order_id": "522df4aa-998b-4a1f-b650-5dd943aa01c4",
+      "order_type": "notional"
+    },
+    "TLT": {
+      "original_qty": 16.318445,
+      "original_avg_cost": 87.16,
+      "original_value": 1422.3156662,
+      "weight": 0.0049131981676645885,
+      "target_value": 1324.9094088952488,
+      "order_id": "b080cc07-fa55-49c3-b244-acbf3b1cb625",
+      "order_type": "notional"
+    },
+    "TJX": {
+      "original_qty": 8.253129,
+      "original_avg_cost": 153.61,
+      "original_value": 1267.76314569,
+      "weight": 0.004379317272851398,
+      "target_value": 1180.9413057109161,
+      "order_id": "7c7b61e7-a7f6-477e-b15a-e342c685568c",
+      "order_type": "notional"
+    },
+    "AZN": {
+      "original_qty": 12.516825,
+      "original_avg_cost": 91.93,
+      "original_value": 1150.6717222500001,
+      "weight": 0.0039748406993551245,
+      "target_value": 1071.86880352083,
+      "order_id": "cf864db6-6244-46e7-967a-a9aa4b585d22",
+      "order_type": "notional"
+    },
+    "XYZ": {
+      "original_qty": 16.35011,
+      "original_avg_cost": 65.09,
+      "original_value": 1064.2286599000001,
+      "weight": 0.0036762347670447264,
+      "target_value": 991.3457316297486,
+      "order_id": "40d191dc-2ae5-4d84-9341-e747a2c5ca0c",
+      "order_type": "notional"
+    },
+    "MSFT": {
+      "original_qty": 2.154871,
+      "original_avg_cost": 483.62,
+      "original_value": 1042.13871302,
+      "weight": 0.0035999280166419904,
+      "target_value": 970.7685987479169,
+      "order_id": "5947c516-1a5c-4abc-82de-4f21574a9a77",
+      "order_type": "notional"
+    },
+    "JEPQ": {
+      "original_qty": 17.714453,
+      "original_avg_cost": 58.12,
+      "original_value": 1029.56400836,
+      "weight": 0.0035564903906897295,
+      "target_value": 959.0550636206378,
+      "order_id": "3aa02a52-4536-431e-891d-7653b559ee58",
+      "order_type": "notional"
+    },
+    "GNTX": {
+      "original_qty": 43.224987,
+      "original_avg_cost": 23.27,
+      "original_value": 1005.84544749,
+      "weight": 0.003474557812306853,
+      "target_value": 936.9608511972622,
+      "order_id": "4ed02b28-0ceb-44bf-b7cc-7c81dca49669",
+      "order_type": "notional"
+    },
+    "T": {
+      "original_qty": 40.0,
+      "original_avg_cost": 24.84,
+      "original_value": 993.6,
+      "weight": 0.003432257560963323,
+      "target_value": 925.5540243013879,
+      "order_id": "f558e590-87e2-4816-b9ec-5465de8737d6",
+      "order_type": "notional"
+    },
+    "IDRV": {
+      "original_qty": 24.269749,
+      "original_avg_cost": 37.927,
+      "original_value": 920.478770323,
+      "weight": 0.003179670107837499,
+      "target_value": 857.4404490302392,
+      "order_id": "104c4cf4-f386-42ed-adcb-4a8d9cecca83",
+      "order_type": "notional"
+    },
+    "ZTS": {
+      "original_qty": 7.305385,
+      "original_avg_cost": 125.82,
+      "original_value": 919.1635407,
+      "weight": 0.0031751268240030133,
+      "target_value": 856.2152919545065,
+      "order_id": "ec93362c-1f6b-4171-a396-1f9078c735cb",
+      "order_type": "notional"
+    },
+    "COIN": {
+      "original_qty": 4.0,
+      "original_avg_cost": 226.14,
+      "original_value": 904.56,
+      "weight": 0.0031246808568286865,
+      "target_value": 842.6118641526402,
+      "order_id": "8575d5c0-29b0-44bd-9780-093c601192a7",
+      "order_type": "notional"
+    },
+    "NVO": {
+      "original_qty": 17.158251,
+      "original_avg_cost": 50.88,
+      "original_value": 873.01181088,
+      "weight": 0.0030157018807398977,
+      "target_value": 813.2242298939474,
+      "order_id": "2ff73f27-dbc9-408f-91d8-daf76f848897",
+      "order_type": "notional"
+    },
+    "KLAR": {
+      "original_qty": 29.0,
+      "original_avg_cost": 28.91,
+      "original_value": 838.39,
+      "weight": 0.0028961054916828103,
+      "target_value": 780.9734686332936,
+      "order_id": "f10c5c9b-6768-434c-9a44-e787fc47a052",
+      "order_type": "notional"
+    },
+    "BALL": {
+      "original_qty": 14.88672,
+      "original_avg_cost": 52.97,
+      "original_value": 788.5495584,
+      "weight": 0.002723938389706813,
+      "target_value": 734.5463135448895,
+      "order_id": "3aedc26f-7676-471f-965c-c4b9a58bc7cf",
+      "order_type": "notional"
+    },
+    "SOFI": {
+      "original_qty": 28.0,
+      "original_avg_cost": 26.18,
+      "original_value": 733.04,
+      "weight": 0.0025321880862404934,
+      "target_value": 682.8382870107583,
+      "order_id": "b9796f9f-a416-4b5c-bf1a-647309cf68e5",
+      "order_type": "notional"
+    },
+    "IAU": {
+      "original_qty": 9.0,
+      "original_avg_cost": 81.17,
+      "original_value": 730.53,
+      "weight": 0.0025235176288350807,
+      "target_value": 680.5001825411564,
+      "order_id": "3fc961fe-eb60-443f-9649-38151e04dead",
+      "order_type": "notional"
+    },
+    "NKE": {
+      "original_qty": 10.68014,
+      "original_avg_cost": 63.71,
+      "original_value": 680.4317194,
+      "weight": 0.0023504598567128865,
+      "target_value": 633.8328463697491,
+      "order_id": "7efe44b3-d39d-4da9-819b-2910be24ff18",
+      "order_type": "notional"
+    },
+    "ALGN": {
+      "original_qty": 4.0,
+      "original_avg_cost": 156.15,
+      "original_value": 624.6,
+      "weight": 0.0021575966914026685,
+      "target_value": 581.824721798155,
+      "order_id": "557d53dc-df95-4e38-a1d4-3ef1bbaf8e45",
+      "order_type": "notional"
+    },
+    "ASST": {
+      "original_qty": 688.0,
+      "original_avg_cost": 0.738,
+      "original_value": 507.74399999999997,
+      "weight": 0.0017539333565154602,
+      "target_value": 472.97152024444836,
+      "order_id": "10b874d5-cf5f-40c6-9ebf-732c20a0b2ef",
+      "order_type": "notional"
+    },
+    "LYFT": {
+      "original_qty": 20.0,
+      "original_avg_cost": 19.37,
+      "original_value": 387.40000000000003,
+      "weight": 0.0013382211947636788,
+      "target_value": 360.8691918421474,
+      "order_id": "caeb843d-cd4e-4d7b-889a-c9dd521d5f77",
+      "order_type": "notional"
+    },
+    "BLSH": {
+      "original_qty": 10.0,
+      "original_avg_cost": 37.87,
+      "original_value": 378.7,
+      "weight": 0.0013081682149122488,
+      "target_value": 352.7650050351606,
+      "order_id": "5815a6ae-b9fe-44fb-865a-28511fb7e554",
+      "order_type": "notional"
+    },
+    "FIG": {
+      "original_qty": 10.0,
+      "original_avg_cost": 37.37,
+      "original_value": 373.7,
+      "weight": 0.0012908963874114269,
+      "target_value": 348.10742641045556,
+      "order_id": "781a7efe-79ab-4e37-8232-eee75e4ff1fb",
+      "order_type": "notional"
+    },
+    "LLY": {
+      "original_qty": 0.278471,
+      "original_avg_cost": 1074.68,
+      "original_value": 299.26721428,
+      "weight": 0.0010337783403391314,
+      "target_value": 278.7721160611109,
+      "order_id": "9d3c919b-e505-449b-a728-0b0e070a0636",
+      "order_type": "notional"
+    },
+    "MRP": {
+      "original_qty": 8.950506,
+      "original_avg_cost": 29.87,
+      "original_value": 267.35161422000004,
+      "weight": 0.0009235301925748234,
+      "target_value": 249.04223273429264,
+      "order_id": "ec983c13-22f9-47db-b007-d68d3a504f76",
+      "order_type": "notional"
+    },
+    "TER": {
+      "original_qty": 1.234979,
+      "original_avg_cost": 193.56,
+      "original_value": 239.04253524,
+      "weight": 0.0008257402868048828,
+      "target_value": 222.67188050582564,
+      "order_id": "4b9ef3d5-4028-4c9e-88e1-13cface8f9de",
+      "order_type": "notional"
+    },
+    "BAC": {
+      "original_qty": 4.292135,
+      "original_avg_cost": 55.0,
+      "original_value": 236.06742500000001,
+      "weight": 0.000815463168632641,
+      "target_value": 219.90051853383258,
+      "order_id": "f2884dcb-0195-4665-b597-75bb6b2a1cd9",
+      "order_type": "notional"
+    },
+    "MED": {
+      "original_qty": 8.008048,
+      "original_avg_cost": 10.68,
+      "original_value": 85.52595264,
+      "weight": 0.00029543790016830823,
+      "target_value": 79.66876977472012,
+      "order_id": "a6dbe922-f334-49b6-a87f-c6400ff3e9d3",
+      "order_type": "notional"
+    },
+    "BRK.B": {
+      "original_qty": 0.129688,
+      "original_avg_cost": 502.65,
+      "original_value": 65.18767319999999,
+      "weight": 0.00022518204933806978,
+      "target_value": 60.72334265811566,
+      "order_id": "306c911b-4f42-4577-acb7-2d8771ba7689",
+      "order_type": "notional"
+    },
+    "AAPL": {
+      "original_qty": 0.109001,
+      "original_avg_cost": 271.86,
+      "original_value": 29.633011860000003,
+      "weight": 0.00010236325383514576,
+      "target_value": 27.60361652495346,
+      "order_id": "23c16639-3d43-49e8-a261-d84e3a1dd5d9",
+      "order_type": "notional"
+    },
+    "JPM": {
+      "original_qty": 0.066186,
+      "original_avg_cost": 322.22,
+      "original_value": 21.32645292,
+      "weight": 7.36693632077278e-05,
+      "target_value": 19.86592625219413,
+      "order_id": "80d2a822-74b1-4bd3-9091-ce7f4b48fbce",
+      "order_type": "notional"
+    },
+    "GEMI": {
+      "original_qty": 1.0,
+      "original_avg_cost": 9.92,
+      "original_value": 9.92,
+      "weight": 3.4267305761630596e-05,
+      "target_value": 9.240635991414823,
+      "order_id": "b9c2f32c-356b-4c41-91c2-e493c214a2e7",
+      "order_type": "notional"
+    },
+    "AMC": {
+      "original_qty": 4.266667,
+      "original_avg_cost": 1.56,
+      "original_value": 6.65600052,
+      "weight": 2.299225856536414e-05,
+      "target_value": 6.200169149595542,
+      "order_id": "48bdf57f-9633-4c7b-b0dd-ef83b34cd837",
+      "order_type": "notional"
+    }
+  },
+  "source_file": "robinhood_portfolio.csv",
+  "import_date": "2026-01-19T12:11:54.994182",
+  "source_total_value": 289488.764275933,
+  "alpaca_allocated": 271018.0,
+  "last_updated": "2026-01-19T12:12:22.895597"
+}

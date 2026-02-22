@@ -1,0 +1,162 @@
+Vui lòng chuyển đổi sang Vnstock3 thế hệ mới (3.2.1) với câu lệnh: `pip install vnstock3 --upgrade`.
+Từ 1/1/2025, vnstock3 sẽ được cài đặt khi sử dụng cú pháp `pip install vnstock` thay cho Vnstock Legacy hiện tại.
+Xem chi tiết [chuyển đổi sang vnstock3](https://vnstocks.com/docs/tai-lieu/migration-chuyen-doi-sang-vnstock3).
+Phiên bản Vnstock Legacy (0.2.9.2.3) bạn đang sử dụng sẽ không được nâng cấp thêm.
+Từ 7/10/2024 Vnstock giới thiệu nhóm Facebook Cộng đồng Vnstock, tham gia thảo luận tại đây: https://www.facebook.com/groups/vnstock.official
+X does not have valid feature names, but StandardScaler was fitted with feature names
+X does not have valid feature names, but StandardScaler was fitted with feature names
+X does not have valid feature names, but StandardScaler was fitted with feature names
+X does not have valid feature names, but StandardScaler was fitted with feature names
+X does not have valid feature names, but StandardScaler was fitted with feature names
+X does not have valid feature names, but StandardScaler was fitted with feature names
+X does not have valid feature names, but StandardScaler was fitted with feature names
+X does not have valid feature names, but StandardScaler was fitted with feature names
+X does not have valid feature names, but StandardScaler was fitted with feature names
+X does not have valid feature names, but StandardScaler was fitted with feature names
+X does not have valid feature names, but StandardScaler was fitted with feature names
+X does not have valid feature names, but StandardScaler was fitted with feature names
+X does not have valid feature names, but StandardScaler was fitted with feature names
+X does not have valid feature names, but StandardScaler was fitted with feature names
+X does not have valid feature names, but StandardScaler was fitted with feature names
+X does not have valid feature names, but StandardScaler was fitted with feature names
+X does not have valid feature names, but StandardScaler was fitted with feature names
+X does not have valid feature names, but StandardScaler was fitted with feature names
+X does not have valid feature names, but StandardScaler was fitted with feature names
+X does not have valid feature names, but StandardScaler was fitted with feature names
+X does not have valid feature names, but StandardScaler was fitted with feature names
+X does not have valid feature names, but StandardScaler was fitted with feature names
+X does not have valid feature names, but StandardScaler was fitted with feature names
+X does not have valid feature names, but StandardScaler was fitted with feature names
+X does not have valid feature names, but StandardScaler was fitted with feature names
+X does not have valid feature names, but StandardScaler was fitted with feature names
+X does not have valid feature names, but StandardScaler was fitted with feature names
+X does not have valid feature names, but StandardScaler was fitted with feature names
+X does not have valid feature names, but StandardScaler was fitted with feature names
+X does not have valid feature names, but StandardScaler was fitted with feature names
+X does not have valid feature names, but StandardScaler was fitted with feature names
+X does not have valid feature names, but StandardScaler was fitted with feature names
+X does not have valid feature names, but StandardScaler was fitted with feature names
+X does not have valid feature names, but StandardScaler was fitted with feature names
+X does not have valid feature names, but StandardScaler was fitted with feature names
+X does not have valid feature names, but StandardScaler was fitted with feature names
+X does not have valid feature names, but StandardScaler was fitted with feature names
+X does not have valid feature names, but StandardScaler was fitted with feature names
+X does not have valid feature names, but StandardScaler was fitted with feature names
+X does not have valid feature names, but StandardScaler was fitted with feature names
+
+🚀 Starting Regime-Aware Backtest for 2024
+This uses market regime detection to adapt strategy dynamically.
+======================================================================
+
+======================================================================
+REGIME-AWARE BACKTEST - 2024
+======================================================================
+
+📋 Backtest Configuration:
+   Initial capital: 100,000,000 VND
+   Period: 2024-01-01 to 2024-10-31
+   Concentrated universe: 5 stocks
+   Diversified universe: 15 stocks
+
+======================================================================
+STEP 1: Initialize Data Provider & Regime Detector
+======================================================================
+✅ Legacy vnstock initialized successfully
+⚠️  Consider upgrading: pip install git+https://github.com/thinh-vu/vnstock.git@main
+
+Loading market index data for regime detection...
+Error fetching index VNINDEX: module 'vnstock' has no attribute 'stock'
+⚠️  VN-Index data not available, using fallback
+
+Fetching historical data for 5 stocks...
+Period: 2023-01-01 to 2024-10-31
+
+✅ Successfully fetched: 5/5 stocks
+
+======================================================================
+STEP 2: Load Historical Price Data
+======================================================================
+
+Fetching historical data for 15 stocks...
+Period: 2023-01-01 to 2024-10-31
+  Progress: 10/15 stocks
+
+✅ Successfully fetched: 15/15 stocks
+✅ Loaded data for 15 stocks
+
+======================================================================
+STEP 3: Train ML Model
+======================================================================
+✅ Model trained successfully!
+   Training samples: 1,335
+   Accuracy: 53.86%
+
+======================================================================
+STEP 4: Run Regime-Aware Backtest
+======================================================================
+
+🔄 Rebalancing on 2024-01-02
+   📊 Regime: CHOPPY (was: N/A)
+   Confidence: medium
+   Strategy: Diversified (15 stocks, select top 5)
+   Predictions calculated for 0 stocks
+   WARNING: No predictions calculated!
+   No predictions available - staying in cash
+
+🔄 Rebalancing on 2024-04-01
+   📊 Regime: BULL (was: choppy)
+   Confidence: medium
+   Strategy: Concentrated (5 stocks, select top 3)
+   Predictions calculated for 0 stocks
+   WARNING: No predictions calculated!
+   No predictions available - staying in cash
+
+🔄 Rebalancing on 2024-07-01
+   Strategy: Concentrated (5 stocks, select top 3)
+   Predictions calculated for 0 stocks
+   WARNING: No predictions calculated!
+   No predictions available - staying in cash
+
+🔄 Rebalancing on 2024-09-30
+   📊 Regime: CHOPPY (was: bull)
+   Confidence: medium
+   Strategy: Diversified (15 stocks, select top 5)
+   Predictions calculated for 0 stocks
+   WARNING: No predictions calculated!
+   No predictions available - staying in cash
+
+======================================================================
+REGIME-AWARE BACKTEST RESULTS
+======================================================================
+
+📊 Performance Summary:
+   Total Return:          +0.00%
+   Annual Return:         +0.00%
+   Annual Volatility:     nan%
+   Sharpe Ratio:          0.00
+   Max Drawdown:          0.00%
+
+💰 Portfolio Values:
+   Initial:                 100,000,000 VND
+   Final:                   100,000,000 VND
+   Profit/Loss:             +0 VND
+
+🎯 Regime Summary:
+   BULL: 124 days (59.9%)
+   CHOPPY: 83 days (40.1%)
+
+🔄 Regime Changes: 3
+   2024-01-02: START → choppy
+   2024-04-01: choppy → bull
+   2024-09-30: bull → choppy
+
+💾 Results saved to regime_aware_2024_results.csv
+
+======================================================================
+✅ REGIME-AWARE BACKTEST COMPLETED!
+======================================================================
+
+✅ Backtest for 2024 completed successfully!
+   Total Return: +0.00%
+   Sharpe Ratio: 0.00
+   Max Drawdown: 0.00%

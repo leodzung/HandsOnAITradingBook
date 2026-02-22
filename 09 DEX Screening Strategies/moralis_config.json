@@ -1,0 +1,10 @@
+{
+  "api_key": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJub25jZSI6ImU3Y2ZkMTlkLTNmYjUtNGQwZC05MTc4LTU2MWU1ZjQyYWEzMSIsIm9yZ0lkIjoiNDc5MzU5IiwidXNlcklkIjoiNDkzMTYxIiwidHlwZUlkIjoiMjk3Nzk5OGMtNjYzYS00MjE0LWEyNjEtZWUxZTZjZjg0YWY3IiwidHlwZSI6IlBST0pFQ1QiLCJpYXQiOjE3NjIyMDQ4NDgsImV4cCI6NDkxNzk2NDg0OH0.VZP0RPpvK7H3-8BPG3t4WIDCt4eNy5KoXaKZE7gW1tU",
+  "base_url": "https://deep-index.moralis.io/api/v2.2",
+  "instructions": [
+    "1. Sign up at https://moralis.com",
+    "2. Get your API key from the dashboard",
+    "3. Replace YOUR_MORALIS_API_KEY_HERE with your actual key",
+    "4. Free tier: 40,000 Compute Units per day"
+  ]
+}

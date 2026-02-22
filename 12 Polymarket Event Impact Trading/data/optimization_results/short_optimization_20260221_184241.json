@@ -1,0 +1,28 @@
+{
+  "bucket": "short",
+  "best_params": {
+    "take_profit_pct": 50,
+    "stop_loss_pct": 15,
+    "max_slippage_bps": 2000,
+    "max_position_size": 75,
+    "max_spread_pct": 8.0,
+    "min_volume": 200,
+    "min_confidence": 0.55
+  },
+  "best_score": 0.0,
+  "baseline_params": {
+    "take_profit_pct": 50,
+    "stop_loss_pct": 15,
+    "max_slippage_bps": 2000,
+    "max_position_size": 75,
+    "max_spread_pct": 8.0,
+    "min_volume": 200,
+    "min_confidence": 0.55
+  },
+  "baseline_score": 0.0,
+  "improvement": 0,
+  "n_calls": 150,
+  "n_folds": 5,
+  "optimization_history": [],
+  "timestamp": "2026-02-21T18:42:41.370812"
+}

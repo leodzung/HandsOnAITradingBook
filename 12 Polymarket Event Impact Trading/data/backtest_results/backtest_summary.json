@@ -1,0 +1,54 @@
+{
+  "ML (60% confidence)": {
+    "total_trades": 188195,
+    "trades_skipped": 180117,
+    "wins": 180200.0,
+    "losses": 7995.0,
+    "win_rate": 0.9575174685831186,
+    "total_pnl": 17220500.0,
+    "final_balance": 17230500.0,
+    "roi": 1722.05,
+    "avg_win": 100.0,
+    "avg_loss": 100.0,
+    "profit_factor": 22.539086929330832,
+    "max_drawdown": 9400.0,
+    "avg_confidence": 0.9762229806148786
+  },
+  "ML (70% confidence)": {
+    "total_trades": 188195,
+    "trades_skipped": 180117,
+    "wins": 180200.0,
+    "losses": 7995.0,
+    "win_rate": 0.9575174685831186,
+    "total_pnl": 17220500.0,
+    "final_balance": 17230500.0,
+    "roi": 1722.05,
+    "avg_win": 100.0,
+    "avg_loss": 100.0,
+    "profit_factor": 22.539086929330832,
+    "max_drawdown": 9400.0,
+    "avg_confidence": 0.9762229806148786
+  },
+  "ML (80% confidence)": {
+    "total_trades": 181833,
+    "trades_skipped": 186479,
+    "wins": 175492.0,
+    "losses": 6341.0,
+    "win_rate": 0.9651273421216171,
+    "total_pnl": 16915100.0,
+    "final_balance": 16925100.0,
+    "roi": 1691.51,
+    "avg_win": 100.0,
+    "avg_loss": 100.0,
+    "profit_factor": 27.67576092099038,
+    "max_drawdown": 9400.0,
+    "avg_confidence": 0.9836247650488635
+  },
+  "Random (baseline)": {
+    "total_trades": 200,
+    "win_rate": 0.06377201937487782,
+    "final_balance": 9200.0,
+    "roi": -0.08,
+    "total_pnl": -800.0
+  }
+}

@@ -1,0 +1,37 @@
+{
+  "timestamp": "2026-01-20T07:12:28.174824",
+  "executive_summary": "The investment plan is cautious due to mixed signals from momentum, sentiment, and risk management agents. No specific buy or sell actions are recommended at this time.",
+  "recommended_actions": [],
+  "agent_analyses": [
+    {
+      "agent_id": "momentum_agent",
+      "timestamp": "2026-01-20T07:10:26.813345",
+      "recommendations": [],
+      "summary": "No summary available",
+      "confidence": 50
+    },
+    {
+      "agent_id": "risk_manager",
+      "timestamp": "2026-01-20T07:10:58.819518",
+      "recommendations": [],
+      "summary": "Risk assessment completed",
+      "confidence": 80
+    },
+    {
+      "agent_id": "sentiment_agent",
+      "timestamp": "2026-01-20T07:12:04.333875",
+      "recommendations": [],
+      "summary": "No summary available",
+      "confidence": 50
+    }
+  ],
+  "risk_assessment": {
+    "overall_status": "stable",
+    "key_concerns": [
+      "Lack of clear signals from momentum and sentiment agents",
+      "High number of positions (60) may increase risk exposure"
+    ],
+    "recommendations_compliant": true
+  },
+  "overall_confidence": 50
+}
