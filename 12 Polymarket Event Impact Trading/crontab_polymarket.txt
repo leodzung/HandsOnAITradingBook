@@ -1,0 +1,25 @@
+# Polymarket Trading System - Cron Jobs
+# Install with: crontab crontab_polymarket.txt
+# View with: crontab -l
+# Remove with: crontab -r
+
+# Set environment
+SHELL=/bin/bash
+PATH=/usr/local/bin:/usr/bin:/bin
+WORKDIR=/Users/leole/workspace/HandsOnAITradingBook/12 Polymarket Event Impact Trading
+
+# 1. Auto-restart collectors on reboot
+@reboot cd "$WORKDIR" && nohup /usr/bin/python3 src/collectors/alchemy_collector.py --continuous >> logs/alchemy_collection.out 2>&1 &
+@reboot cd "$WORKDIR" && nohup /usr/bin/python3 src/collectors/gdelt_collector.py --continuous >> logs/gdelt_collection.out 2>&1 &
+
+# 2. Health monitoring every 5 minutes
+*/5 * * * * cd "$WORKDIR" && /usr/bin/python3 src/monitoring/monitor_collectors.py >> logs/monitoring.out 2>&1
+
+# 3. Market mapper update daily at 2 AM
+0 2 * * * cd "$WORKDIR" && /usr/bin/python3 src/utils/market_mapper.py --update --update-trades >> logs/mapper.out 2>&1
+
+# 4. Polymarket history refresh weekly (Sunday 3 AM)
+0 3 * * 0 cd "$WORKDIR" && /usr/bin/python3 collect_recent_resolved.py >> logs/history_refresh.out 2>&1
+
+# 5. Label regeneration monthly (1st day of month, 4 AM)
+0 4 1 * * cd "$WORKDIR" && /usr/bin/python3 create_labels_final_correct.py >> logs/label_creation.out 2>&1
