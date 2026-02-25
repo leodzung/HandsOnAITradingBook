@@ -1,0 +1,100 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+ENV/
+.venv
+*.egg-info/
+dist/
+build/
+
+# Jupyter Notebook
+.ipynb_checkpoints
+*.ipynb_checkpoints
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Data files (SQLite databases)
+*.db
+*.db-shm
+*.db-wal
+*.db-journal
+*.sqlite
+*.sqlite3
+
+# Backups
+backups/
+*.backup
+*.bak
+*.gz
+*.zip
+*.tar
+*.corrupted
+*.incomplete
+
+# Large data files
+*.csv
+*.json.gz
+*.parquet
+
+# Embedding cache
+embedding_cache/
+embeddings.json
+
+# Trading data
+data/*.db
+data/*.db-*
+data/alchemy_trades.*
+data/embedding_cache/
+data/backtest_results/*.csv
+data/optimization_results/
+data/paper_trading_balance*.json
+data/monitor_state.json
+data/price_tracking.db*
+data/positions*.db*
+data/telemetry.db*
+
+# Logs
+*.log
+*.out
+cron_log.txt
+logs/
+trading.out
+trading_price_levels.out
+
+# Temporary files
+*.tmp
+*.temp
+.cache/
+
+# Model files (if large)
+*.pkl
+*.joblib
+*.h5
+*.pt
+*.pth
+*.onnx
+models/
+
+# API keys and secrets
+.env
+*.key
+*.pem
+credentials.json
+config/secrets.json
+
+# Git
+.git/index.lock
