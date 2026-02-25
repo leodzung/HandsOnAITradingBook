@@ -1,0 +1,112 @@
+name: Validate Constraints
+
+on:
+  push:
+    branches: [ master, main ]
+    paths:
+      - '12 Polymarket Event Impact Trading/src/**'
+      - '12 Polymarket Event Impact Trading/CONSTRAINTS.yml'
+      - '12 Polymarket Event Impact Trading/tests/**'
+      - '12 Polymarket Event Impact Trading/scripts/validate_constraints.py'
+      - '.github/workflows/validate-constraints.yml'
+  pull_request:
+    branches: [ master, main ]
+    paths:
+      - '12 Polymarket Event Impact Trading/src/**'
+      - '12 Polymarket Event Impact Trading/CONSTRAINTS.yml'
+      - '12 Polymarket Event Impact Trading/tests/**'
+      - '12 Polymarket Event Impact Trading/scripts/validate_constraints.py'
+  workflow_dispatch:  # Allow manual triggering
+
+jobs:
+  validate:
+    name: Validate System Constraints
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: 12 Polymarket Event Impact Trading
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+          pip install pytest pyyaml
+
+      - name: Run constraint validation
+        id: validate
+        run: |
+          echo "🔍 Validating system constraints..."
+          python scripts/validate_constraints.py --ci
+        continue-on-error: true
+
+      - name: Upload validation report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: constraint-validation-report
+          path: 12 Polymarket Event Impact Trading/data/constraint_validation_latest.json
+          retention-days: 30
+
+      - name: Check validation result
+        if: steps.validate.outcome == 'failure'
+        run: |
+          echo "::error::❌ Constraint validation failed!"
+          echo "::error::Review the validation report artifact for details."
+          cat data/constraint_validation_latest.json | python -m json.tool
+          exit 1
+
+      - name: Validation success
+        if: steps.validate.outcome == 'success'
+        run: |
+          echo "::notice::✅ All constraints satisfied!"
+          echo "Total constraints validated: $(cat data/constraint_validation_latest.json | python -c 'import sys,json; print(json.load(sys.stdin)["total_constraints"])')"
+
+  # Optional: Run structural tests separately for better visibility
+  structural-tests:
+    name: Run Structural Tests
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: 12 Polymarket Event Impact Trading
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+          pip install pytest
+
+      - name: Run structural tests
+        run: |
+          echo "🧪 Running structural tests..."
+          pytest tests/structural/ -v --tb=short
+
+      - name: Test summary
+        if: always()
+        run: |
+          if [ $? -eq 0 ]; then
+            echo "::notice::✅ All structural tests passed!"
+          else
+            echo "::error::❌ Some structural tests failed!"
+          fi

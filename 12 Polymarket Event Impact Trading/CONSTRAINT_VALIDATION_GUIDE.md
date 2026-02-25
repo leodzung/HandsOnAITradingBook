@@ -269,33 +269,76 @@ The validator will **alert if the old file reappears**, catching regressions aut
 
 ## CI/CD Integration
 
-Add to `.github/workflows/validate.yml`:
+### ✅ GitHub Actions Workflow (Phase 2 Complete)
 
-```yaml
-name: Validate Constraints
+The constraint validation system is **fully integrated** into GitHub Actions CI/CD pipeline.
 
-on:
-  push:
-    branches: [ master ]
-  pull_request:
+**Workflow File:** `.github/workflows/validate-constraints.yml`
 
-jobs:
-  validate:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v3
+**Triggers:**
+- ✅ Push to `master`/`main` branches
+- ✅ Pull requests to `master`/`main`
+- ✅ Manual workflow dispatch
+- ✅ Only runs when relevant files change (smart path filtering)
 
-      - name: Set up Python
-        uses: actions/setup-python@v4
-        with:
-          python-version: '3.10'
+**Two Parallel Jobs:**
 
-      - name: Install dependencies
-        run: pip install -r requirements.txt
+1. **`validate`** - Full constraint validation
+   - Runs `scripts/validate_constraints.py --ci`
+   - Uploads validation report as artifact (30-day retention)
+   - Fails the build if any violations detected
+   - Shows constraint count in success message
 
-      - name: Validate constraints
-        run: python scripts/validate_constraints.py --ci
+2. **`structural-tests`** - Structural tests only
+   - Runs `pytest tests/structural/` separately
+   - Better visibility of test failures
+   - Independent of constraint validation
+
+**Features:**
+- 📊 Validation reports saved as artifacts
+- 🚨 Clear error messages with violation details
+- ✅ Success notices with constraint counts
+- 🔄 Automatic on every push/PR
+- ⚡ Cached Python dependencies for speed
+
+**Status:** The workflow runs automatically on every commit to validate all 13 constraints.
+
+### Local Pre-Commit Hooks (Optional)
+
+Validate constraints **before committing** to catch violations early.
+
+**Setup (one-time):**
+```bash
+cd "12 Polymarket Event Impact Trading"
+./scripts/setup_git_hooks.sh
 ```
+
+This installs pre-commit hooks that run:
+1. Constraint validation (`scripts/validate_constraints.py`)
+2. Structural tests (`pytest tests/structural/`)
+
+**Usage:**
+```bash
+# Hooks run automatically on git commit
+git commit -m "Your message"
+
+# Run manually without committing
+pre-commit run --all-files
+
+# Skip hooks for emergency commits (use sparingly)
+git commit --no-verify -m "Emergency fix"
+
+# Uninstall hooks
+pre-commit uninstall
+```
+
+**Benefits:**
+- ⚡ Instant feedback (before pushing to CI)
+- 🛡️ Prevents committing violations
+- 💰 Saves CI minutes
+- 🚀 Faster development cycle
+
+**Note:** Pre-commit hooks are **optional** but recommended. The GitHub Actions workflow will catch violations even if hooks aren't installed locally.
 
 ## Troubleshooting
 

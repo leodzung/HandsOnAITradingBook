@@ -1,0 +1,47 @@
+# Pre-commit hooks for Polymarket Trading System
+# Install: pip install pre-commit && pre-commit install
+# Run manually: pre-commit run --all-files
+
+repos:
+  # Constraint validation
+  - repo: local
+    hooks:
+      - id: validate-constraints
+        name: Validate System Constraints
+        entry: python
+        language: system
+        pass_filenames: false
+        always_run: false
+        files: '^12 Polymarket Event Impact Trading/(src/|CONSTRAINTS\.yml|tests/)'
+        args:
+          - 12 Polymarket Event Impact Trading/scripts/validate_constraints.py
+          - --ci
+        verbose: true
+
+      - id: structural-tests
+        name: Run Structural Tests
+        entry: pytest
+        language: system
+        pass_filenames: false
+        always_run: false
+        files: '^12 Polymarket Event Impact Trading/(src/bots/|src/core/|tests/structural/)'
+        args:
+          - 12 Polymarket Event Impact Trading/tests/structural/
+          - -v
+          - --tb=short
+        verbose: true
+
+  # Python code quality (optional - can be enabled)
+  # - repo: https://github.com/psf/black
+  #   rev: 24.1.1
+  #   hooks:
+  #     - id: black
+  #       args: ['--line-length=100']
+  #       files: '^12 Polymarket Event Impact Trading/'
+
+  # - repo: https://github.com/pycqa/flake8
+  #   rev: 7.0.0
+  #   hooks:
+  #     - id: flake8
+  #       args: ['--max-line-length=100', '--ignore=E203,W503']
+  #       files: '^12 Polymarket Event Impact Trading/'
