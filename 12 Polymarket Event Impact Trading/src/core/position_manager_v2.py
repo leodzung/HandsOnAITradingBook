@@ -21,6 +21,11 @@ import logging
 logger = logging.getLogger(__name__)
 
 
+class DuplicatePositionError(Exception):
+    """Raised when attempting to create a position that already exists."""
+    pass
+
+
 class PositionManager:
     """
     Enhanced position manager for all trading bots.
@@ -309,7 +314,7 @@ class PositionManager:
             logger.info(f"✓ Saved position: {market_id} {outcome} (${size:.2f} @ ${entry_price:.3f})")
         except sqlite3.IntegrityError as e:
             logger.error(f"Failed to save position {market_id} {outcome}: {e}")
-            raise
+            raise DuplicatePositionError(f"Position already exists for {market_id} {outcome}") from e
         finally:
             conn.close()
 

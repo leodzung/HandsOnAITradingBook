@@ -1,0 +1,428 @@
+version: '1.0'
+constraints:
+  architecture:
+  - id: ARCH-001
+    title: PriceFetcher is single source of truth for price data
+    description: 'All price data MUST flow through src/core/price_fetcher.py.
+
+      Direct access to market[''bestBid''], market[''bestAsk''], or
+
+      market[''outcomePrices''] is FORBIDDEN to prevent price confusion bugs.
+
+      '
+    rationale: 'Historical bug: YES/NO price confusion caused incorrect P&L calculations.
+
+      PriceFetcher provides correct ASK (entry) and BID (exit) prices with
+
+      built-in safety checks.
+
+      '
+    status: enforced
+    priority: critical
+    implemented_date: '2026-02-13'
+    validation:
+    - type: import_linter
+      rule: forbid_direct_market_price_access
+      description: No code outside price_fetcher.py can access market price fields
+        directly
+      files_to_check:
+      - src/bots/trader.py
+      - src/bots/trader_price_levels.py
+      - src/bots/trader_short_expiry.py
+      - src/core/trade_executor.py
+      forbidden_patterns:
+      - market\['bestBid'\]
+      - market\['bestAsk'\]
+      - market\['outcomePrices'\]
+      - market\.get\('bestBid'\)
+      - market\.get\('bestAsk'\)
+      allowed_files:
+      - src/core/price_fetcher.py
+    - type: structural_test
+      command: pytest tests/structural/test_price_fetcher_constraint.py -v
+      description: Verify all bots use PriceFetcher methods
+    telemetry:
+    - metric: direct_market_access_violations
+      threshold: 0
+      alert: critical
+      description: Count of code patterns that bypass PriceFetcher
+  - id: ARCH-002
+    title: PositionManager V2 is single source for position data
+    description: 'All position operations MUST use src/core/position_manager.py (V2).
+
+      Direct SQLite access or separate implementations are FORBIDDEN.
+
+      '
+    rationale: 'Eliminated 500+ lines of duplicate code across 3 bots (2026-02-14).
+
+      V2 provides unified interface, backward compatibility, and consistent tracking.
+
+      '
+    status: enforced
+    priority: critical
+    implemented_date: '2026-02-14'
+    validation:
+    - type: import_linter
+      rule: forbid_direct_sqlite_access
+      files_to_check:
+      - src/bots/trader.py
+      - src/bots/trader_price_levels.py
+      - src/bots/trader_short_expiry.py
+      forbidden_patterns:
+      - import sqlite3
+      - sqlite3\.connect
+      allowed_files:
+      - src/core/position_manager.py
+    - type: structural_test
+      command: pytest tests/structural/test_position_manager_constraint.py -v
+  - id: ARCH-003
+    title: Common features centralized in common_features.py
+    description: 'Orderbook, volume, and time features MUST be extracted from
+
+      src/ml/common_features.py classes (OrderbookFeatures, VolumeFeatures, TimeFeatures).
+
+      Duplicate implementations are FORBIDDEN.
+
+      '
+    rationale: 'Eliminated 650 lines of duplicate code (2026-02-14).
+
+      Ensures consistency, enables single-point bug fixes, reduces maintenance by
+      67%.
+
+      '
+    status: enforced
+    priority: high
+    implemented_date: '2026-02-14'
+    validation:
+    - type: code_duplication_check
+      command: python scripts/check_feature_duplication.py
+      max_duplicate_lines: 10
+    - type: structural_test
+      command: pytest tests/test_common_features.py -v
+    telemetry:
+    - metric: feature_extraction_failures
+      threshold: 0
+      alert: warning
+  - id: ARCH-004
+    title: WebSocket orderbook with REST fallback
+    description: 'OrderbookManager MUST use WebSocket (real-time) as primary source,
+
+      with automatic fallback to REST (synthetic) if WebSocket unavailable.
+
+      Bots MUST register markets for WebSocket subscriptions.
+
+      '
+    rationale: 'WebSocket provides <100ms real-time orderbook data.
+
+      REST /book endpoint is BROKEN (returns stale data).
+
+      Fallback ensures reliability during connection issues.
+
+      '
+    status: enforced
+    priority: high
+    implemented_date: '2026-02-13'
+    validation:
+    - type: integration_test
+      command: pytest tests/integration/test_orderbook_manager.py -v
+    - type: behavioral_test
+      command: pytest tests/behavioral/test_websocket_fallback.py -v
+    telemetry:
+    - metric: websocket_fallback_rate
+      threshold: 0.2
+      alert: warning
+      description: Alert if >20% of requests use fallback (indicates connection issues)
+    - metric: websocket_reconnect_count
+      alert_on_spike: true
+      spike_threshold: 5
+      window_minutes: 60
+  risk_management:
+  - id: RISK-001
+    title: Stop-loss and take-profit always active
+    description: 'All positions MUST have stop-loss and take-profit thresholds set.
+
+      Position monitoring thread MUST check every 60 seconds.
+
+      No position can remain open without exit criteria.
+
+      '
+    rationale: 'Prevents unlimited losses and ensures profit capture.
+
+      Background thread provides 24/7 monitoring even during main loop pauses.
+
+      '
+    status: enforced
+    priority: critical
+    implemented_date: '2026-01-31'
+    validation:
+    - type: integration_test
+      command: pytest tests/integration/test_position_monitoring.py::test_sl_tp_always_set
+        -v
+    - type: behavioral_test
+      command: pytest tests/behavioral/test_sl_tp_enforcement.py -v
+    telemetry:
+    - metric: positions_without_sl_tp
+      threshold: 0
+      alert: critical
+      description: Count of open positions missing SL/TP
+    - metric: position_monitoring_thread_alive
+      threshold: 1
+      alert: critical
+      description: 'Binary: 1=alive, 0=dead'
+  - id: RISK-002
+    title: Circuit breaker after 3 consecutive losses
+    description: 'Trading MUST pause after 3 consecutive losing trades.
+
+      Cooldown period: 4 hours (configurable).
+
+      Auto-resume after cooldown with consecutive_losses reset to 0.
+
+      '
+    rationale: 'Prevents drawdown cascades during adverse market conditions.
+
+      Gives time to investigate issues before resuming trading.
+
+      '
+    status: enforced
+    priority: high
+    implemented_date: '2026-01-24'
+    validation:
+    - type: behavioral_test
+      command: pytest tests/behavioral/test_circuit_breaker.py -v
+    telemetry:
+    - metric: circuit_breaker_trips
+      alert_on_change: true
+      alert: warning
+      description: Alert when circuit breaker activates
+    - metric: consecutive_losses
+      threshold: 3
+      alert: info
+  - id: RISK-003
+    title: Slippage estimation before order execution
+    description: 'All trades MUST pass slippage estimation before submission.
+
+      Rejection criteria: slippage > 50 bps, insufficient liquidity, empty orderbook.
+
+      Warnings: liquidity < $500, spread > 5%, depth < 3 levels.
+
+      '
+    rationale: 'Prevents execution at unfavorable prices.
+
+      Ensures sufficient liquidity for position exit.
+
+      '
+    status: enforced
+    priority: high
+    implemented_date: '2026-02-09'
+    validation:
+    - type: integration_test
+      command: pytest tests/integration/test_slippage_estimation.py -v
+    telemetry:
+    - metric: slippage_rejection_rate
+      threshold: 0.3
+      alert: warning
+      description: Alert if >30% trades rejected for slippage (may need threshold
+        adjustment)
+    - metric: actual_slippage_avg
+      threshold: 0.005
+      alert: warning
+      description: Average slippage in executed trades (50 bps threshold)
+  model_quality:
+  - id: ML-001
+    title: "Cross-validation (k\u22655) before model deployment"
+    description: "All ML models MUST pass 5-fold walk-forward cross-validation before\
+      \ deployment.\nProduction readiness criteria:\n  - ROC-AUC mean \u2265 0.70\n\
+      \  - ROC-AUC std < 0.10\n  - Degradation (train AUC - test AUC) < 0.10\n"
+    rationale: 'Walk-forward validation prevents lookahead bias (trains on past, tests
+      on future).
+
+      Production gates ensure models generalize to unseen data.
+
+      '
+    status: enforced
+    priority: critical
+    implemented_date: '2026-02-09'
+    validation:
+    - type: pre_deployment_gate
+      command: python scripts/validate_model_quality.py --model-path data/models/CANDIDATE_MODEL.pkl
+      required_metrics:
+        roc_auc_mean: '>= 0.70'
+        roc_auc_std: < 0.10
+        degradation: < 0.10
+    telemetry:
+    - metric: deployed_model_auc
+      threshold: 0.7
+      alert: critical
+      description: Alert if deployed model AUC drops below 0.70
+    - metric: days_since_last_retrain
+      threshold: 30
+      alert: warning
+      description: Models should be retrained at least monthly
+  - id: ML-002
+    title: Feature drift detection and alerting
+    description: "Feature importance MUST be tracked after each training run.\nAlert\
+      \ on drift metrics:\n  - Kendall's Tau (rank stability) < 0.70 \u2192 Warning\n\
+      \  - Top-5 overlap < 0.60 \u2192 Critical\n  - L1 distribution shift > 0.30\
+      \ \u2192 Warning\n  - Importance drops (top feature < 50% of previous) \u2192\
+      \ Critical\n"
+    rationale: 'Early warning for model staleness, data quality issues, market regime
+      changes.
+
+      Prevents performance degradation before it impacts live trading.
+
+      '
+    status: enforced
+    priority: high
+    implemented_date: '2026-02-21'
+    validation:
+    - type: continuous_monitoring
+      command: python scripts/analyze_feature_drift.py --auto --days 7
+    telemetry:
+    - metric: kendall_tau_rank_stability
+      threshold: 0.7
+      alert: warning
+      description: Feature importance rank correlation vs baseline
+    - metric: top_k_overlap
+      threshold: 0.6
+      alert: critical
+      description: Overlap of top-5 features with baseline
+    - metric: l1_distribution_shift
+      threshold: 0.3
+      alert: warning
+    - metric: importance_drops_detected
+      threshold: 0
+      alert: critical
+      description: Count of top features that lost >50% importance
+  - id: ML-003
+    title: Training labels use correct token-condition mapping
+    description: "Label creation MUST use maker_asset_id \u2192 token_condition_map\
+      \ \u2192 outcome_index.\nPrice-based heuristics (price > 0.5 = YES) are FORBIDDEN\
+      \ - they create ~50% label errors.\n"
+    rationale: 'Critical bug (2026-02-23): Old logic assumed price indicates outcome
+      traded.
+
+      Correct mapping: maker_asset_id identifies actual token purchased (YES vs NO).
+
+      This fix improved model accuracy from 60% (random) to 95%.
+
+      '
+    status: enforced
+    priority: critical
+    implemented_date: '2026-02-23'
+    validation:
+    - type: structural_test
+      command: pytest tests/test_label_creation.py::test_uses_token_condition_map
+        -v
+    - type: label_quality_check
+      command: python scripts/validate_label_quality.py --sample-size 100
+      description: Spot-check 100 random labels against known outcomes
+technical_debt:
+  resolved:
+  - id: DEBT-001
+    title: Consolidate duplicated position management code
+    description: 3 separate implementations (trader.py, trader_price_levels.py, trader_short_expiry.py)
+    status: resolved
+    resolved_date: '2026-02-14'
+    impact: Eliminated ~500 lines of duplicate code
+    validation:
+    - type: filesystem_check
+      command: test ! -f src/core/position_manager_v1.py
+      description: Old V1 file should not exist
+    - type: import_check
+      command: '! grep -r ''import position_manager'' src/bots/ | grep -v ''position_manager.py'''
+      description: All bots use unified position_manager.py
+  - id: DEBT-002
+    title: WebSocket reconnection logic
+    description: No exponential backoff, limited retries
+    status: resolved
+    resolved_date: '2026-02-14'
+    impact: "Exponential backoff (1s\u219260s), unlimited retries, \xB130% jitter"
+    validation:
+    - type: integration_test
+      command: pytest tests/integration/test_websocket_reconnection.py -v
+  - id: DEBT-003
+    title: Backup files cleanup
+    description: Remove .backup files from repository
+    status: resolved
+    resolved_date: '2026-02-14'
+    validation:
+    - type: filesystem_check
+      command: '! find src/ -name ''*.backup'' | grep .'
+      description: No .backup files should exist
+  active:
+  - id: DEBT-004
+    title: Separate YES/NO price tracking
+    description: 'Currently only tracking YES price as market probability proxy.
+
+      Should track both YES and NO prices separately for better momentum detection.
+
+      '
+    status: planned
+    priority: medium
+    effort_hours: 2
+    blocked_by: []
+    acceptance_criteria:
+    - PriceTracker accepts {market_id}_YES and {market_id}_NO tracking IDs
+    - Feature extractors handle both price histories
+    - Tests verify YES/NO momentum signals work independently
+    suggested_implementation: 'self.price_tracker.track_price(f"{market_id}_YES",
+      entry_prices.yes_price)
+
+      self.price_tracker.track_price(f"{market_id}_NO", entry_prices.no_price)
+
+      '
+operations:
+- id: OPS-001
+  title: Bot health monitoring with liveness detection
+  description: 'BotHealthMonitor MUST run checks every 15 minutes.
+
+    Alert on: silent bots (>30 min), collection rate drops (>50%), database corruption.
+
+    '
+  status: enforced
+  priority: high
+  implemented_date: '2026-02-15'
+  validation:
+  - type: integration_test
+    command: pytest tests/integration/test_bot_health_monitor.py -v
+  telemetry:
+  - metric: bots_silent
+    threshold: 0
+    alert: critical
+    description: Count of bots without activity >30 minutes
+  - metric: collection_rate_drop
+    threshold: 0.5
+    alert: warning
+    description: Alert if collection rate drops >50%
+- id: OPS-002
+  title: Position persistence across restarts
+  description: 'All positions MUST persist in SQLite databases.
+
+    Bots MUST reload positions on startup.
+
+    No position loss allowed during restart/crash.
+
+    '
+  status: enforced
+  priority: critical
+  implemented_date: '2026-01-31'
+  validation:
+  - type: behavioral_test
+    command: pytest tests/behavioral/test_position_persistence.py -v
+  telemetry:
+  - metric: positions_lost_on_restart
+    threshold: 0
+    alert: critical
+metadata:
+  last_validated: '2026-02-24T19:39:59.330749'
+  validation_status: PASS
+  total_constraints: 13
+  enforced_constraints: 13
+  contact:
+    maintainer: Trading System Team
+    documentation: See IMPROVEMENT_CHECKLIST.md for context
+  related_files:
+  - scripts/validate_constraints.py
+  - IMPROVEMENT_CHECKLIST.md
+  - MEMORY.md
+  - .github/workflows/validate_constraints.yml

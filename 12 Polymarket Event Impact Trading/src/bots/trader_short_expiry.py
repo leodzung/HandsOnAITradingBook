@@ -23,7 +23,6 @@ import os
 from datetime import datetime, timezone, timedelta
 from typing import Dict, List, Optional, Tuple
 import pandas as pd
-import sqlite3
 
 # Add parent directory to path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -32,7 +31,7 @@ from features.short_expiry_features import ShortExpiryFeatureExtractor
 from core.polymarket_client import PolymarketClient
 from core.price_fetcher import PriceFetcher
 from core.slippage_estimator import SlippageEstimator
-from core.position_manager_v2 import PositionManager
+from core.position_manager_v2 import PositionManager, DuplicatePositionError
 from monitoring.telegram_notifier import TelegramNotifier
 from utils.price_tracker import PriceTracker
 from ml.ml_predictor import MLPredictor, MLPredictorFactory
@@ -909,7 +908,7 @@ class ShortExpiryTrader:
                     'features_json': features.to_json()
                 }
             )
-        except sqlite3.IntegrityError:
+        except DuplicatePositionError:
             # Position already exists (likely from another bucket processing the same market)
             # Refund the balance and skip this trade
             logger.warning(
