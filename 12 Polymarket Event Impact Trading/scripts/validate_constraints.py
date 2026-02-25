@@ -290,15 +290,84 @@ class ConstraintValidator:
         }
 
     def _check_telemetry(self, constraint: Dict[str, Any]) -> Dict[str, bool]:
-        """Check telemetry metrics (stub - requires actual telemetry system)"""
-        # This is a placeholder - would integrate with actual monitoring
+        """Check telemetry metrics against thresholds"""
         print(f"    {Colors.CYAN}📊 Telemetry Checks:{Colors.END}")
 
-        for metric_def in constraint.get('telemetry', []):
-            metric_name = metric_def['metric']
-            print(f"       ℹ️  {metric_name}: (telemetry integration pending)")
+        all_passed = True
 
-        return {'all_passed': True}
+        # Try to import telemetry system
+        try:
+            sys.path.insert(0, str(Path(__file__).parent.parent / 'src'))
+            from monitoring.telemetry import TradeTelemetry
+
+            telemetry = TradeTelemetry()
+
+            # First, collect current metrics
+            telemetry.collect_system_metrics()
+
+            # Get latest metrics
+            latest_metrics = telemetry.get_latest_metrics()
+
+            for metric_def in constraint.get('telemetry', []):
+                metric_name = metric_def['metric']
+                threshold = metric_def.get('threshold')
+                alert_level = metric_def.get('alert', 'warning')
+
+                if metric_name not in latest_metrics:
+                    print(f"       ℹ️  {metric_name}: Not available (no data collected yet)")
+                    continue
+
+                value = latest_metrics[metric_name]
+
+                # Check threshold (if specified)
+                if threshold is not None:
+                    # Default to <= for thresholds (value should be at or below threshold)
+                    if value <= threshold:
+                        print(f"       {Colors.GREEN}✅ {metric_name}: {value} ≤ {threshold}{Colors.END}")
+                    else:
+                        all_passed = False
+                        severity_color = Colors.RED if alert_level == 'critical' else Colors.YELLOW
+
+                        self.violations.append({
+                            'constraint_id': constraint['id'],
+                            'title': f"Telemetry: {metric_name}",
+                            'validation_type': 'telemetry',
+                            'error': f"{metric_name}={value} exceeds threshold {threshold}",
+                            'severity': alert_level
+                        })
+
+                        print(f"       {severity_color}❌ {metric_name}: {value} > {threshold}{Colors.END}")
+
+                # Check for alert_on_change (event counting)
+                elif metric_def.get('alert_on_change'):
+                    # Count events for this metric
+                    event_count = telemetry.get_event_count(metric_name, hours=24)
+
+                    if event_count > 0:
+                        all_passed = False
+                        severity_color = Colors.RED if alert_level == 'critical' else Colors.YELLOW
+
+                        self.warnings.append({
+                            'constraint_id': constraint['id'],
+                            'title': f"Telemetry: {metric_name}",
+                            'validation_type': 'telemetry',
+                            'error': f"{event_count} {metric_name} event(s) in last 24h",
+                            'severity': alert_level
+                        })
+
+                        print(f"       {severity_color}⚠️  {metric_name}: {event_count} event(s) detected{Colors.END}")
+                    else:
+                        print(f"       {Colors.GREEN}✅ {metric_name}: No events{Colors.END}")
+                else:
+                    # Just report current value
+                    print(f"       ℹ️  {metric_name}: {value}")
+
+        except ImportError:
+            print(f"       ℹ️  Telemetry system not available (monitoring.telemetry not found)")
+        except Exception as e:
+            print(f"       ⚠️  Telemetry check error: {str(e)}")
+
+        return {'all_passed': all_passed}
 
     def _check_technical_debt_regressions(self) -> None:
         """Check if resolved technical debt has regressed"""
