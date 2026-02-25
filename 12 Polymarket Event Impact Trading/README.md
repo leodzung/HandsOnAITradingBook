@@ -1,688 +1,477 @@
 # Polymarket Event Impact Trading System
 
-An AI-driven trading system for Polymarket prediction markets with three specialized trading bots.
+A **self-validating, self-monitoring, and self-improving** algorithmic trading system for Polymarket prediction markets. Features machine learning-based event detection, real-time orderbook analysis, and autonomous constraint validation using harness engineering principles.
 
-## Active Trading Bots
+---
 
-### 1. Short-Expiry Bot (`trader_short_expiry.py`) - **Currently Running**
-Specializes in short-duration markets (0-7 days):
-- **Ultra-short**: 0-24 hours (high urgency, time decay focus)
-- **Short**: 1-3 days (momentum signals)
-- **Medium**: 3-7 days (fundamental analysis)
-
-**Current Status (2026-02-11):**
-- ✅ Running in paper trading mode
-- 📊 10 open positions (ultra_short bucket)
-- ⏳ Collecting training data (need 100+ closed positions)
-- 📅 ETA to ML model: 7-10 days
-
-### 2. Event-Based Bot (`trader.py`)
-Detects breaking news and predicts market impact:
-- News monitoring (GDELT, RSS, NewsAPI)
-- Sentiment analysis with FinBERT
-- Event-to-market matching
-
-### 3. Price-Level Bot (`trader_price_levels.py`)
-Technical price-based trading:
-- Support/resistance levels
-- Volume analysis
-- Order book microstructure
-
-## Data & Training Status
-
-⚠️ **Important:** Before attempting to train models, check current data availability:
-
-```bash
-python3 scripts/check_data_status.py
-```
-
-**Current Historical Data:**
-- ✅ 1,049 markets with trades + outcomes
-- ❌ All are 90+ day markets (long-duration)
-- ❌ Zero short-expiry (≤7 days) historical data
-
-**For Short-Expiry Model Training:**
-- Live data collection in progress via `trader_short_expiry.py`
-- Need 100-150 closed positions (ETA: 7-10 days)
-- See `docs/DATA_STATUS.md` for detailed explanation
-
-## Strategy Overview
-
-This system implements machine learning approaches to trading Polymarket prediction markets:
-
-1. **Event Detection** - Monitors news sources (RSS, NewsAPI, Twitter) for breaking events
-2. **Event Matching** - Matches detected events to relevant Polymarket markets
-3. **Feature Extraction** - Extracts features from:
-   - Event sentiment and credibility
-   - Market price history and volatility
-   - Order book depth and spread
-   - Volume patterns
-4. **ML Prediction** - Predicts price movement direction (up/down/neutral)
-5. **Trade Execution** - Executes trades with confidence-based position sizing
-6. **Risk Management** - Enforces position limits and stop losses
-
-## Why This Strategy?
-
-- **Fast Execution Edge**: Acts on news within seconds-minutes
-- **Scalable**: Works across all market categories (politics, crypto, sports)
-- **Data-Driven**: Uses ML instead of manual predictions
-- **Lower Risk**: Diversifies across many small trades vs. few large bets
-- **Testable**: Can backtest on historical data
-
-## Repository Structure
-
-```
-12 Polymarket Event Impact Trading/
-├── README.md                   # This file
-├── requirements.txt            # Python dependencies
-├── requirements-test.txt       # Test dependencies
-├── pytest.ini                  # Test configuration
-├── Dockerfile                  # Container definition
-├── docker-compose.yml          # Multi-container setup
-├── .gitignore                  # Git ignore patterns
-│
-├── src/                        # Source code
-│   ├── bots/                   # Trading bots
-│   │   ├── trader.py           # Event-based trading bot
-│   │   ├── trader_price_levels.py  # Price-level trading bot
-│   │   └── arbitrage_bot.py    # Cross-market arbitrage bot
-│   ├── core/                   # Core trading logic
-│   │   ├── polymarket_client.py    # Polymarket API integration
-│   │   ├── position_manager.py     # Position persistence & tracking
-│   │   ├── exposure_manager.py     # Risk and exposure management
-│   │   └── slippage_estimator.py   # Slippage estimation
-│   ├── collectors/             # Data collectors
-│   │   ├── gdelt_collector.py      # GDELT event data
-│   │   ├── alchemy_collector.py    # On-chain trade data
-│   │   └── data_collector.py       # Generic data collection
-│   ├── features/               # Feature engineering
-│   │   ├── feature_extractor.py    # Feature extraction pipeline
-│   │   ├── price_level_features.py # Price-level features
-│   │   └── enhanced_feature_generator.py  # Advanced features
-│   ├── models/                 # ML models & training
-│   │   ├── models.py           # Model definitions
-│   │   ├── cross_validation.py # K-fold validation system
-│   │   ├── cv_utils.py         # CV utilities
-│   │   ├── train_on_real_data.py   # Training scripts
-│   │   └── research.ipynb      # Research notebook
-│   ├── monitoring/             # Monitoring & alerts
-│   │   ├── dashboard.py        # Performance dashboard
-│   │   ├── telegram_notifier.py    # Telegram notifications
-│   │   └── monitor_collectors.py   # Data collector monitoring
-│   └── utils/                  # Utilities
-│       ├── price_tracker.py    # Price tracking
-│       ├── market_mapper.py    # Token to condition ID mapping
-│       ├── external_data.py    # External data sources
-│       └── event_detector.py   # Event detection system
-│
-├── config/                     # Configuration files
-│   ├── config.json             # Event trader config
-│   ├── config_price_levels.json    # Price-level trader config
-│   ├── config_arbitrage.json   # Arbitrage bot config
-│   ├── telegram_config.json    # Telegram bot config
-│   └── telegram_config.json.example  # Example config
-│
-├── scripts/                    # Utility scripts
-│   ├── deployment/             # Deployment automation
-│   │   ├── deploy.sh           # ⭐ Main deployment script
-│   │   └── backup_databases.sh # Database backup
-│   ├── setup/                  # Initial setup
-│   │   ├── setup_cron.sh       # Cron job setup
-│   │   └── setup_monitoring_cron.py  # Monitoring setup
-│   └── maintenance/            # Maintenance scripts
-│       ├── restart_all.sh      # Restart all bots
-│       ├── check_processes.sh  # Check bot status
-│       └── demo.py             # Demo/testing
-│
-├── tests/                      # Test suite
-│   ├── test_trader.py          # Trading bot tests
-│   ├── test_models.py          # Model tests
-│   ├── test_integration.py     # Integration tests
-│   └── README.md               # Test documentation
-│
-├── data/                       # Databases & state files
-│   ├── positions.db            # Event trader positions
-│   ├── positions_price_level.db    # Price-level positions
-│   ├── price_tracking.db       # Price tracking database
-│   └── paper_trading_*.json    # Balance tracking
-│
-├── logs/                       # Log files
-│   ├── trading.out             # Event trader logs
-│   ├── trading_price_levels.out    # Price-level trader logs
-│   └── arbitrage.out           # Arbitrage bot logs
-│
-├── backups/                    # Backups (created by deploy.sh)
-│   └── collectors/             # Data collector backups
-│
-└── docs/                       # Documentation
-    ├── deployment/             # Deployment guides
-    ├── development/            # Development docs
-    ├── guides/                 # How-to guides
-    └── status-reports/         # Status reports & fixes
-```
-
-## Quick Start
-
-### 1. Installation
+## ⚡ Quick Start (5 Minutes)
 
 ```bash
 # Install dependencies
 pip install -r requirements.txt
 
-# Create config file
-python src/utils/config.py
+# Configure (if needed)
+cp config/config.json.example config/config.json
+
+# Validate system constraints
+python scripts/validate_constraints.py
+
+# Start a bot (paper trading by default)
+python src/bots/trader.py
 ```
 
-### 2. Configure API Keys
-
-Edit `config/config.json` and add your API keys:
-
-```json
-{
-  "polymarket_api_key": "YOUR_API_KEY",
-  "news_api_key": "YOUR_NEWS_API_KEY",
-  "paper_trading": true
-}
-```
-
-**Required API Keys:**
-- **Polymarket**: Contact Polymarket for API access
-- **NewsAPI**: Get free key at https://newsapi.org (500 requests/day)
-
-**Optional:**
-- **Twitter API**: For social sentiment (requires approval)
-
-### 3. Train Models
-
-**Check data availability first:**
-```bash
-python3 scripts/check_data_status.py
-```
-
-**For Event-Based Bot:**
-```bash
-jupyter notebook src/models/research.ipynb
-```
-
-**For Short-Expiry Bot:**
-```bash
-# Wait until 100+ positions have closed (7-10 days)
-# Then run:
-python3 scripts/train_short_expiry_from_live.py
-```
-
-**For Price-Level Bot:**
-```bash
-python3 src/models/train_price_level_model.py
-```
-
-See `docs/DATA_STATUS.md` for detailed data requirements and training readiness.
-
-### 4. Running the Bots
-
-**Short-Expiry Bot (currently collecting training data):**
-```bash
-cd "12 Polymarket Event Impact Trading"
-nohup python3 src/bots/trader_short_expiry.py >> logs/short_expiry.out 2>&1 &
-```
-
-**Or use the deployment script for other bots:**
-
-**Always use the deployment script when starting or restarting bots:**
-
-```bash
-cd "12 Polymarket Event Impact Trading"
-
-# Check current status
-./scripts/deployment/deploy.sh status
-
-# Deploy specific bot
-./scripts/deployment/deploy.sh price-level    # or: pl
-./scripts/deployment/deploy.sh event          # or: ev
-./scripts/deployment/deploy.sh arbitrage      # or: arb
-./scripts/deployment/deploy.sh both           # Deploy price-level + event traders
-./scripts/deployment/deploy.sh all            # Deploy all three bots
-
-# Reset positions (use after code changes that affect position storage)
-./scripts/deployment/deploy.sh reset          # Clear all positions, reset balances
-./scripts/deployment/deploy.sh reset-and-deploy  # Reset + deploy both traders
-```
-
-**What the deploy script does:**
-1. Backs up current logs to `backups/` directory
-2. Gracefully stops the running process
-3. Shows current database state (open positions, balance)
-4. Starts new process with `nohup`
-5. Verifies successful startup
-
-**When to redeploy:**
-- After ANY code change to bot files in `src/bots/`
-- After changes to config files in `config/`
-- After database resets or position clearing
-- After changes to imported modules in `src/core/`, `src/features/`, etc.
-
-### 5. Paper Trading
-
-Test the strategy without real money:
-
-```bash
-# Edit config/config.json: "paper_trading": true
-./scripts/deployment/deploy.sh both
-```
-
-Monitor performance for 1-2 weeks before going live.
-
-### 6. Live Trading
-
-Once confident:
-
-```bash
-# Edit config/config.json: "paper_trading": false
-./scripts/deployment/deploy.sh both
-```
-
-**WARNING**: Start with small position sizes!
-
-## Configuration
-
-Key parameters in `config.json`:
-
-### Trading Parameters
-- `min_confidence`: Minimum model confidence to trade (0.65 = 65%)
-- `min_expected_return`: Minimum expected return to trade (0.03 = 3%)
-- `max_position_size`: Maximum $ per trade (default: $100)
-- `max_positions`: Maximum concurrent positions (default: 10)
-- `hold_time_hours`: How long to hold positions (default: 24)
-
-### Risk Management
-- `max_daily_loss`: Maximum loss before stopping (default: $500)
-- `paper_trading`: Set to `false` for real trading
-
-### Market Filters (Applied at API Level for Efficiency)
-- `min_market_volume`: Only trade markets with >$X volume (default: $1000)
-- `min_liquidity`: Minimum market liquidity (price-level trader only, default: $500)
-- `min_hours_to_expiry`: Avoid markets expiring too soon (event trader, default: 2 hours)
-- `max_hours_to_expiry`: Avoid markets too far in future (event trader, default: 8760 hours = 365 days)
-- `min_days_to_expiry`: Minimum days to expiry (price-level trader, default: 1 day)
-- `max_days_to_expiry`: Maximum days to expiry (price-level trader, default: 365 days)
-
-**Note**: As of 2026-02-08, the system can discover **27,523+ active markets** on Polymarket using enhanced API filtering.
-
-## How It Works
-
-### 1. Event Detection
-
-The system monitors multiple news sources:
-
-```python
-# RSS Feeds (free, no API key)
-- Bloomberg Markets
-- CoinDesk
-- Reuters
-
-# NewsAPI (requires key)
-- Searches for keywords
-- Filters by credibility
-
-# Twitter (optional)
-- Track trending topics
-- Sentiment analysis
-```
-
-### 2. Feature Extraction
-
-For each event + market pair:
-
-**Event Features:**
-- Sentiment score (-1 to 1)
-- Source credibility (0 to 1)
-- Keyword overlap with market
-- Time since published
-
-**Market Features:**
-- Current price
-- Price volatility (1h, 24h)
-- Volume trend
-- Order book spread
-- Bid-ask imbalance
-
-### 3. ML Prediction
-
-Models available:
-- **Random Forest** (default) - Fast, interpretable
-- **Gradient Boosting** - Higher accuracy
-- **Logistic Regression** - Simple baseline
-- **Ensemble** - Combines multiple models
-
-Output: Prediction + Confidence
-```
-Prediction: 1 (up), 0 (neutral), -1 (down)
-Confidence: 0.75 (75% certain)
-```
-
-### 4. Signal Generation
-
-```python
-if confidence > min_confidence:
-    if prediction == UP and price < 0.95:
-        signal = BUY
-    elif prediction == DOWN and price > 0.05:
-        signal = SELL
-    else:
-        signal = HOLD
-```
-
-### 5. Position Sizing
-
-Uses confidence-based Kelly criterion:
-
-```python
-position_size = base_size * (confidence - 0.5) * 2
-```
-
-Higher confidence → Larger position
-
-### 6. Risk Management
-
-**Position Limits:**
-- Max 10 concurrent positions (diversification)
-- Max $100 per position (limit single-trade risk)
-
-**Stop Loss:**
-- Daily loss limit: $500
-- Bot stops trading if hit
-
-**Time-Based Exit:**
-- Closes positions after 24 hours
-- Avoids prolonged exposure
-
-## Backtesting
-
-The `backtester.py` module simulates historical trading:
-
-```python
-# Run backtest
-backtester = Backtester(
-    initial_capital=10000,
-    position_size=100,
-    hold_time_hours=24
-)
-
-results = backtester.run_backtest(signals_df, price_data)
-```
-
-**Metrics Calculated:**
-- Win rate
-- Profit factor
-- Sharpe ratio
-- Maximum drawdown
-- Total return
-
-## Performance Tracking
-
-The system tracks all predictions:
-
-```python
-tracker = ModelPerformanceTracker()
-tracker.record_prediction(
-    prediction=1,
-    actual=1,
-    confidence=0.75,
-    market_id='market_123'
-)
-
-stats = tracker.get_statistics()
-# Returns: accuracy, accuracy by class, confidence distribution
-```
-
-## Example Workflow
-
-1. **News breaks**: "Trump announces 2028 candidacy"
-2. **Event detected**: NewsAPI picks it up within 30 seconds
-3. **Market matched**: "Will Trump run in 2028?" (currently $0.35)
-4. **Features extracted**:
-   - Sentiment: +0.8 (positive)
-   - Source: Bloomberg (credible)
-   - Market volatility: Low
-5. **Model predicts**: UP with 78% confidence
-6. **Signal generated**: BUY at $0.35
-7. **Trade executed**: $100 position (285 shares)
-8. **Price moves**: $0.35 → $0.42 in 2 hours
-9. **Position closed**: Sell at $0.42 for $20 profit
-
-## Advanced Usage
-
-### Using FinBERT for Sentiment
-
-For better sentiment analysis:
-
-```bash
-pip install transformers torch
-```
-
-Edit `config/config.json`:
-```json
-{
-  "use_transformers": true
-}
-```
-
-### Custom Event Sources
-
-Add custom RSS feeds in `config/config.json`:
-
-```json
-{
-  "rss_feeds": [
-    "https://your-custom-feed.com/rss",
-    "https://another-source.com/feed"
-  ]
-}
-```
-
-### Multi-Model Ensemble
-
-Train multiple models and combine:
-
-```python
-from src.models.models import EnsemblePredictor
-
-ensemble = EnsemblePredictor(
-    model_types=['random_forest', 'gradient_boost', 'logistic']
-)
-ensemble.train(X_train, y_train)
-```
-
-## Troubleshooting
-
-**Problem**: No events detected
-- Check API keys in `config/config.json`
-- Verify RSS feeds are accessible
-- Increase `event_lookback_hours`
-
-**Problem**: Model accuracy too low
-- Collect more training data
-- Try different model types
-- Adjust feature engineering
-- Increase `min_confidence` threshold
-
-**Problem**: No trades executed
-- Lower `min_confidence` (but not below 0.60)
-- Lower `min_expected_return`
-- Check market filters (volume, expiry)
-
-**Problem**: Daily loss limit hit
-- Reduce `max_position_size`
-- Increase `min_confidence`
-- Review losing trades in performance tracker
-
-## On-Chain Trade Collection & Mapping
-
-The system collects on-chain trades from Polymarket's smart contract and maps them to market condition IDs.
-
-### Two-Step Process
-
-**Step 1: Collect Trades**
-```bash
-# Incremental update (recommended for cron jobs)
-python3 src/collectors/alchemy_collector.py --incremental
-
-# Or backfill historical data
-python3 src/collectors/alchemy_collector.py --backfill-days 30
-```
-
-**Step 2: Map Token IDs to Condition IDs**
-```bash
-# Update mappings and populate condition_ids
-python3 src/utils/market_mapper.py --map-all
-```
-
-### Why Two Steps?
-
-- **Token IDs** (used on-chain): `"123456789"`
-- **Condition IDs** (used in Polymarket API): `"0xabc...xyz"`
-
-The mapper connects these by querying Polymarket's Gamma API.
-
-### Automated Collection
-
-**Option 1: Use the helper script**
-```bash
-./scripts/maintenance/collect_and_map.sh --incremental
-```
-
-**Option 2: Use cron**
-```cron
-# Collect and map every hour
-0 * * * * cd /path/to/project && python3 src/collectors/alchemy_collector.py --incremental && python3 src/utils/market_mapper.py --map-all >> logs/cron_output.log 2>&1
-```
-
-**Option 3: Use training_pipeline.py**
-```python
-from src.utils.training_pipeline import TrainingDataPipeline
-pipeline = TrainingDataPipeline()
-pipeline.run_full_pipeline()  # Handles both steps automatically
-```
-
-### Checking Mapping Status
-
-```bash
-python3 src/utils/market_mapper.py --stats
-
-# Or query directly
-sqlite3 data/alchemy_trades.db "
-SELECT
-  COUNT(*) as total_trades,
-  COUNT(DISTINCT condition_id) as unique_markets,
-  COUNT(CASE WHEN condition_id IS NOT NULL THEN 1 END) as mapped_trades,
-  ROUND(100.0 * COUNT(CASE WHEN condition_id IS NOT NULL THEN 1 END) / COUNT(*), 1) as coverage_pct
-FROM on_chain_trades;
-"
-```
-
-Expected coverage: **90-98%** (some old/test markets may not map)
-
-## Extending the System
-
-### Strategy #1: Multi-Agent System
-
-Add specialized agents for different data sources:
-
-```python
-# Create agents
-news_agent = NewsAnalysisAgent()
-social_agent = SocialSentimentAgent()
-poll_agent = PollingDataAgent()
-
-# Meta-agent combines predictions
-meta_agent = MetaAgent([news_agent, social_agent, poll_agent])
-final_prediction = meta_agent.predict()
-```
-
-### Strategy #3: RL Market Maker
-
-Add reinforcement learning for market making:
-
-```python
-from rl_market_maker import RLAgent
-
-agent = RLAgent(
-    state_space=market_features,
-    action_space=['quote_spread', 'position_size']
-)
-agent.train()
-```
-
-## Safety & Disclaimer
-
-**⚠️ Important Warnings:**
-
-1. **Start Small**: Begin with $10-50 positions
-2. **Paper Trade First**: Run paper trading for 1-2 weeks
-3. **Monitor Closely**: Check performance daily
-4. **Risk Only What You Can Afford to Lose**
-5. **No Guarantees**: Past performance ≠ future results
-
-**Regulatory Compliance:**
-- Check local laws regarding prediction markets
-- Polymarket may have geographic restrictions
-- Keep records for tax purposes
-
-## Performance Expectations
-
-**Realistic Targets (after tuning):**
-- Win Rate: 55-60%
-- Sharpe Ratio: 1.0-1.5
-- Max Drawdown: 10-20%
-- Monthly Return: 3-8%
-
-**Note**: Performance varies based on:
-- Market conditions
-- Model quality
-- Data sources
-- Risk parameters
-
-## Resources
-
-**Polymarket:**
-- Docs: https://docs.polymarket.com
-- API: Contact Polymarket team
-
-**News APIs:**
-- NewsAPI: https://newsapi.org
-- Twitter API: https://developer.twitter.com
-
-**ML/Finance:**
-- FinBERT: https://huggingface.co/ProsusAI/finbert
-- Scikit-learn: https://scikit-learn.org
-
-## Contributing
-
-This is part of the "Hands-On AI Trading" book repository. Improvements welcome!
-
-Ideas for contribution:
-- Better sentiment models
-- More data sources
-- Improved backtesting
-- Portfolio optimization
-- Risk management enhancements
-
-## License
-
-See main repository LICENSE
-
-## Support
-
-For questions:
-1. Check the research notebook (`src/models/research.ipynb`)
-2. Review configuration options in `config/`
-3. Check logs in `logs/` directory
-4. Open an issue in the main repo
+**Paper Trading Mode** (Default):
+- Event trader: $1000 virtual balance
+- Price-level trader: $500 virtual balance
+- Short-expiry trader: $500 virtual balance
+
+Set `"paper_trading": false` in config to trade with real funds.
 
 ---
 
-**Built with:** Python, scikit-learn, pandas, NumPy
+## 📐 System Architecture
 
-**Author:** Hands-On AI Trading Book
+### Three Trading Strategies
 
-**Version:** 1.0.0
+| Bot | Strategy | Position DB |
+|-----|----------|-------------|
+| **Event Trader** | ML + news event impact prediction | `data/positions.db` |
+| **Price-Level Trader** | Mean reversion at support/resistance | `data/positions_price_level.db` |
+| **Short-Expiry Trader** | Time-decay arbitrage (<7 days) | `data/positions_short_expiry.db` |
+
+### Centralized Services (Single Source of Truth)
+
+All bots use these shared services to enforce consistency:
+
+```
+┌──────────────────────────────────────────────┐
+│             Trading Bots (3)                 │
+│  Event | Price-Level | Short-Expiry          │
+└────────────────┬─────────────────────────────┘
+                 │
+        ┌────────┴────────┐
+        │ Core Services   │
+        ├─────────────────┤
+        │ • PriceFetcher  │  ← Single source of truth for prices
+        │ • TradeExecutor │  ← Centralized validation pipeline
+        │ • PositionMgr   │  ← SQLite persistence
+        │ • OrderbookMgr  │  ← WebSocket + fallback
+        └─────────────────┘
+```
+
+#### **CRITICAL**: PriceFetcher Pattern
+
+**Rule**: ALWAYS use PriceFetcher for ANY price data.
+
+✅ **Correct**:
+```python
+from core.price_fetcher import PriceFetcher
+entry_prices = price_fetcher.get_entry_prices(market_id)
+```
+
+❌ **Forbidden** (auto-detected by constraints):
+```python
+price = market['bestAsk']  # NEVER
+price = market['outcomePrices']['YES']  # NEVER
+```
+
+**Why**: Handles YES/NO confusion, validates prices, manages WebSocket fallback.
+
+---
+
+## 🛡️ Constraint Validation System (Harness Engineering)
+
+### Philosophy
+
+> **"If you need documentation to explain how to use a system, the system isn't well-designed."**
+
+Instead of 104 markdown files that get stale, we use:
+- ✅ **CONSTRAINTS.yml** - Machine-readable, auto-validated rules
+- ✅ **Self-documenting code** - Good names, clear structure
+- ✅ **Git commits** - Historical record
+- ❌ NOT markdown documentation
+
+### Four Phases
+
+| Phase | Feature | Benefit |
+|-------|---------|---------|
+| **1. Foundation** | Machine-readable constraints | Prevents regressions automatically |
+| **2. CI/CD** | GitHub Actions validation | Runs on every commit |
+| **3. Telemetry** | Runtime metric monitoring | Validates actual behavior |
+| **4. Self-Improvement** | Pattern detection + auto-remediation | System learns from failures |
+
+### Validate Constraints
+
+```bash
+# Validate all constraints
+python scripts/validate_constraints.py
+
+# Validate specific constraint
+python scripts/validate_constraints.py --id ARCH-001
+
+# CI mode (used in GitHub Actions)
+python scripts/validate_constraints.py --ci
+```
+
+### Example Constraint
+
+**ARCH-001: PriceFetcher is single source of truth**
+```yaml
+validation:
+  - type: import_linter
+    forbidden_patterns: ["market\\['bestBid'\\]"]
+  - type: structural_test
+    test_file: tests/structural/test_price_fetcher_constraint.py
+telemetry:
+  - metric: direct_market_access_violations
+    threshold: 0
+    alert: critical
+```
+
+If you try to access `market['bestBid']` directly:
+- ❌ Import linter fails
+- ❌ Structural tests fail
+- ❌ CI blocks your commit
+- ✅ System enforces correct pattern automatically
+
+---
+
+## 🔧 Core Services
+
+### 1. PriceFetcher (`src/core/price_fetcher.py`)
+
+**Single source of truth for ALL price data.**
+
+```python
+from core.price_fetcher import PriceFetcher
+
+# Entry prices (ASK - what you pay to buy)
+entry_prices = price_fetcher.get_entry_prices(market_id)
+
+# Exit prices (BID - what you get when selling)
+exit_prices = price_fetcher.get_exit_prices(market_id)
+```
+
+**Handles**:
+- YES/NO price confusion detection
+- Price validation (0.01 ≤ price ≤ 0.99)
+- WebSocket orderbook (real-time) or REST fallback
+- Polymarket API quirks (YES + NO ≠ 1.0)
+
+### 2. OrderbookManager (`src/core/orderbook_manager.py`)
+
+Dual-mode orderbook source with automatic fallback.
+
+- **WebSocket Mode** (primary): Real-time updates, <1s latency
+- **REST Mode** (fallback): Synthetic orderbook from `/price` endpoint
+- **Auto-reconnection**: Exponential backoff (1s → 60s with jitter)
+
+### 3. TradeExecutor (`src/core/trade_executor.py`)
+
+Centralized validation: price → slippage → execution.
+
+```python
+executor.execute_trade(
+    market_id=market_id,
+    outcome='YES',
+    size=100.0,
+    expected_price=0.65,
+    order_type='MARKET'
+)
+```
+
+**Validates**:
+1. Price reasonableness
+2. Slippage vs max allowed
+3. Balance sufficiency
+4. Position limits
+
+### 4. PositionManager (`src/core/position_manager_v2.py`)
+
+SQLite-based persistence that survives restarts.
+
+```python
+from core.position_manager_v2 import PositionManager, DuplicatePositionError
+
+pm = PositionManager(db_path='data/positions.db')
+pm.save_position(market_id, outcome='YES', entry_price=0.65, size=100)
+```
+
+**Key Pattern**: `DuplicatePositionError` maintains architectural boundary (bots don't import `sqlite3`).
+
+---
+
+## 📊 Telemetry & Self-Improvement
+
+### Phase 3: Telemetry Integration
+
+**System collects 10+ runtime metrics:**
+- `positions_without_sl_tp_{bot}` - Missing stop-loss/take-profit
+- `open_positions_{bot}` - Current position count
+- `bots_silent` - Silent/crashed bots
+- `circuit_breaker_trips` - Circuit breaker activations
+- `websocket_fallback_rate` - WebSocket fallback %
+- `slippage_rejection_rate` - Rejected trades
+
+**Integration**:
+```python
+from monitoring.telemetry_helpers import record_position_opened
+
+record_position_opened(
+    market_id=market_id,
+    outcome='YES',
+    size=100.0,
+    entry_price=0.65,
+    has_sl_tp=True,
+    source='event_trader'
+)
+```
+
+### Phase 4: Self-Improvement
+
+**Pattern Detection** (5 algorithms):
+- Recurring events (e.g., circuit breaker trips 5+ times)
+- Event clusters (e.g., 3 WebSocket failures within 30 min)
+- Event sequences (e.g., drift → prediction errors)
+- Metric violations (e.g., slippage >30% for 10 samples)
+- Correlated failures (e.g., bot silence + WebSocket fallback)
+
+**Analyze Patterns**:
+```bash
+# Analyze last week
+python3 scripts/analyze_patterns.py
+
+# Generate constraint suggestions
+python3 scripts/analyze_patterns.py --suggest --output suggestions.yml
+```
+
+**Auto-Remediation**:
+- ✅ Safe actions (auto-run): Cleanup temp files, compact database
+- ⏸️ Manual approval: Restart bots, reset WebSocket
+
+**Automated via Cron**:
+- Telemetry collection: Every 5 minutes
+- Pattern analysis: Daily at 8 AM
+- Auto-remediation: Every 4 hours
+- Constraint validation: Hourly
+
+---
+
+## 🚀 Development Workflow
+
+### 1. Make Changes
+Edit code, add features, fix bugs.
+
+### 2. Validate Locally
+```bash
+python scripts/validate_constraints.py
+pytest tests/structural/
+```
+
+### 3. Commit & Push
+```bash
+git commit -m "Description"
+git push origin master
+# GitHub Actions runs constraint validation automatically
+```
+
+### 4. Review
+- Green ✅: All constraints pass → safe to merge
+- Red ❌: Violations → fix before merging
+
+---
+
+## ⚙️ Configuration
+
+### Bot Configs
+
+**Event Trader**: `config/config.json`
+```json
+{
+  "paper_trading": true,
+  "initial_balance": 1000,
+  "max_positions": 5,
+  "stop_loss_pct": 0.15,
+  "take_profit_pct": 0.25,
+  "orderbook_source": "websocket"
+}
+```
+
+**API Credentials**: Create `config/secrets.json` (gitignored)
+```json
+{
+  "polymarket": {
+    "api_key": "your_key",
+    "secret": "your_secret"
+  }
+}
+```
+
+---
+
+## 🔍 Critical Polymarket API Quirks
+
+### 1. ALWAYS Use `/price` Endpoint
+- ❌ `/book` endpoint is BROKEN (stale data)
+- ✅ `/price` endpoint is CORRECT (matches web UI)
+
+### 2. YES + NO ≠ 1.0
+Market maker spread: `YES + NO ≈ 1.03-1.10` (NOT 1.0!)
+
+### 3. WebSocket Orderbook
+- ✅ All bots use real-time WebSocket
+- ✅ Auto-fallback to REST if unavailable
+- ✅ Exponential backoff reconnection
+
+---
+
+## 🗂️ Databases
+
+| Database | Purpose |
+|----------|---------|
+| `positions.db` | Event trader positions |
+| `positions_price_level.db` | Price-level trader positions |
+| `positions_short_expiry.db` | Short-expiry trader positions |
+| `telemetry.db` | Runtime metrics and events |
+| `price_tracking.db` | Price history |
+
+---
+
+## 🧪 Testing
+
+```bash
+# Structural tests (architectural boundaries)
+pytest tests/structural/ -v
+
+# Integration tests (end-to-end)
+pytest tests/integration/ -v
+
+# All tests with coverage
+pytest tests/ --cov=src --cov-report=term-missing
+```
+
+---
+
+## 📦 Project Structure
+
+```
+12 Polymarket Event Impact Trading/
+├── src/
+│   ├── bots/                       # Trading bots
+│   ├── core/                       # Core services (PriceFetcher, etc.)
+│   ├── features/                   # Feature extraction
+│   └── monitoring/                 # Telemetry & self-improvement
+├── scripts/
+│   ├── validate_constraints.py     # Constraint validation
+│   ├── collect_telemetry.py        # Telemetry collection
+│   └── analyze_patterns.py         # Pattern analysis
+├── tests/
+│   ├── structural/                 # Architectural tests
+│   └── integration/                # End-to-end tests
+├── config/                         # Configuration files
+├── data/                           # Databases
+├── logs/                           # Log files
+├── CONSTRAINTS.yml                 # Machine-readable constraints
+└── README.md                       # This file
+```
+
+---
+
+## 🆘 Troubleshooting
+
+### Bot Not Finding Markets
+- Check expiry filters in config
+- Verify API connection
+- Review market filters
+
+### Prices Always 0.5
+- ✅ Use PriceFetcher (never direct market access)
+- Check `/price` endpoint (not `/book`)
+
+### Position Manager Duplicate Key Error
+Expected! Position already exists. Catch `DuplicatePositionError`.
+
+### WebSocket Disconnecting
+Expected! Auto-reconnection handles this. Monitor `websocket_fallback_rate`.
+
+### Constraint Validation Failing
+1. Read error message
+2. Run locally: `python scripts/validate_constraints.py --id <ID>`
+3. Fix violation
+4. Re-validate
+
+---
+
+## 🎯 Production Deployment
+
+### Pre-Production Checklist
+1. ✅ Paper trading validation (2+ weeks)
+2. ✅ All constraints passing
+3. ✅ Telemetry collecting
+4. ⏳ Risk parameters tuned
+5. ⏳ Monitoring configured
+
+### Go Live
+1. Set `paper_trading = false`
+2. Start with small balance ($100)
+3. Monitor closely for 24 hours
+4. Gradually increase positions
+
+---
+
+## 📚 Key Concepts
+
+### Harness Engineering
+Systems validate themselves through executable constraints rather than documentation.
+
+**Before** (traditional):
+```markdown
+⚠️ IMPORTANT: Always use PriceFetcher!
+```
+Developers forget, docs get ignored.
+
+**After** (harness engineering):
+```yaml
+forbidden_patterns: ["market\\['bestBid'\\]"]
+```
+Automated validation catches violations before merge.
+
+### Single Source of Truth
+**Problem**: Multiple places to access data = inconsistencies
+
+**Solution**: Centralized services (PriceFetcher, TradeExecutor, etc.)
+
+### Constraint Validation
+**Not**: Markdown docs that get stale
+**Instead**: Machine-readable YAML that auto-validates
+
+---
+
+## 📖 Resources
+
+- **Polymarket Docs**: https://docs.polymarket.com/
+- **CLOB API**: https://docs.polymarket.com/#clob-api
+- **GitHub Actions**: Check constraint validation status
+- **Constraints**: See `CONSTRAINTS.yml` for all enforced rules
+
+---
+
+## 🤝 Contributing
+
+1. Read `CONSTRAINTS.yml` to understand enforced rules
+2. Make changes
+3. Run `python scripts/validate_constraints.py`
+4. All constraints must pass before merge
+5. Commit and push
+
+---
+
+## 📄 License
+
+See main repository LICENSE
+
+---
+
+**System Status**: ✅ Self-validating | ✅ Self-monitoring | ✅ Self-improving
+
+**Last Updated**: 2026-02-25
