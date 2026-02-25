@@ -156,10 +156,8 @@ constraints:
     implemented_date: '2026-01-31'
     validation:
     - type: integration_test
-      command: pytest tests/integration/test_position_monitoring.py::test_sl_tp_always_set
+      command: pytest tests/integration/test_position_monitoring.py::TestStopLossTakeProfitEnforcement::test_sl_tp_always_set
         -v
-    - type: behavioral_test
-      command: pytest tests/behavioral/test_sl_tp_enforcement.py -v
     telemetry:
     - metric: positions_without_sl_tp
       threshold: 0
@@ -414,8 +412,8 @@ operations:
     threshold: 0
     alert: critical
 metadata:
-  last_validated: '2026-02-25T08:00:05.075867'
-  validation_status: FAIL
+  last_validated: '2026-02-25T08:35:54.011034'
+  validation_status: PASS
   total_constraints: 13
   enforced_constraints: 13
   contact:

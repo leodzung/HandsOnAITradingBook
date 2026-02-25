@@ -230,11 +230,16 @@ class ConstraintValidator:
     def _run_pytest(self, command: str) -> Dict[str, Any]:
         """Run pytest command"""
         # Check if test file exists
-        test_file = command.split()[-2] if '-v' in command else command.split()[-1]
+        # Extract test path (e.g., "tests/integration/test_foo.py::TestClass::test_method")
+        test_path = command.split()[-2] if '-v' in command else command.split()[-1]
+
+        # Strip pytest-specific syntax (::TestClass::test_method) to get actual file path
+        test_file = test_path.split('::')[0]
+
         if not Path(test_file).exists():
             return {
                 'passed': False,
-                'error': f"Test file not found: {test_file} (needs to be created)"
+                'error': f"Test file not found: {test_path} (needs to be created)"
             }
 
         result = subprocess.run(
