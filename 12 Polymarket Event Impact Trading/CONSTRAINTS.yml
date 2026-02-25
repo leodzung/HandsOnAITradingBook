@@ -414,8 +414,8 @@ operations:
     threshold: 0
     alert: critical
 metadata:
-  last_validated: '2026-02-24T19:39:59.330749'
-  validation_status: PASS
+  last_validated: '2026-02-25T08:00:05.075867'
+  validation_status: FAIL
   total_constraints: 13
   enforced_constraints: 13
   contact:
