@@ -1237,6 +1237,11 @@ class PriceLevelTrader:
         else:
             expiry_str = None
 
+        # RISK-001: Get stop-loss and take-profit from config
+        # Use default values (not time decay - that's applied during monitoring)
+        tp_pct = self.config.get('take_profit', {}).get('pct', 75)
+        sl_pct = self.config.get('stop_loss', {}).get('pct', 20)
+
         # Build trade request
         request = TradeRequest(
             market_id=market_id,
@@ -1251,6 +1256,8 @@ class PriceLevelTrader:
             edge=signal['edge'],
             confidence=signal.get('model_prob'),
             signal_reason='price_level_strategy',
+            stop_loss_pct=sl_pct,  # RISK-001: Always set stop-loss
+            take_profit_pct=tp_pct,  # RISK-001: Always set take-profit
             metadata={
                 'kelly_fraction': signal.get('kelly_fraction'),
                 'slug': slug

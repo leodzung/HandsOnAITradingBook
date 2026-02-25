@@ -965,6 +965,10 @@ class PolymarketTrader:
                 elif any(keyword in question_lower for keyword in ['nfl', 'nba', 'sports', 'super bowl']):
                     asset = 'SPORTS'
 
+            # RISK-001: Get stop-loss and take-profit from config
+            tp_pct = self.config.get('take_profit', {}).get('pct', 50)
+            sl_pct = self.config.get('stop_loss', {}).get('pct', 15)
+
             # Save to database (persistence!) - store actual token price
             self.position_manager.save_position(
                 market_id=market_id,
@@ -976,6 +980,8 @@ class PolymarketTrader:
                 edge=signal.get('edge', 0),  # V2: track expected edge
                 confidence=signal.get('confidence', 0),  # V2: track confidence
                 signal_reason='event',  # V2: track which strategy
+                stop_loss_pct=sl_pct,  # RISK-001: Always set stop-loss
+                take_profit_pct=tp_pct,  # RISK-001: Always set take-profit
                 metadata={
                     'question': question,
                     'asset': asset,

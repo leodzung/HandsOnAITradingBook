@@ -888,6 +888,12 @@ class ShortExpiryTrader:
         elif 'solana' in question_lower or 'sol' in question_lower:
             asset = 'SOL'
 
+        # RISK-001: Get bucket-specific stop-loss and take-profit from config
+        sl_pct_map = self.config.get('stop_loss_pct', {})
+        tp_pct_map = self.config.get('take_profit_pct', {})
+        sl_pct = sl_pct_map.get(bucket, 15)  # Default 15% if bucket not found
+        tp_pct = tp_pct_map.get(bucket, 50)  # Default 50% if bucket not found
+
         # Record position using PositionManager V2
         try:
             self.position_manager.save_position(
@@ -902,6 +908,8 @@ class ShortExpiryTrader:
                 signal_reason=signal['reason'],
                 hours_to_expiry=features['hours_to_expiry'].iloc[0],
                 bucket=bucket,
+                stop_loss_pct=sl_pct,  # RISK-001: Always set stop-loss
+                take_profit_pct=tp_pct,  # RISK-001: Always set take-profit
                 metadata={
                     'question': question,
                     'asset': asset,

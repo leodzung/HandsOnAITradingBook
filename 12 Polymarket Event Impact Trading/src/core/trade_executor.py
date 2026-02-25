@@ -43,6 +43,10 @@ class TradeRequest:
     confidence: Optional[float] = None
     signal_reason: Optional[str] = None
 
+    # Risk management (RISK-001 constraint)
+    stop_loss_pct: Optional[float] = None
+    take_profit_pct: Optional[float] = None
+
     # Additional metadata for position tracking
     metadata: Optional[Dict] = None
 
@@ -314,9 +318,14 @@ class TradeExecutor:
                 edge=request.edge,  # V2: track expected edge
                 confidence=request.confidence,  # V2: track confidence
                 signal_reason=request.signal_reason,  # V2: track strategy
+                stop_loss_pct=request.stop_loss_pct,  # RISK-001: Always set stop-loss
+                take_profit_pct=request.take_profit_pct,  # RISK-001: Always set take-profit
                 metadata=metadata
             )
-            logger.info("✓ Position tracked and persisted")
+            logger.info("✓ Position tracked and persisted (SL: {}%, TP: {}%)".format(
+                request.stop_loss_pct if request.stop_loss_pct else 'N/A',
+                request.take_profit_pct if request.take_profit_pct else 'N/A'
+            ))
 
             return {'success': True, 'reason': 'Position opened successfully'}
 
