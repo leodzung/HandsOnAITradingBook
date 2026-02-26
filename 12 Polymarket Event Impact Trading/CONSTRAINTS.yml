@@ -274,7 +274,7 @@ constraints:
     implemented_date: '2026-02-21'
     validation:
     - type: continuous_monitoring
-      command: python3 scripts/analyze_feature_drift.py --auto --days 7
+      command: python3 scripts/analyze_feature_drift.py --bot-type event --auto --days 7
     telemetry:
     - metric: kendall_tau_rank_stability
       threshold: 0.7
