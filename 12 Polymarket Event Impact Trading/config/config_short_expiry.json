@@ -5,7 +5,7 @@
   "max_entry_price": 0.9,
   "discovery": {
     "ultra_short_hours": [
-      0,
+      4,
       24
     ],
     "short_hours": [
@@ -62,7 +62,7 @@
       "short": 50,
       "medium": 75
     },
-    "pre_expiry_exit_hours": 2,
+    "pre_expiry_exit_hours": 1,
     "circuit_breaker_losses": 4,
     "circuit_breaker_cooldown_hours": 4.0,
     "min_edge": 0.10,
