@@ -110,6 +110,12 @@ def main():
     print(f"Validating model: {args.model_path}")
     print()
 
+    # Skip validation if candidate model doesn't exist (nothing to deploy)
+    if not args.model_path.exists():
+        print("ℹ️  No candidate model found - skipping validation")
+        print("   (This is expected when not deploying a new model)")
+        sys.exit(0)
+
     passes, metrics = validate_model_quality(args.model_path)
 
     if not metrics:
