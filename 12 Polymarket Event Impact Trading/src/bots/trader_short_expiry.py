@@ -297,6 +297,9 @@ class ShortExpiryTrader:
         self.paper_trading = self.config['paper_trading']
         self.balance = self._load_balance()
 
+        # Market cooldown tracking (prevent over-trading same markets)
+        self.market_cooldowns = {}  # market_id -> last_close_time
+
         # Market cache
         self.market_cache = {}
         self.cache_time = {}
@@ -388,6 +391,22 @@ class ShortExpiryTrader:
 
         while True:
             try:
+                # Check minimum balance before trading
+                min_balance = self.config['risk_management'].get('min_trading_balance', 50.0)
+                if self.balance < min_balance:
+                    logger.warning(f"⚠️ Balance too low (${self.balance:.2f} < ${min_balance:.2f}) - pausing new trades")
+                    self.telegram.send_message(
+                        f"⚠️ <b>Trading Paused - Low Balance</b>\n\n"
+                        f"Current Balance: ${self.balance:.2f}\n"
+                        f"Minimum Required: ${min_balance:.2f}\n\n"
+                        f"Only monitoring existing positions.\n"
+                        f"Add funds to resume trading."
+                    )
+                    # Still check existing positions, but skip market discovery
+                    self._check_positions()
+                    time.sleep(self.config['execution']['cycle_interval_seconds'])
+                    continue
+
                 # Discover markets (3 buckets)
                 markets = self.discover_markets()
 
@@ -679,6 +698,15 @@ class ShortExpiryTrader:
             outcome = signal.get('outcome', 'YES')
             if self.position_manager.has_position(market_id, outcome):
                 continue
+
+            # Check market cooldown (prevent re-entry too soon after close)
+            cooldown_hours = self.config.get('risk_management', {}).get('market_cooldown_hours', {}).get(bucket, 2.0)
+            if market_id in self.market_cooldowns:
+                last_close = self.market_cooldowns[market_id]
+                elapsed_hours = (datetime.now(timezone.utc) - last_close).total_seconds() / 3600
+                if elapsed_hours < cooldown_hours:
+                    logger.debug(f"Market in cooldown: {market_id[:16]}... (elapsed: {elapsed_hours:.1f}h < {cooldown_hours}h)")
+                    continue
 
             # Risk checks
             if not self.risk_manager.can_execute(signal, self.balance, bucket):
@@ -999,6 +1027,9 @@ class ShortExpiryTrader:
                         market_id, outcome, entry_price, 'expiry_time'
                     )
 
+                    # Record market cooldown to prevent immediate re-entry
+                    self.market_cooldowns[market_id] = datetime.now(timezone.utc)
+
                     # Update balance (return position size)
                     if self.paper_trading:
                         self.balance += position_size
@@ -1038,6 +1069,9 @@ class ShortExpiryTrader:
                     self.position_manager.close_position(
                         market_id, outcome, entry_price, 'market_closed'
                     )
+
+                    # Record market cooldown to prevent immediate re-entry
+                    self.market_cooldowns[market_id] = datetime.now(timezone.utc)
 
                     # Update balance (return position size)
                     if self.paper_trading:
@@ -1091,6 +1125,9 @@ class ShortExpiryTrader:
                     self.position_manager.close_position(
                         market_id, outcome, current_price, exit_reason
                     )
+
+                    # Record market cooldown to prevent immediate re-entry
+                    self.market_cooldowns[market_id] = datetime.now(timezone.utc)
 
                     # Update balance (add payout)
                     if self.paper_trading:
