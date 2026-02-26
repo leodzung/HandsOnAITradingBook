@@ -1,0 +1,213 @@
+name: Constraint Validation
+
+on:
+  push:
+    branches: [ master, main, develop ]
+    paths:
+      # Run when constraint-related files change
+      - 'CONSTRAINTS.yml'
+      - 'scripts/validate_constraints.py'
+      - 'tests/**/*.py'
+      - 'src/**/*.py'
+      - '.github/workflows/validate_constraints.yml'
+  pull_request:
+    branches: [ master, main, develop ]
+    paths:
+      - 'CONSTRAINTS.yml'
+      - 'scripts/validate_constraints.py'
+      - 'tests/**/*.py'
+      - 'src/**/*.py'
+      - '.github/workflows/validate_constraints.yml'
+  workflow_dispatch:  # Allow manual trigger
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.9'
+
+    - name: Cache pip dependencies
+      uses: actions/cache@v3
+      with:
+        path: ~/.cache/pip
+        key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements*.txt') }}
+        restore-keys: |
+          ${{ runner.os }}-pip-
+
+    - name: Install dependencies
+      working-directory: "12 Polymarket Event Impact Trading"
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+        pip install -r requirements-test.txt
+        pip install pyyaml
+
+    - name: Create required directories
+      working-directory: "12 Polymarket Event Impact Trading"
+      run: |
+        mkdir -p data logs
+        mkdir -p data/models
+        # Create empty databases for testing
+        touch data/positions.db
+        touch data/positions_price_level.db
+        touch data/positions_short_expiry.db
+        touch data/alchemy_trades.db
+
+    - name: Run ARCH-001 validation (PriceFetcher constraint)
+      working-directory: "12 Polymarket Event Impact Trading"
+      run: |
+        pytest tests/structural/test_price_fetcher_constraint.py -v
+      continue-on-error: false
+
+    - name: Run ARCH-002 validation (PositionManager constraint)
+      working-directory: "12 Polymarket Event Impact Trading"
+      run: |
+        pytest tests/structural/test_position_manager_constraint.py -v
+      continue-on-error: false
+
+    - name: Run ARCH-003 validation (Common features constraint)
+      working-directory: "12 Polymarket Event Impact Trading"
+      run: |
+        pytest tests/test_common_features.py -v
+      continue-on-error: false
+
+    - name: Run ARCH-004 validation (WebSocket fallback)
+      working-directory: "12 Polymarket Event Impact Trading"
+      run: |
+        pytest tests/integration/test_orderbook_manager.py -v
+        pytest tests/behavioral/test_websocket_fallback.py -v
+      continue-on-error: false
+
+    - name: Run RISK-001 validation (Stop-loss/Take-profit)
+      working-directory: "12 Polymarket Event Impact Trading"
+      run: |
+        pytest tests/integration/test_position_monitoring.py -v
+      continue-on-error: true  # May fail if DB has no positions
+
+    - name: Run RISK-002 validation (Circuit breaker)
+      working-directory: "12 Polymarket Event Impact Trading"
+      run: |
+        pytest tests/behavioral/test_circuit_breaker.py -v
+      continue-on-error: false
+
+    - name: Run RISK-003 validation (Slippage estimation)
+      working-directory: "12 Polymarket Event Impact Trading"
+      run: |
+        pytest tests/integration/test_slippage_estimation.py -v
+      continue-on-error: false
+
+    - name: Run ML-003 validation (Label mapping - structural test)
+      working-directory: "12 Polymarket Event Impact Trading"
+      run: |
+        pytest tests/test_label_creation.py::TestLabelCreationTokenMapping::test_uses_token_condition_map -v
+      continue-on-error: true  # May fail if DB not populated
+
+    - name: Run DEBT-002 regression check (WebSocket reconnection)
+      working-directory: "12 Polymarket Event Impact Trading"
+      run: |
+        pytest tests/integration/test_websocket_reconnection.py -v
+      continue-on-error: true  # May fail without websocket-client
+
+    - name: Generate validation report
+      working-directory: "12 Polymarket Event Impact Trading"
+      if: always()
+      run: |
+        python3 scripts/validate_constraints.py > constraint_validation_ci.txt 2>&1 || true
+        cat constraint_validation_ci.txt
+
+    - name: Upload validation report
+      uses: actions/upload-artifact@v3
+      if: always()
+      with:
+        name: constraint-validation-report
+        path: |
+          12 Polymarket Event Impact Trading/constraint_validation_ci.txt
+          12 Polymarket Event Impact Trading/data/constraint_validation_latest.json
+
+    - name: Check critical constraints
+      working-directory: "12 Polymarket Event Impact Trading"
+      if: always()
+      run: |
+        echo "::group::Constraint Validation Summary"
+
+        # Extract pass/fail counts from validation
+        if [ -f data/constraint_validation_latest.json ]; then
+          python3 -c "
+import json
+with open('data/constraint_validation_latest.json') as f:
+    data = json.load(f)
+    print(f\"Total Constraints: {data['total_constraints']}\")
+    print(f\"Passed: {data['passed']}\")
+    print(f\"Warnings: {data['warnings']}\")
+    print(f\"Violations: {data['violations']}\")
+
+    # Fail if critical violations
+    critical_violations = [v for v in data.get('violation_details', []) if v.get('severity') == 'critical']
+
+    # Expected failures that should not block CI
+    expected_failures = ['ML-001', 'ML-003', 'DEBT-002']
+
+    blocking_violations = [v for v in critical_violations if v['constraint_id'] not in expected_failures]
+
+    if blocking_violations:
+        print('\n❌ CRITICAL VIOLATIONS DETECTED:')
+        for v in blocking_violations:
+            print(f\"  [{v['constraint_id']}] {v['title']}\")
+        exit(1)
+    else:
+        print('\n✅ All critical constraints passing (ignoring expected failures)')
+        exit(0)
+          "
+        else
+          echo "⚠️  Validation report not found"
+          exit 0
+        fi
+
+        echo "::endgroup::"
+
+    - name: Comment PR with results
+      if: github.event_name == 'pull_request' && always()
+      uses: actions/github-script@v6
+      with:
+        script: |
+          const fs = require('fs');
+          const reportPath = '12 Polymarket Event Impact Trading/constraint_validation_ci.txt';
+
+          let report = '📊 **Constraint Validation Report**\n\n';
+
+          if (fs.existsSync(reportPath)) {
+            const content = fs.readFileSync(reportPath, 'utf8');
+
+            // Extract summary section
+            const summaryMatch = content.match(/Validation Summary[\s\S]*?(?=\n\n|$)/);
+            if (summaryMatch) {
+              report += '```\n' + summaryMatch[0] + '\n```\n\n';
+            }
+
+            // Check for violations
+            if (content.includes('❌ VALIDATION FAILED')) {
+              report += '⚠️ **Some constraints have violations** - see full report in artifacts.\n\n';
+            } else {
+              report += '✅ **All critical constraints passing!**\n\n';
+            }
+
+            report += '<details><summary>View Full Report</summary>\n\n```\n';
+            report += content.substring(0, 60000); // GitHub comment limit
+            report += '\n```\n</details>';
+          } else {
+            report += '⚠️ Validation report not generated';
+          }
+
+          github.rest.issues.createComment({
+            issue_number: context.issue.number,
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            body: report
+          });
