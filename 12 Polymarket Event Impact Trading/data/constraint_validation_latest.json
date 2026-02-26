@@ -1,37 +1,23 @@
 {
-  "timestamp": "2026-02-25T19:12:29.235233",
+  "timestamp": "2026-02-25T19:47:34.206582",
   "total_constraints": 10,
-  "passed": 10,
+  "passed": 12,
   "warnings": 1,
-  "violations": 5,
+  "violations": 3,
   "status": "FAIL",
   "violation_details": [
-    {
-      "constraint_id": "ARCH-001",
-      "title": "PriceFetcher is single source of truth for price data",
-      "validation_type": "structural_test",
-      "error": "tests/structural/test_price_fetcher_constraint.py::TestPriceFetcherConstraint::test_bots_import_price_fetcher FAILED [ 40%]\n       tests/structural/test_price_fetcher_constraint.py::TestPriceFetcherConstraint::test_bots_use_get_entry_prices FAILED [ 60%]\n       tests/structural/test_price_fetcher_constraint.py::TestPriceFetcherConstraint::test_price_fetcher_is_only_price_source FAILED [ 80%]",
-      "severity": "critical"
-    },
-    {
-      "constraint_id": "RISK-001",
-      "title": "Stop-loss and take-profit always active",
-      "validation_type": "integration_test",
-      "error": "tests/integration/test_position_monitoring.py::TestStopLossTakeProfitEnforcement::test_sl_tp_always_set FAILED [100%]\n       FAILED tests/integration/test_position_monitoring.py::TestStopLossTakeProfitEnforcement::test_sl_tp_always_set",
-      "severity": "critical"
-    },
     {
       "constraint_id": "ML-001",
       "title": "Cross-validation (k\u22655) before model deployment",
       "validation_type": "pre_deployment_gate",
-      "error": "/Library/Developer/CommandLineTools/usr/bin/python3: can't open file '/Users/leole/workspace/HandsOnAITradingBook/12 Polymarket Event Impact Trading/scripts/validate_model_quality.py': [Errno 2] No such file or directory\n",
+      "error": "Validating model: data/models/CANDIDATE_MODEL.pkl\n\n\u274c Model file not found: data/models/CANDIDATE_MODEL.pkl\n\u274c Validation failed - unable to extract metrics\n",
       "severity": "critical"
     },
     {
       "constraint_id": "ML-003",
       "title": "Training labels use correct token-condition mapping",
       "validation_type": "label_quality_check",
-      "error": "/Library/Developer/CommandLineTools/usr/bin/python3: can't open file '/Users/leole/workspace/HandsOnAITradingBook/12 Polymarket Event Impact Trading/scripts/validate_label_quality.py': [Errno 2] No such file or directory\n",
+      "error": "Validating labels: /Users/leole/workspace/HandsOnAITradingBook/12 Polymarket Event Impact Trading/data/alchemy_trades.db\nSample size: 100\n\n\u274c Failed to query labeled trades: Execution failed on sql '\n            SELECT maker_asset_id, label, price\n            FROM on_chain_trades\n            WHERE label IS NOT NULL\n            ORDER BY RANDOM()\n            LIMIT 100\n        ': no such column: label\n\u274c Validation failed - unable to check labels\n",
       "severity": "critical"
     },
     {
@@ -47,7 +33,7 @@
       "constraint_id": "ML-002",
       "title": "Feature drift detection and alerting",
       "validation_type": "continuous_monitoring",
-      "error": "usage: analyze_feature_drift.py [-h] --bot-type\n                                {event,price_level,short_expiry,walk_forward}\n                                [--baseline BASELINE]\n                                [--baseline-strategy {ewma,latest_n,best_auc}]\n                                [--lookback LOOKBACK] [--export EXPORT]\n                                [--plot] [--heatmap] [--output OUTPUT]\n                                [--compare COMPARE]\nanalyze_feature_drift.py: error: the following arguments are required: --bot-type\n",
+      "error": "2026-02-25 19:47:32,516 - ERROR - Error: database disk image is malformed\nTraceback (most recent call last):\n  File \"/Users/leole/workspace/HandsOnAITradingBook/12 Polymarket Event Impact Trading/scripts/analyze_feature_drift.py\", line 449, in main\n    analyze_drift(args.bot_type, args.baseline_strategy, args.lookback)\n  File \"/Users/leole/workspace/HandsOnAITradingBook/12 Polymarket Event Impact Trading/scripts/analyze_feature_drift.py\", line 172, in analyze_drift\n    detector = DriftDetector()\n  File \"/Users/leole/workspace/HandsOnAITradingBook/12 Polymarket Event Impact Trading/src/ml/drift_detector.py\", line 82, in __init__\n    self.tracker = FeatureImportanceTracker(db_path)\n  File \"/Users/leole/workspace/HandsOnAITradingBook/12 Polymarket Event Impact Trading/src/ml/feature_importance_tracker.py\", line 48, in __init__\n    self._init_database()\n  File \"/Users/leole/workspace/HandsOnAITradingBook/12 Polymarket Event Impact Trading/src/ml/feature_importance_tracker.py\", line 57, in _init_database\n    cursor.execute(\"\"\"\nsqlite3.DatabaseError: database disk image is malformed\n",
       "severity": "high"
     }
   ]

@@ -274,7 +274,8 @@ constraints:
     implemented_date: '2026-02-21'
     validation:
     - type: continuous_monitoring
-      command: python3 scripts/analyze_feature_drift.py --bot-type event --lookback 7
+      command: python3 scripts/analyze_feature_drift.py --bot-type event --lookback
+        7
     telemetry:
     - metric: kendall_tau_rank_stability
       threshold: 0.7
@@ -411,8 +412,32 @@ operations:
   - metric: positions_lost_on_restart
     threshold: 0
     alert: critical
+- id: OPS-003
+  title: No documentation bloat - code is the documentation
+  description: "Only README.md and CONSTRAINTS.yml allowed as markdown docs.\n\
+    No feature docs, completion summaries, or guides.\n\
+    Code + tests + git commits are self-documenting.\n"
+  rationale: "Documentation rot is worse than no documentation.\n\
+    Markdown docs duplicate information, become stale, and create maintenance burden.\n\
+    Well-designed systems don't need explanatory documentation.\n"
+  status: enforced
+  priority: high
+  implemented_date: '2026-02-25'
+  validation:
+  - type: filesystem_check
+    command: bash scripts/check_no_doc_bloat.sh
+    description: Verify only allowed .md files exist
+  forbidden_patterns:
+  - "*COMPLETE.md"
+  - "*SUMMARY.md"
+  - "*GUIDE.md"
+  - "docs/*.md"
+  allowed_files:
+  - README.md
+  - CONSTRAINTS.yml
+  - IMPROVEMENT_CHECKLIST.md
 metadata:
-  last_validated: '2026-02-25T19:24:35.171991'
+  last_validated: '2026-02-25T19:47:34.206582'
   validation_status: FAIL
   total_constraints: 13
   enforced_constraints: 13

@@ -115,6 +115,12 @@ jobs:
         pytest tests/integration/test_websocket_reconnection.py -v
       continue-on-error: true  # May fail without websocket-client
 
+    - name: Run OPS-003 validation (No documentation bloat)
+      working-directory: "12 Polymarket Event Impact Trading"
+      run: |
+        bash scripts/check_no_doc_bloat.sh
+      continue-on-error: false
+
     - name: Generate validation report
       working-directory: "12 Polymarket Event Impact Trading"
       if: always()
