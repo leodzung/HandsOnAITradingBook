@@ -30,12 +30,13 @@ class Event:
 
     def __init__(self, title: str, description: str, source: str,
                  published_time: datetime, url: str, keywords: List[str]):
-        self.title = title
-        self.description = description
-        self.source = source
-        self.published_time = published_time
-        self.url = url
-        self.keywords = keywords
+        # Defensive: Ensure no None values are stored
+        self.title = title if title is not None else ''
+        self.description = description if description is not None else ''
+        self.source = source if source is not None else 'Unknown'
+        self.published_time = published_time if published_time is not None else datetime.now(timezone.utc)
+        self.url = url if url is not None else ''
+        self.keywords = keywords if keywords is not None else []
         self.id = self._generate_id()
 
     def _generate_id(self) -> str:

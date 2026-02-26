@@ -228,7 +228,12 @@ class EventFeatureExtractor:
         Returns:
             Dictionary of features
         """
-        text = f"{event.title} {event.description}"
+        # Defensive null checks for event attributes
+        title = event.title if event.title is not None else ''
+        description = event.description if event.description is not None else ''
+        keywords = event.keywords if event.keywords is not None else []
+
+        text = f"{title} {description}"
 
         # Sentiment features
         if use_transformers:
@@ -238,9 +243,9 @@ class EventFeatureExtractor:
 
         # Text length features
         text_features = {
-            'title_length': len(event.title),
-            'description_length': len(event.description),
-            'keyword_count': len(event.keywords),
+            'title_length': len(title),
+            'description_length': len(description),
+            'keyword_count': len(keywords),
             'has_url': 1 if event.url else 0
         }
 
