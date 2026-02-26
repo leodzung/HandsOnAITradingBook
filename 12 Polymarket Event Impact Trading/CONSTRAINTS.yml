@@ -225,12 +225,107 @@ constraints:
       threshold: 0.005
       alert: warning
       description: Average slippage in executed trades (50 bps threshold)
+  - id: RISK-004
+    title: Market cooldown prevents over-trading
+    description: 'Bots MUST enforce cooldown before re-entering closed positions.
+
+      Short-expiry bot: 1-4h cooldown (bucket-dependent).
+
+      Prevents churning same markets repeatedly.
+
+      '
+    rationale: 'Prevents over-trading losses from rapid re-entry.
+
+      Historical data: Same markets traded 5-11x without cooldown, causing $241 loss.
+
+      Cooldown gives markets time to stabilize after position close.
+
+      '
+    status: enforced
+    priority: critical
+    implemented_date: '2026-02-26'
+    validation:
+    - type: structural_test
+      command: pytest tests/structural/test_market_cooldown.py -v
+    - type: behavioral_test
+      command: pytest tests/behavioral/test_no_rapid_reentry.py -v
+    telemetry:
+    - metric: cooldown_violations
+      threshold: 0
+      alert: critical
+      description: Number of positions opened within cooldown period
+    - metric: avg_trades_per_market
+      threshold: 3
+      alert: warning
+      description: Average trades per market (should be 1-2 with cooldown)
+  - id: RISK-005
+    title: Minimum expiry time at entry
+    description: 'Bots MUST NOT enter positions too close to expiry.
+
+      Short-expiry bot: minimum 4 hours to expiry at entry.
+
+      Prevents entries with insufficient time to profit.
+
+      '
+    rationale: 'Entering < 2h before expiry had 28.9% of trades with 20.4% win rate.
+
+      Markets near expiry have low liquidity and high volatility.
+
+      Positions need minimum time to reach take-profit.
+
+      '
+    status: enforced
+    priority: critical
+    implemented_date: '2026-02-26'
+    validation:
+    - type: structural_test
+      command: pytest tests/structural/test_minimum_expiry.py -v
+    telemetry:
+    - metric: entries_under_min_expiry
+      threshold: 0
+      alert: critical
+      description: Number of positions opened with < 4h to expiry
+    - metric: avg_hours_at_entry
+      threshold: 12
+      alert: warning
+      description: Average hours to expiry at position entry
+  - id: RISK-006
+    title: Minimum balance protection
+    description: 'Bots MUST pause new trades when balance falls below minimum.
+
+      Minimum threshold: $50 (configurable per bot).
+
+      Existing positions still monitored for exit.
+
+      '
+    rationale: 'Prevents trading with insufficient capital for proper position sizing.
+
+      Protects remaining balance from complete depletion.
+
+      Short-expiry bot continued trading at $48 balance before fix.
+
+      '
+    status: enforced
+    priority: high
+    implemented_date: '2026-02-26'
+    validation:
+    - type: structural_test
+      command: pytest tests/structural/test_balance_protection.py -v
+    telemetry:
+    - metric: trades_below_min_balance
+      threshold: 0
+      alert: critical
+      description: Number of trades executed below minimum balance
+    - metric: balance_pauses
+      threshold: null
+      alert: warning
+      description: Number of times trading paused due to low balance
   model_quality:
   - id: ML-001
-    title: Cross-validation (k≥5) before model deployment
+    title: "Cross-validation (k\u22655) before model deployment"
     description: "All ML models MUST pass 5-fold walk-forward cross-validation before\
-      \ deployment.\nProduction readiness criteria:\n  - ROC-AUC mean ≥ 0.70\n  -\
-      \ ROC-AUC std < 0.10\n  - Degradation (train AUC - test AUC) < 0.10\n"
+      \ deployment.\nProduction readiness criteria:\n  - ROC-AUC mean \u2265 0.70\n\
+      \  - ROC-AUC std < 0.10\n  - Degradation (train AUC - test AUC) < 0.10\n"
     rationale: 'Walk-forward validation prevents lookahead bias (trains on past, tests
       on future).
 
@@ -259,9 +354,10 @@ constraints:
   - id: ML-002
     title: Feature drift detection and alerting
     description: "Feature importance MUST be tracked after each training run.\nAlert\
-      \ on drift metrics:\n  - Kendall's Tau (rank stability) < 0.70 → Warning\n \
-      \ - Top-5 overlap < 0.60 → Critical\n  - L1 distribution shift > 0.30 → Warning\n\
-      \  - Importance drops (top feature < 50% of previous) → Critical\n"
+      \ on drift metrics:\n  - Kendall's Tau (rank stability) < 0.70 \u2192 Warning\n\
+      \  - Top-5 overlap < 0.60 \u2192 Critical\n  - L1 distribution shift > 0.30\
+      \ \u2192 Warning\n  - Importance drops (top feature < 50% of previous) \u2192\
+      \ Critical\n"
     rationale: 'Early warning for model staleness, data quality issues, market regime
       changes.
 
@@ -293,12 +389,9 @@ constraints:
       description: Count of top features that lost >50% importance
   - id: ML-003
     title: Training labels use correct token-condition mapping
-    description: 'Label creation MUST use maker_asset_id → token_condition_map → outcome_index.
-
-      Price-based heuristics (price > 0.5 = YES) are FORBIDDEN - they create ~50%
-      label errors.
-
-      '
+    description: "Label creation MUST use maker_asset_id \u2192 token_condition_map\
+      \ \u2192 outcome_index.\nPrice-based heuristics (price > 0.5 = YES) are FORBIDDEN\
+      \ - they create ~50% label errors.\n"
     rationale: 'Critical bug (2026-02-23): Old logic assumed price indicates outcome
       traded.
 
@@ -337,7 +430,7 @@ technical_debt:
     description: No exponential backoff, limited retries
     status: resolved
     resolved_date: '2026-02-14'
-    impact: Exponential backoff (1s→60s), unlimited retries, ±30% jitter
+    impact: "Exponential backoff (1s\u219260s), unlimited retries, \xB130% jitter"
     validation:
     - type: integration_test
       command: pytest tests/integration/test_websocket_reconnection.py -v
@@ -479,7 +572,7 @@ operations:
     alert: critical
     description: Alert if retraining fails 2+ times consecutively
 metadata:
-  last_validated: '2026-02-26T07:31:03.807774'
+  last_validated: '2026-02-26T08:00:08.499480'
   validation_status: FAIL
   total_constraints: 14
   enforced_constraints: 14
