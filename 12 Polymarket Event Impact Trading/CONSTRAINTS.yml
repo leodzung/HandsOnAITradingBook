@@ -95,7 +95,7 @@ constraints:
     implemented_date: '2026-02-14'
     validation:
     - type: code_duplication_check
-      command: python scripts/check_feature_duplication.py
+      command: python3 scripts/check_feature_duplication.py
       max_duplicate_lines: 10
     - type: structural_test
       command: pytest tests/test_common_features.py -v
@@ -242,7 +242,7 @@ constraints:
     implemented_date: '2026-02-09'
     validation:
     - type: pre_deployment_gate
-      command: python scripts/validate_model_quality.py --model-path data/models/CANDIDATE_MODEL.pkl
+      command: python3 scripts/validate_model_quality.py --model-path data/models/CANDIDATE_MODEL.pkl
       required_metrics:
         roc_auc_mean: '>= 0.70'
         roc_auc_std: < 0.10
@@ -274,7 +274,7 @@ constraints:
     implemented_date: '2026-02-21'
     validation:
     - type: continuous_monitoring
-      command: python scripts/analyze_feature_drift.py --auto --days 7
+      command: python3 scripts/analyze_feature_drift.py --auto --days 7
     telemetry:
     - metric: kendall_tau_rank_stability
       threshold: 0.7
@@ -312,7 +312,7 @@ constraints:
       command: pytest tests/test_label_creation.py::test_uses_token_condition_map
         -v
     - type: label_quality_check
-      command: python scripts/validate_label_quality.py --sample-size 100
+      command: python3 scripts/validate_label_quality.py --sample-size 100
       description: Spot-check 100 random labels against known outcomes
 technical_debt:
   resolved:
@@ -412,8 +412,8 @@ operations:
     threshold: 0
     alert: critical
 metadata:
-  last_validated: '2026-02-25T08:35:54.011034'
-  validation_status: PASS
+  last_validated: '2026-02-25T18:44:08.544784'
+  validation_status: FAIL
   total_constraints: 13
   enforced_constraints: 13
   contact:
