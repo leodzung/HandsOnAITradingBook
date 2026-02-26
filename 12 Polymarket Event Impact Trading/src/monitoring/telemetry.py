@@ -407,6 +407,9 @@ class TradeTelemetry:
             # Collect trading metrics
             self._collect_trading_metrics()
 
+            # Collect model staleness metrics
+            self._collect_model_metrics()
+
             logger.debug("System metrics collected successfully")
 
         except Exception as e:
@@ -484,6 +487,57 @@ class TradeTelemetry:
 
         except Exception as e:
             logger.error(f"Error collecting trading metrics: {e}")
+
+    def _collect_model_metrics(self):
+        """Collect ML model staleness metrics."""
+        try:
+            # Model configurations: (report_file, metric_name)
+            model_configs = [
+                ('data/models/training_report.json', 'days_since_last_retrain')
+            ]
+
+            for report_path, metric_base_name in model_configs:
+                report_file = Path(report_path)
+
+                if not report_file.exists():
+                    logger.warning(f"Training report not found: {report_path}")
+                    continue
+
+                try:
+                    with open(report_file, 'r') as f:
+                        report = json.load(f)
+
+                    training_date_str = report.get('training_date')
+                    if not training_date_str:
+                        logger.warning(f"No training_date in {report_path}")
+                        continue
+
+                    # Parse training date (format: "2026-02-23T08:29:20.371784")
+                    training_date = datetime.fromisoformat(training_date_str)
+
+                    # Calculate days since training
+                    days_old = (datetime.now() - training_date).total_seconds() / 86400
+
+                    # Record metric
+                    self.record_metric(
+                        metric_base_name,
+                        days_old,
+                        metadata={
+                            'training_date': training_date_str,
+                            'report_path': str(report_path)
+                        },
+                        source='ml_training'
+                    )
+
+                    logger.debug(f"Model age: {days_old:.1f} days (trained {training_date_str})")
+
+                except json.JSONDecodeError as e:
+                    logger.error(f"Invalid JSON in {report_path}: {e}")
+                except Exception as e:
+                    logger.error(f"Error processing {report_path}: {e}")
+
+        except Exception as e:
+            logger.error(f"Error collecting model metrics: {e}")
 
 
 # Singleton instance for global access
