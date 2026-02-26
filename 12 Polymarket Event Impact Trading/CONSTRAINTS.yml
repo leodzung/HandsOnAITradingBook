@@ -227,10 +227,10 @@ constraints:
       description: Average slippage in executed trades (50 bps threshold)
   model_quality:
   - id: ML-001
-    title: "Cross-validation (k\u22655) before model deployment"
+    title: Cross-validation (k≥5) before model deployment
     description: "All ML models MUST pass 5-fold walk-forward cross-validation before\
-      \ deployment.\nProduction readiness criteria:\n  - ROC-AUC mean \u2265 0.70\n\
-      \  - ROC-AUC std < 0.10\n  - Degradation (train AUC - test AUC) < 0.10\n"
+      \ deployment.\nProduction readiness criteria:\n  - ROC-AUC mean ≥ 0.70\n  -\
+      \ ROC-AUC std < 0.10\n  - Degradation (train AUC - test AUC) < 0.10\n"
     rationale: 'Walk-forward validation prevents lookahead bias (trains on past, tests
       on future).
 
@@ -259,10 +259,9 @@ constraints:
   - id: ML-002
     title: Feature drift detection and alerting
     description: "Feature importance MUST be tracked after each training run.\nAlert\
-      \ on drift metrics:\n  - Kendall's Tau (rank stability) < 0.70 \u2192 Warning\n\
-      \  - Top-5 overlap < 0.60 \u2192 Critical\n  - L1 distribution shift > 0.30\
-      \ \u2192 Warning\n  - Importance drops (top feature < 50% of previous) \u2192\
-      \ Critical\n"
+      \ on drift metrics:\n  - Kendall's Tau (rank stability) < 0.70 → Warning\n \
+      \ - Top-5 overlap < 0.60 → Critical\n  - L1 distribution shift > 0.30 → Warning\n\
+      \  - Importance drops (top feature < 50% of previous) → Critical\n"
     rationale: 'Early warning for model staleness, data quality issues, market regime
       changes.
 
@@ -294,9 +293,12 @@ constraints:
       description: Count of top features that lost >50% importance
   - id: ML-003
     title: Training labels use correct token-condition mapping
-    description: "Label creation MUST use maker_asset_id \u2192 token_condition_map\
-      \ \u2192 outcome_index.\nPrice-based heuristics (price > 0.5 = YES) are FORBIDDEN\
-      \ - they create ~50% label errors.\n"
+    description: 'Label creation MUST use maker_asset_id → token_condition_map → outcome_index.
+
+      Price-based heuristics (price > 0.5 = YES) are FORBIDDEN - they create ~50%
+      label errors.
+
+      '
     rationale: 'Critical bug (2026-02-23): Old logic assumed price indicates outcome
       traded.
 
@@ -335,7 +337,7 @@ technical_debt:
     description: No exponential backoff, limited retries
     status: resolved
     resolved_date: '2026-02-14'
-    impact: "Exponential backoff (1s\u219260s), unlimited retries, \xB130% jitter"
+    impact: Exponential backoff (1s→60s), unlimited retries, ±30% jitter
     validation:
     - type: integration_test
       command: pytest tests/integration/test_websocket_reconnection.py -v
@@ -414,12 +416,20 @@ operations:
     alert: critical
 - id: OPS-003
   title: No documentation bloat - code is the documentation
-  description: "Only README.md and CONSTRAINTS.yml allowed as markdown docs.\n\
-    No feature docs, completion summaries, or guides.\n\
-    Code + tests + git commits are self-documenting.\n"
-  rationale: "Documentation rot is worse than no documentation.\n\
-    Markdown docs duplicate information, become stale, and create maintenance burden.\n\
-    Well-designed systems don't need explanatory documentation.\n"
+  description: 'Only README.md and CONSTRAINTS.yml allowed as markdown docs.
+
+    No feature docs, completion summaries, or guides.
+
+    Code + tests + git commits are self-documenting.
+
+    '
+  rationale: 'Documentation rot is worse than no documentation.
+
+    Markdown docs duplicate information, become stale, and create maintenance burden.
+
+    Well-designed systems don''t need explanatory documentation.
+
+    '
   status: enforced
   priority: high
   implemented_date: '2026-02-25'
@@ -428,19 +438,51 @@ operations:
     command: bash scripts/check_no_doc_bloat.sh
     description: Verify only allowed .md files exist
   forbidden_patterns:
-  - "*COMPLETE.md"
-  - "*SUMMARY.md"
-  - "*GUIDE.md"
-  - "docs/*.md"
+  - '*COMPLETE.md'
+  - '*SUMMARY.md'
+  - '*GUIDE.md'
+  - docs/*.md
   allowed_files:
   - README.md
   - CONSTRAINTS.yml
   - IMPROVEMENT_CHECKLIST.md
+- id: OPS-004
+  title: Automated model retraining enforced
+  description: "Automated retraining system MUST successfully retrain and deploy models.\n\
+    Retraining triggers:\n  - Model age > 25 days (5-day buffer before 30-day threshold)\n\
+    \  - Deployed model AUC < 0.70\n  - Significant feature drift detected\n\nQuality\
+    \ gates (must pass to deploy):\n  - ROC-AUC >= 0.70\n  - Accuracy >= 0.60\n"
+  rationale: 'Prevents model staleness without manual intervention.
+
+    Ensures models stay current with market conditions and data distributions.
+
+    Automatic backups enable safe rollback on deployment failure.
+
+    '
+  status: enforced
+  priority: high
+  implemented_date: '2026-02-26'
+  validation:
+  - type: integration_test
+    command: pytest tests/test_auto_retraining.py -v
+    description: Verify retraining triggers, training, validation, deployment
+  - type: cli_check
+    command: python scripts/auto_retrain.py --check
+    description: Check retraining triggers via CLI
+  telemetry:
+  - metric: last_successful_retrain
+    alert_on_change: true
+    alert: info
+    description: Log when automated retraining completes
+  - metric: retrain_failures_consecutive
+    threshold: 2
+    alert: critical
+    description: Alert if retraining fails 2+ times consecutively
 metadata:
-  last_validated: '2026-02-25T19:47:34.206582'
+  last_validated: '2026-02-26T07:31:03.807774'
   validation_status: FAIL
-  total_constraints: 13
-  enforced_constraints: 13
+  total_constraints: 14
+  enforced_constraints: 14
   contact:
     maintainer: Trading System Team
     documentation: See IMPROVEMENT_CHECKLIST.md for context
