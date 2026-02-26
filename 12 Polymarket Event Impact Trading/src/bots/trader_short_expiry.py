@@ -896,8 +896,25 @@ class ShortExpiryTrader:
                     f"Slippage: {slippage_bps:.0f} bps (${slippage_dollars:.2f})"
                 )
 
-        # Paper trading: update balance
+        # Paper trading: validate and update balance
         if self.paper_trading:
+            # RISK-007: Check sufficient balance before opening position
+            if self.balance < size:
+                logger.warning(
+                    f"⚠️ Insufficient balance to open position | "
+                    f"Required: ${size:.2f} | Available: ${self.balance:.2f} | "
+                    f"Market: {market.get('question', '')[:50]}"
+                )
+                # Record telemetry for rejected trade
+                from monitoring.telemetry import record_trade_rejected
+                record_trade_rejected(
+                    reason='insufficient_balance',
+                    required=size,
+                    available=self.balance,
+                    market_id=market_id
+                )
+                return  # Skip this trade
+
             self.balance -= size
             self._save_balance(self.balance)
 

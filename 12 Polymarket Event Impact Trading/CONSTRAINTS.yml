@@ -320,6 +320,41 @@ constraints:
       threshold: null
       alert: warning
       description: Number of times trading paused due to low balance
+  - id: RISK-007
+    title: Sufficient balance validation before trade
+    description: 'Bots MUST verify sufficient balance before opening positions.
+
+      Check: balance >= position_size before deducting capital.
+
+      Reject and log trades that would overdraw the account.
+
+      '
+    rationale: 'Prevents account overdraw and balance tracking corruption.
+
+      Historical bug: Bot opened $2,604 in positions with only $500 balance,
+
+      causing $217 balance tracking discrepancy. Balance went from expected
+
+      $265 to actual $48 (44% loss from tracking bug).
+
+      '
+    status: enforced
+    priority: critical
+    implemented_date: '2026-02-26'
+    validation:
+    - type: structural_test
+      command: pytest tests/structural/test_sufficient_balance.py -v
+    - type: behavioral_test
+      command: pytest tests/behavioral/test_no_overdraw.py -v
+    telemetry:
+    - metric: rejected_trades_insufficient_balance
+      threshold: null
+      alert: info
+      description: Number of trades rejected due to insufficient balance
+    - metric: negative_balance_events
+      threshold: 0
+      alert: critical
+      description: Number of times balance went negative
   model_quality:
   - id: ML-001
     title: "Cross-validation (k\u22655) before model deployment"
