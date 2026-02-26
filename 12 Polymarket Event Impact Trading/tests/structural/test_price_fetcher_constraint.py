@@ -26,6 +26,13 @@ class TestPriceFetcherConstraint:
         "src/core/trade_executor.py",
     ]
 
+    # Files that should call PriceFetcher methods (excludes TradeExecutor which receives prices)
+    BOT_FILES = [
+        "src/bots/trader.py",
+        "src/bots/trader_price_levels.py",
+        "src/bots/trader_short_expiry.py",
+    ]
+
     # Files ALLOWED to access market prices directly
     ALLOWED_FILES = [
         "src/core/price_fetcher.py",
@@ -81,10 +88,10 @@ class TestPriceFetcherConstraint:
             pytest.fail(error_msg)
 
     def test_bots_import_price_fetcher(self):
-        """Verify all bots import PriceFetcher"""
+        """Verify bots import PriceFetcher (excludes TradeExecutor which receives prices)"""
         missing_imports = []
 
-        for file_path in self.REQUIRED_FILES:
+        for file_path in self.BOT_FILES:  # Only check bot files, not TradeExecutor
             path = Path(file_path)
             if not path.exists():
                 continue
@@ -92,9 +99,10 @@ class TestPriceFetcherConstraint:
             with open(path, 'r') as f:
                 content = f.read()
 
-                # Check for PriceFetcher import
+                # Check for PriceFetcher import (accept both absolute and relative imports)
                 has_import = (
                     'from src.core.price_fetcher import PriceFetcher' in content or
+                    'from core.price_fetcher import PriceFetcher' in content or  # Relative import
                     'from price_fetcher import PriceFetcher' in content or
                     'import price_fetcher' in content
                 )
@@ -103,7 +111,7 @@ class TestPriceFetcherConstraint:
                     missing_imports.append(str(file_path))
 
         if missing_imports:
-            error_msg = "Files missing PriceFetcher import:\n"
+            error_msg = "Bot files missing PriceFetcher import:\n"
             for file in missing_imports:
                 error_msg += f"  {file}\n"
 
@@ -113,7 +121,7 @@ class TestPriceFetcherConstraint:
         """Verify bots use PriceFetcher.get_entry_prices() for entries"""
         missing_usage = []
 
-        for file_path in self.REQUIRED_FILES:
+        for file_path in self.BOT_FILES:  # Only check bot files
             path = Path(file_path)
             if not path.exists():
                 continue
@@ -121,24 +129,21 @@ class TestPriceFetcherConstraint:
             with open(path, 'r') as f:
                 content = f.read()
 
-                # Skip if file doesn't execute trades
-                if 'execute_trade' not in content and 'place_order' not in content:
-                    continue
-
                 # Check for get_entry_prices usage
+                # Bots should call this method to get entry prices
                 if 'get_entry_prices' not in content:
                     missing_usage.append(str(file_path))
 
         if missing_usage:
-            error_msg = "Files should use PriceFetcher.get_entry_prices():\n"
+            error_msg = "Bot files should use PriceFetcher.get_entry_prices():\n"
             for file in missing_usage:
                 error_msg += f"  {file}\n"
 
             pytest.fail(error_msg)
 
     def test_price_fetcher_is_only_price_source(self):
-        """Verify PriceFetcher is instantiated and used"""
-        for file_path in self.REQUIRED_FILES:
+        """Verify bot files instantiate and use PriceFetcher"""
+        for file_path in self.BOT_FILES:  # Only check bot files
             path = Path(file_path)
             if not path.exists():
                 continue
@@ -146,10 +151,13 @@ class TestPriceFetcherConstraint:
             with open(path, 'r') as f:
                 content = f.read()
 
-                # If file uses prices, it should have PriceFetcher instance
-                if any(pattern in content for pattern in ['entry_price', 'exit_price', 'current_price']):
-                    assert 'PriceFetcher' in content, \
-                        f"{file_path} uses prices but doesn't use PriceFetcher"
+                # Bots should instantiate PriceFetcher (self.price_fetcher = PriceFetcher(...))
+                assert 'PriceFetcher' in content, \
+                    f"{file_path} should instantiate PriceFetcher"
+
+                # Bots should call price fetcher methods (not access market prices directly)
+                assert ('get_entry_prices' in content or 'get_exit_prices' in content), \
+                    f"{file_path} should call PriceFetcher.get_entry_prices() or get_exit_prices()"
 
     def test_no_price_endpoint_direct_calls(self):
         """Verify no direct calls to /price or /book endpoints outside PriceFetcher"""
