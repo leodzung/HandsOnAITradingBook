@@ -1,109 +1,53 @@
 {
-  "timestamp": "2026-02-25T08:00:05.075867",
+  "timestamp": "2026-02-25T19:12:29.235233",
   "total_constraints": 10,
-  "passed": 3,
-  "warnings": 6,
-  "violations": 8,
+  "passed": 10,
+  "warnings": 1,
+  "violations": 5,
   "status": "FAIL",
   "violation_details": [
     {
       "constraint_id": "ARCH-001",
       "title": "PriceFetcher is single source of truth for price data",
       "validation_type": "structural_test",
-      "error": "",
-      "severity": "critical"
-    },
-    {
-      "constraint_id": "ARCH-002",
-      "title": "PositionManager V2 is single source for position data",
-      "validation_type": "structural_test",
-      "error": "",
+      "error": "tests/structural/test_price_fetcher_constraint.py::TestPriceFetcherConstraint::test_bots_import_price_fetcher FAILED [ 40%]\n       tests/structural/test_price_fetcher_constraint.py::TestPriceFetcherConstraint::test_bots_use_get_entry_prices FAILED [ 60%]\n       tests/structural/test_price_fetcher_constraint.py::TestPriceFetcherConstraint::test_price_fetcher_is_only_price_source FAILED [ 80%]",
       "severity": "critical"
     },
     {
       "constraint_id": "RISK-001",
       "title": "Stop-loss and take-profit always active",
       "validation_type": "integration_test",
-      "error": "Test file not found: tests/integration/test_position_monitoring.py::test_sl_tp_always_set (needs to be created)",
-      "severity": "critical"
-    },
-    {
-      "constraint_id": "RISK-001",
-      "title": "Stop-loss and take-profit always active",
-      "validation_type": "behavioral_test",
-      "error": "Test file not found: tests/behavioral/test_sl_tp_enforcement.py (needs to be created)",
+      "error": "tests/integration/test_position_monitoring.py::TestStopLossTakeProfitEnforcement::test_sl_tp_always_set FAILED [100%]\n       FAILED tests/integration/test_position_monitoring.py::TestStopLossTakeProfitEnforcement::test_sl_tp_always_set",
       "severity": "critical"
     },
     {
       "constraint_id": "ML-001",
       "title": "Cross-validation (k\u22655) before model deployment",
       "validation_type": "pre_deployment_gate",
-      "error": "/bin/sh: python: command not found\n",
-      "severity": "critical"
-    },
-    {
-      "constraint_id": "ML-003",
-      "title": "Training labels use correct token-condition mapping",
-      "validation_type": "structural_test",
-      "error": "Test file not found: tests/test_label_creation.py::test_uses_token_condition_map (needs to be created)",
+      "error": "/Library/Developer/CommandLineTools/usr/bin/python3: can't open file '/Users/leole/workspace/HandsOnAITradingBook/12 Polymarket Event Impact Trading/scripts/validate_model_quality.py': [Errno 2] No such file or directory\n",
       "severity": "critical"
     },
     {
       "constraint_id": "ML-003",
       "title": "Training labels use correct token-condition mapping",
       "validation_type": "label_quality_check",
-      "error": "/bin/sh: python: command not found\n",
+      "error": "/Library/Developer/CommandLineTools/usr/bin/python3: can't open file '/Users/leole/workspace/HandsOnAITradingBook/12 Polymarket Event Impact Trading/scripts/validate_label_quality.py': [Errno 2] No such file or directory\n",
       "severity": "critical"
     },
     {
       "constraint_id": "DEBT-002",
       "title": "REGRESSION: WebSocket reconnection logic",
       "validation_type": "regression",
-      "error": "Test file not found: tests/integration/test_websocket_reconnection.py (needs to be created)",
+      "error": "tests/integration/test_websocket_reconnection.py::TestWebSocketReconnection::test_reconnection_flow_with_backoff FAILED [ 75%]\n       ERROR    src.utils.orderbook_websocket:orderbook_websocket.py:464 WebSocket error: Connection failed\n       FAILED tests/integration/test_websocket_reconnection.py::TestWebSocketReconnection::test_reconnection_flow_with_backoff",
       "severity": "critical"
     }
   ],
   "warning_details": [
     {
-      "constraint_id": "ARCH-003",
-      "title": "Common features centralized in common_features.py",
-      "validation_type": "structural_test",
-      "error": "",
-      "severity": "high"
-    },
-    {
-      "constraint_id": "ARCH-004",
-      "title": "WebSocket orderbook with REST fallback",
-      "validation_type": "integration_test",
-      "error": "Test file not found: tests/integration/test_orderbook_manager.py (needs to be created)",
-      "severity": "high"
-    },
-    {
-      "constraint_id": "ARCH-004",
-      "title": "WebSocket orderbook with REST fallback",
-      "validation_type": "behavioral_test",
-      "error": "Test file not found: tests/behavioral/test_websocket_fallback.py (needs to be created)",
-      "severity": "high"
-    },
-    {
-      "constraint_id": "RISK-002",
-      "title": "Circuit breaker after 3 consecutive losses",
-      "validation_type": "behavioral_test",
-      "error": "Test file not found: tests/behavioral/test_circuit_breaker.py (needs to be created)",
-      "severity": "high"
-    },
-    {
-      "constraint_id": "RISK-003",
-      "title": "Slippage estimation before order execution",
-      "validation_type": "integration_test",
-      "error": "Test file not found: tests/integration/test_slippage_estimation.py (needs to be created)",
-      "severity": "high"
-    },
-    {
       "constraint_id": "ML-002",
       "title": "Feature drift detection and alerting",
       "validation_type": "continuous_monitoring",
-      "error": "/bin/sh: python: command not found\n",
+      "error": "usage: analyze_feature_drift.py [-h] --bot-type\n                                {event,price_level,short_expiry,walk_forward}\n                                [--baseline BASELINE]\n                                [--baseline-strategy {ewma,latest_n,best_auc}]\n                                [--lookback LOOKBACK] [--export EXPORT]\n                                [--plot] [--heatmap] [--output OUTPUT]\n                                [--compare COMPARE]\nanalyze_feature_drift.py: error: the following arguments are required: --bot-type\n",
       "severity": "high"
     }
   ]
