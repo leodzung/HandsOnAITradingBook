@@ -456,11 +456,39 @@ Automated validation catches violations before merge.
 
 ---
 
+## 🚀 Fast CI Feedback Loop
+
+**Problem**: Waiting 3+ minutes for CI slows development.
+**Solution**: Catch issues locally in seconds.
+
+### Tools
+
+**1. Pre-commit Hook** (auto-runs on `git commit`)
+- ⚡ 5-10 seconds
+- Checks: Syntax, structural tests, architecture violations
+- Skip: `git commit --no-verify`
+
+**2. Local CI Script** (before `git push`)
+```bash
+./scripts/ci_local.sh --fast    # 30-60s (recommended)
+./scripts/ci_local.sh           # 2-3min (full validation)
+./scripts/ci_local.sh --verbose # Show detailed errors
+```
+
+### Time Savings
+| Stage | Before | After | Speedup |
+|-------|--------|-------|---------|
+| Pre-commit | N/A | 10s | ∞ |
+| Pre-push | 3min | 60s | 3x |
+| CI | 3min | 90s | 2x |
+
+---
+
 ## 🤝 Contributing
 
 1. Read `CONSTRAINTS.yml` to understand enforced rules
 2. Make changes
-3. Run `python scripts/validate_constraints.py`
+3. Run `./scripts/ci_local.sh --fast` before pushing
 4. All constraints must pass before merge
 5. Commit and push
 
