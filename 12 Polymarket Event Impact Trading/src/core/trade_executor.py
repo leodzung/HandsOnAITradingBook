@@ -114,7 +114,7 @@ class TradeExecutor:
             f"Slippage checks: {self.slippage_enabled}"
         )
 
-    def execute_trade(self, request: TradeRequest) -> TradeResult:
+    def execute_trade(self, request: TradeRequest, order_side: str = 'BUY') -> TradeResult:
         """
         Execute trade with full validation pipeline.
 
@@ -125,9 +125,14 @@ class TradeExecutor:
 
         Args:
             request: TradeRequest with all trade parameters
+            order_side: 'BUY' for opening positions (default), 'SELL' for closing positions
 
         Returns:
             TradeResult with success/failure status
+
+        Note:
+            - BUY: Opening positions (buying YES or NO tokens, consuming asks)
+            - SELL: Closing positions (selling tokens back, consuming bids)
         """
         # Stage 1: Price validation
         price_check = self._validate_price(request)
@@ -141,7 +146,7 @@ class TradeExecutor:
 
         # Stage 2: Slippage estimation
         if self.slippage_enabled:
-            slippage_check = self._estimate_slippage(request)
+            slippage_check = self._estimate_slippage(request, order_side=order_side)
             if not slippage_check['valid']:
                 return TradeResult(
                     success=False,
@@ -218,12 +223,13 @@ class TradeExecutor:
 
         return {'valid': True, 'reason': 'Price within limit'}
 
-    def _estimate_slippage(self, request: TradeRequest) -> Dict:
+    def _estimate_slippage(self, request: TradeRequest, order_side: str = 'BUY') -> Dict:
         """
         Estimate slippage and validate within acceptable range.
 
         Args:
             request: TradeRequest
+            order_side: 'BUY' for opening positions, 'SELL' for closing positions
 
         Returns:
             Dict with 'valid', 'reason', 'slippage_bps', 'recommended_price'
@@ -240,14 +246,11 @@ class TradeExecutor:
         market = self.client.get_market(request.market_id)
         market_volume_24h = market.get('volume_24h', 0) if market else 0
 
-        # Estimate slippage for opening position
-        # NOTE: order_side is ALWAYS 'BUY' for opening positions because we're buying tokens.
-        # Both YES and NO outcomes involve buying tokens (YES token or NO token), consuming
-        # ask prices from the respective token's orderbook. The orderbook fetched above
-        # (via request.token_id) already corresponds to the correct token.
-        # SELL orders would only apply when closing positions (selling tokens back).
+        # Estimate slippage
+        # BUY: Opening positions (buying tokens, consuming asks)
+        # SELL: Closing positions (selling tokens back, consuming bids)
         slippage_result = self.slippage_estimator.estimate_slippage(
-            order_side='BUY',
+            order_side=order_side,
             order_size=request.position_size,
             orderbook=orderbook,
             quoted_price=request.entry_price,
@@ -374,3 +377,115 @@ class TradeExecutor:
             metadata.update(request.metadata)
 
         return metadata
+
+    def execute_close_trade(
+        self,
+        market_id: str,
+        outcome: str,
+        token_id: str,
+        exit_price: float,
+        position_size: float,
+        exit_reason: str,
+        question: str = ""
+    ) -> TradeResult:
+        """
+        Execute position close with slippage validation.
+
+        Args:
+            market_id: Market condition ID
+            outcome: 'YES' or 'NO'
+            token_id: Token ID being sold
+            exit_price: Exit price (bid price from PriceFetcher)
+            position_size: Dollar amount to close
+            exit_reason: Why closing (stop_loss, take_profit, expiry, etc.)
+            question: Market question (for logging)
+
+        Returns:
+            TradeResult with success/failure status
+        """
+        # Stage 1: Slippage estimation for SELL order
+        if self.slippage_enabled:
+            # Get orderbook for the specific token
+            orderbook = self.client.get_orderbook(token_id)
+            if not orderbook:
+                return TradeResult(
+                    success=False,
+                    reason='Could not fetch orderbook for slippage estimation',
+                    rejection_reason='Could not fetch orderbook for slippage estimation',
+                    rejection_stage='slippage'
+                )
+
+            # Get market data for volume
+            market = self.client.get_market(market_id)
+            market_volume_24h = market.get('volume_24h', 0) if market else 0
+
+            # Estimate slippage for SELL order (closing position)
+            slippage_result = self.slippage_estimator.estimate_slippage(
+                order_side='SELL',
+                order_size=position_size,
+                orderbook=orderbook,
+                quoted_price=exit_price,
+                market_volume_24h=market_volume_24h
+            )
+
+            # Check if close is acceptable
+            if not slippage_result.is_acceptable:
+                logger.warning(
+                    f"⚠️ Position close rejected - Slippage | "
+                    f"{outcome} @ ${exit_price:.3f} | "
+                    f"Slippage: {slippage_result.slippage_bps:.0f} bps | "
+                    f"Reason: {slippage_result.rejection_reason} | "
+                    f"Market: {question[:50]}"
+                )
+                return TradeResult(
+                    success=False,
+                    reason=slippage_result.rejection_reason,
+                    rejection_reason=slippage_result.rejection_reason,
+                    rejection_stage='slippage',
+                    slippage_bps=slippage_result.slippage_bps
+                )
+
+            # Log slippage info
+            logger.info(
+                f"Close slippage estimate: {slippage_result.slippage_bps:.0f} bps "
+                f"(${slippage_result.slippage_dollars:.2f}) | "
+                f"Levels: {slippage_result.levels_consumed}"
+            )
+
+            # Log warnings if any
+            for warning in slippage_result.warnings:
+                logger.warning(f"⚠️ Close slippage warning: {warning}")
+
+        # Stage 2: Close position
+        if self.paper_trading:
+            logger.info(
+                f"\n  💰 [PAPER TRADE] SELL {outcome} ${position_size:.2f} | Reason: {exit_reason}"
+            )
+            logger.info(f"     Market: {question[:50]}")
+            logger.info(f"     {outcome} Exit Price: ${exit_price:.3f}")
+
+        try:
+            self.position_manager.close_position(
+                market_id=market_id,
+                outcome=outcome,
+                exit_price=exit_price,
+                exit_reason=exit_reason
+            )
+            logger.info(f"✓ Position closed: {exit_reason}")
+
+            return TradeResult(
+                success=True,
+                reason='Position closed successfully',
+                entry_price=exit_price,  # Using as exit price
+                position_size=position_size,
+                slippage_bps=slippage_result.slippage_bps if self.slippage_enabled else None
+            )
+
+        except Exception as e:
+            logger.error(f"Failed to close position: {e}", exc_info=True)
+            return TradeResult(
+                success=False,
+                reason=f'Failed to close position: {e}',
+                rejection_reason=f'Failed to close position: {e}',
+                rejection_stage='execution'
+            )

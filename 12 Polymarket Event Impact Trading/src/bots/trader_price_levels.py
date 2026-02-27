@@ -1530,13 +1530,21 @@ class PriceLevelTrader:
                     bot_name="Price-Level Trader"
                 )
 
-            # Close in database BEFORE updating balance to prevent inflation on failure
-            self.position_manager.close_position(
+            # Close via TradeExecutor (validates slippage for SELL order)
+            close_result = self.trade_executor.execute_close_trade(
                 market_id=market_id,
                 outcome=outcome,
+                token_id=position.get('token_id', ''),
                 exit_price=exit_price,
-                exit_reason=exit_reason
+                position_size=position_size,
+                exit_reason=exit_reason,
+                question=position.get('question', '')
             )
+
+            if not close_result.success:
+                logger.warning(f"❌ Position close rejected by TradeExecutor: {close_result.rejection_reason}")
+                logger.warning(f"   Keeping position open - will retry on next cycle")
+                return
 
             # Update balance (add the payout) - only after DB close succeeds
             self.balance += payout
