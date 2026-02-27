@@ -199,7 +199,17 @@ constraints:
     title: Slippage estimation before order execution
     description: 'All trades MUST pass slippage estimation before submission.
 
-      Rejection criteria: slippage > 50 bps, insufficient liquidity, empty orderbook.
+      Rejection criteria (per-bot thresholds):
+
+      - Event trader: slippage > 250 bps (2.5%)
+
+      - Price-level trader: slippage > 2000 bps (20%)
+
+      - Short-expiry trader: slippage > 1500-3000 bps (15-30%, bucket-dependent)
+
+
+      Other rejections: insufficient liquidity, empty orderbook, stale orderbook (>10s),
+      invalid prices, excessive volume.
 
       Warnings: liquidity < $500, spread > 5%, depth < 3 levels.
 
@@ -208,6 +218,8 @@ constraints:
 
       Ensures sufficient liquidity for position exit.
 
+      Per-bot thresholds reflect different market conditions and liquidity profiles.
+
       '
     status: enforced
     priority: high
@@ -215,6 +227,8 @@ constraints:
     validation:
     - type: integration_test
       command: pytest tests/integration/test_slippage_estimation.py -v
+    - type: structural_test
+      command: PYTHONPATH=src pytest tests/test_slippage_estimator.py -v
     telemetry:
     - metric: slippage_rejection_rate
       threshold: 0.3
@@ -222,9 +236,10 @@ constraints:
       description: Alert if >30% trades rejected for slippage (may need threshold
         adjustment)
     - metric: actual_slippage_avg
-      threshold: 0.005
+      threshold: 0.0025
       alert: warning
-      description: Average slippage in executed trades (50 bps threshold)
+      description: Average slippage in executed trades (250 bps threshold for event
+        trader)
   - id: RISK-004
     title: Market cooldown prevents over-trading
     description: 'Bots MUST enforce cooldown before re-entering closed positions.
@@ -607,7 +622,7 @@ operations:
     alert: critical
     description: Alert if retraining fails 2+ times consecutively
 metadata:
-  last_validated: '2026-02-26T08:00:08.499480'
+  last_validated: '2026-02-27T07:44:40.431191'
   validation_status: FAIL
   total_constraints: 14
   enforced_constraints: 14

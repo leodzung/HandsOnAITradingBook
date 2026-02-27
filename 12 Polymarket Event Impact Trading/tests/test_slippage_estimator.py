@@ -3,7 +3,7 @@ Unit tests for SlippageEstimator module
 """
 
 import pytest
-from slippage_estimator import SlippageEstimator, SlippageEstimate, FillLevel
+from core.slippage_estimator import SlippageEstimator, SlippageEstimate, FillLevel
 
 
 class TestSlippageEstimator:

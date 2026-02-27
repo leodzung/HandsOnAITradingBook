@@ -60,13 +60,13 @@
   "position_check_interval_seconds": 60,
   "slippage_estimation": {
     "enabled": true,
-    "max_slippage_bps": 100,
+    "max_slippage_bps": 250,
     "max_slippage_dollars": 5.0,
     "orderbook_staleness_seconds": 10,
     "depth_buffer_pct": 0.1,
     "volatility_adjustment": true,
     "volume_limit_pct": 0.01,
-    "warn_threshold_bps": 50
+    "warn_threshold_bps": 100
   },
   "telegram": {
     "enabled": true,

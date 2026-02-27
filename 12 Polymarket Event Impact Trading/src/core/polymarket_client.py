@@ -766,7 +766,12 @@ class PolymarketClient:
             bid_price = self.get_token_price(token_id, side='buy')   # Price to SELL
 
             if ask_price is None or bid_price is None:
-                return {'bids': [], 'asks': []}
+                from datetime import datetime, timezone
+                return {
+                    'bids': [],
+                    'asks': [],
+                    'timestamp': datetime.now(timezone.utc).isoformat()
+                }
 
             # Create synthetic orderbook with decreasing liquidity at each level
             # This simulates a realistic orderbook where best levels have most liquidity
@@ -791,11 +796,21 @@ class PolymarketClient:
                 bid_level_size = base_size * size_multiplier
                 bids.append([bid_level_price, bid_level_size])
 
-            return {'asks': asks, 'bids': bids}
+            from datetime import datetime, timezone
+            return {
+                'asks': asks,
+                'bids': bids,
+                'timestamp': datetime.now(timezone.utc).isoformat()
+            }
 
         except Exception as e:
             print(f"Error creating synthetic orderbook for {token_id}: {e}")
-            return {'bids': [], 'asks': []}
+            from datetime import datetime, timezone
+            return {
+                'bids': [],
+                'asks': [],
+                'timestamp': datetime.now(timezone.utc).isoformat()
+            }
 
     def get_token_price(self, token_id: str, side: str = 'sell', max_retries: int = 3) -> Optional[float]:
         """

@@ -133,6 +133,49 @@ class SlippageEstimator:
         if order_size <= 0:
             raise ValueError(f"Invalid order_size: {order_size}. Must be positive")
 
+        # Validate quoted_price
+        import math
+        if not isinstance(quoted_price, (int, float)) or math.isnan(quoted_price) or math.isinf(quoted_price):
+            raise ValueError(f"Invalid quoted_price: {quoted_price}. Must be a valid number")
+
+        if not (0 < quoted_price < 1):
+            raise ValueError(f"Invalid quoted_price: {quoted_price}. Must be between 0 and 1")
+
+        # Validate orderbook staleness
+        if 'timestamp' in orderbook:
+            from datetime import timezone
+            try:
+                if isinstance(orderbook['timestamp'], str):
+                    orderbook_time = datetime.fromisoformat(orderbook['timestamp'].replace('Z', '+00:00'))
+                else:
+                    orderbook_time = orderbook['timestamp']
+
+                # Ensure orderbook_time is timezone-aware
+                if orderbook_time.tzinfo is None:
+                    orderbook_time = orderbook_time.replace(tzinfo=timezone.utc)
+
+                age_seconds = (datetime.now(timezone.utc) - orderbook_time).total_seconds()
+                if age_seconds > self.orderbook_staleness_seconds:
+                    logger.warning(
+                        f"Orderbook is stale: {age_seconds:.1f}s old "
+                        f"(max: {self.orderbook_staleness_seconds}s)"
+                    )
+                    return SlippageEstimate(
+                        quoted_price=quoted_price,
+                        expected_execution_price=quoted_price,
+                        worst_case_execution_price=quoted_price,
+                        slippage_dollars=0.0,
+                        slippage_bps=0.0,
+                        slippage_pct=0.0,
+                        levels_consumed=0,
+                        total_liquidity_available=0.0,
+                        order_fills_immediately=False,
+                        is_acceptable=False,
+                        rejection_reason=f"Orderbook stale ({age_seconds:.0f}s old, max {self.orderbook_staleness_seconds}s)"
+                    )
+            except (ValueError, AttributeError, TypeError) as e:
+                logger.debug(f"Could not parse orderbook timestamp: {e}")
+
         # Ensure market_volume_24h is numeric
         try:
             market_volume_24h = float(market_volume_24h) if market_volume_24h else 0
