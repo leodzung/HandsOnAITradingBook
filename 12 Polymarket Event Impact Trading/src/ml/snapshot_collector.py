@@ -80,11 +80,15 @@ class MarketSnapshotCollector:
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self.telegram = telegram
         self.alert_milestones = alert_milestones or [100, 500, 1000, 5000, 10000]
-        self._alerted_milestones = set()  # Track which milestones we've alerted on
-        self._last_labeled_count = 0  # Track labeled samples for incremental alerts
 
         self._init_database()
+
+        # Load alerted milestones from database (shared across all bot instances)
+        self._alerted_milestones = self._load_alerted_milestones()
+        self._last_labeled_count = self._get_last_labeled_milestone()
+
         logger.info(f"MarketSnapshotCollector initialized: {self.db_path}")
+        logger.info(f"Previously alerted milestones: {sorted(self._alerted_milestones)}")
 
         if self.telegram:
             logger.info("✓ Telegram alerts enabled for snapshot collector")
@@ -164,6 +168,16 @@ class MarketSnapshotCollector:
             )
         """)
 
+        # Milestone tracking table (shared across all bot instances)
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS milestone_alerts (
+                milestone_type TEXT NOT NULL,
+                milestone_value INTEGER NOT NULL,
+                alerted_at TIMESTAMP NOT NULL,
+                PRIMARY KEY (milestone_type, milestone_value)
+            )
+        """)
+
         # Create indexes for fast lookups
         cursor.execute("""
             CREATE INDEX IF NOT EXISTS idx_market_id
@@ -186,6 +200,54 @@ class MarketSnapshotCollector:
         conn.close()
         logger.info("Database schema initialized")
 
+    def _load_alerted_milestones(self) -> set:
+        """Load previously alerted milestones from database."""
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+
+        cursor.execute("""
+            SELECT milestone_value FROM milestone_alerts
+            WHERE milestone_type = 'snapshot_count'
+        """)
+        milestones = {row[0] for row in cursor.fetchall()}
+
+        # Also check for special markers (e.g., 200 for training readiness)
+        cursor.execute("""
+            SELECT milestone_value FROM milestone_alerts
+            WHERE milestone_type = 'training_ready'
+        """)
+        milestones.update(row[0] for row in cursor.fetchall())
+
+        conn.close()
+        return milestones
+
+    def _get_last_labeled_milestone(self) -> int:
+        """Get the last labeled milestone that was alerted."""
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+
+        cursor.execute("""
+            SELECT MAX(milestone_value) FROM milestone_alerts
+            WHERE milestone_type = 'labeled_count'
+        """)
+        result = cursor.fetchone()[0]
+        conn.close()
+
+        return result if result else 0
+
+    def _record_milestone_alert(self, milestone_type: str, milestone_value: int):
+        """Record that a milestone alert was sent (persistent across restarts)."""
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+
+        cursor.execute("""
+            INSERT OR IGNORE INTO milestone_alerts (milestone_type, milestone_value, alerted_at)
+            VALUES (?, ?, ?)
+        """, (milestone_type, milestone_value, datetime.now(timezone.utc).isoformat()))
+
+        conn.commit()
+        conn.close()
+
     def _send_telegram(self, message: str):
         """Send Telegram notification if configured."""
         if self.telegram:
@@ -203,21 +265,28 @@ class MarketSnapshotCollector:
         total = stats['total_snapshots']
         labeled = stats['labeled_snapshots']
 
+        # Reload alerted milestones from database to ensure we have latest state
+        # (prevents duplicate alerts from concurrent bot instances)
+        self._alerted_milestones = self._load_alerted_milestones()
+
         # Check snapshot milestones
         for milestone in self.alert_milestones:
             if total >= milestone and milestone not in self._alerted_milestones:
                 self._alerted_milestones.add(milestone)
+                self._record_milestone_alert('snapshot_count', milestone)
                 self._notify_milestone_reached(milestone, stats)
 
         # Check labeled data milestones (every 50 samples)
         labeled_milestone = (labeled // 50) * 50
         if labeled_milestone > self._last_labeled_count and labeled >= 50:
             self._last_labeled_count = labeled_milestone
+            self._record_milestone_alert('labeled_count', labeled_milestone)
             self._notify_labeling_progress(labeled, stats)
 
         # Check training readiness (200+ labeled samples)
         if labeled >= 200 and 200 not in self._alerted_milestones:
             self._alerted_milestones.add(200)  # Use 200 as special marker
+            self._record_milestone_alert('training_ready', 200)
             self._notify_training_ready(labeled, stats)
 
     def _notify_milestone_reached(self, milestone: int, stats: Dict):

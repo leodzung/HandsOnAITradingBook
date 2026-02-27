@@ -298,3 +298,109 @@ def test_print_statistics(collector, capsys):
     captured = capsys.readouterr()
     assert 'MARKET SNAPSHOT COLLECTOR' in captured.out
     assert 'Total Snapshots:' in captured.out
+
+
+def test_milestone_persistence_across_instances(temp_db):
+    """Test that milestone alerts persist across collector instances (no duplicates)."""
+    from unittest.mock import Mock
+
+    # Mock telegram to track sent messages
+    telegram1 = Mock()
+
+    # Create collector with low milestone thresholds
+    collector1 = MarketSnapshotCollector(
+        db_path=temp_db,
+        telegram=telegram1,
+        alert_milestones=[5, 10]
+    )
+
+    # Log 5 snapshots to hit first milestone
+    for i in range(5):
+        collector1.log_snapshot(
+            market_id=f'0x{i:03d}',
+            bot_type='price_level',
+            features={'volatility_30d': 0.45},
+            prediction={'model_prob': 0.65, 'confidence': 0.75, 'edge': 0.15, 'predicted_outcome': 'YES'},
+            market_data={'question': f'Test {i}', 'days_to_expiry': 30},
+            prices={'yes': 0.50, 'no': 0.50}
+        )
+
+    # Should have sent milestone alert for 5
+    assert telegram1.send_message.call_count == 1
+    assert 'Milestone 5' in telegram1.send_message.call_args[0][0]
+
+    # Create NEW collector instance (simulates restart)
+    telegram2 = Mock()
+    collector2 = MarketSnapshotCollector(
+        db_path=temp_db,
+        telegram=telegram2,
+        alert_milestones=[5, 10]
+    )
+
+    # Log 5 more snapshots (total now 10, hitting second milestone)
+    for i in range(5, 10):
+        collector2.log_snapshot(
+            market_id=f'0x{i:03d}',
+            bot_type='price_level',
+            features={'volatility_30d': 0.45},
+            prediction={'model_prob': 0.65, 'confidence': 0.75, 'edge': 0.15, 'predicted_outcome': 'YES'},
+            market_data={'question': f'Test {i}', 'days_to_expiry': 30},
+            prices={'yes': 0.50, 'no': 0.50}
+        )
+
+    # Should have sent ONLY milestone 10 alert (not milestone 5 again)
+    assert telegram2.send_message.call_count == 1
+    assert 'Milestone 10' in telegram2.send_message.call_args[0][0]
+
+    # Verify milestone 5 was NOT sent again
+    messages = [call[0][0] for call in telegram2.send_message.call_args_list]
+    assert not any('Milestone 5' in msg for msg in messages)
+
+
+def test_milestone_shared_across_bot_instances(temp_db):
+    """Test that multiple bot instances share milestone state (no duplicate alerts)."""
+    from unittest.mock import Mock
+
+    telegram1 = Mock()
+    telegram2 = Mock()
+
+    # Create two collector instances (simulates two bots running concurrently)
+    collector1 = MarketSnapshotCollector(
+        db_path=temp_db,
+        telegram=telegram1,
+        alert_milestones=[3]
+    )
+    collector2 = MarketSnapshotCollector(
+        db_path=temp_db,
+        telegram=telegram2,
+        alert_milestones=[3]
+    )
+
+    # Collector 1 logs 3 snapshots (hits milestone)
+    for i in range(3):
+        collector1.log_snapshot(
+            market_id=f'0x{i:03d}',
+            bot_type='event',
+            features={'volatility_30d': 0.45},
+            prediction={'model_prob': 0.65, 'confidence': 0.75, 'edge': 0.15, 'predicted_outcome': 'YES'},
+            market_data={'question': f'Test {i}', 'days_to_expiry': 30},
+            prices={'yes': 0.50, 'no': 0.50}
+        )
+
+    # First collector should send alert
+    assert telegram1.send_message.call_count == 1
+
+    # Collector 2 logs more snapshots (total now > 3)
+    for i in range(3, 5):
+        collector2.log_snapshot(
+            market_id=f'0x{i:03d}',
+            bot_type='price_level',
+            features={'volatility_30d': 0.45},
+            prediction={'model_prob': 0.65, 'confidence': 0.75, 'edge': 0.15, 'predicted_outcome': 'YES'},
+            market_data={'question': f'Test {i}', 'days_to_expiry': 30},
+            prices={'yes': 0.50, 'no': 0.50}
+        )
+
+    # Second collector should NOT send milestone 3 alert (already sent by collector 1)
+    # It loads the milestone state from database on init
+    assert telegram2.send_message.call_count == 0
