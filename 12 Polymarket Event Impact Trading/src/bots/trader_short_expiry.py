@@ -31,6 +31,7 @@ from features.short_expiry_features import ShortExpiryFeatureExtractor
 from core.polymarket_client import PolymarketClient
 from core.price_fetcher import PriceFetcher
 from core.slippage_estimator import SlippageEstimator
+from core.trade_executor import TradeExecutor
 from core.position_manager_v2 import PositionManager, DuplicatePositionError
 from monitoring.telegram_notifier import TelegramNotifier
 from utils.price_tracker import PriceTracker
@@ -272,6 +273,15 @@ class ShortExpiryTrader:
         # Initialize price tracker for historical price data (enables momentum signals)
         self.price_tracker = PriceTracker(self.config['database']['tracking_db'])
         logger.info("PriceTracker initialized for momentum feature extraction")
+
+        # Initialize trade executor (centralized validation pipeline)
+        self.trade_executor = TradeExecutor(
+            client=self.client,
+            position_manager=self.position_manager,
+            config=self.config,
+            paper_trading=self.config.get('paper_trading', True)
+        )
+        logger.info("✓ Trade executor initialized")
 
         # Initialize slippage estimator
         self.slippage_estimator = SlippageEstimator(
@@ -1040,9 +1050,20 @@ class ShortExpiryTrader:
                     pnl_pct = 0.0
                     position_size = pos.get('size', 0)
 
-                    self.position_manager.close_position(
-                        market_id, outcome, entry_price, 'expiry_time'
+                    # Close via TradeExecutor (validates slippage for SELL order)
+                    close_result = self.trade_executor.execute_close_trade(
+                        market_id=market_id,
+                        outcome=outcome,
+                        token_id=pos.get('token_id', ''),
+                        exit_price=entry_price,
+                        position_size=position_size,
+                        exit_reason='expiry_time',
+                        question=pos.get('question', '')
                     )
+
+                    if not close_result.success:
+                        logger.warning(f"❌ Position close rejected by TradeExecutor: {close_result.rejection_reason}")
+                        continue
 
                     # Record market cooldown to prevent immediate re-entry
                     self.market_cooldowns[market_id] = datetime.now(timezone.utc)
@@ -1083,9 +1104,20 @@ class ShortExpiryTrader:
                     pnl_pct = 0.0
                     position_size = pos.get('size', 0)
 
-                    self.position_manager.close_position(
-                        market_id, outcome, entry_price, 'market_closed'
+                    # Close via TradeExecutor (validates slippage for SELL order)
+                    close_result = self.trade_executor.execute_close_trade(
+                        market_id=market_id,
+                        outcome=outcome,
+                        token_id=pos.get('token_id', ''),
+                        exit_price=entry_price,
+                        position_size=position_size,
+                        exit_reason='market_closed',
+                        question=pos.get('question', '')
                     )
+
+                    if not close_result.success:
+                        logger.warning(f"❌ Position close rejected by TradeExecutor: {close_result.rejection_reason}")
+                        continue
 
                     # Record market cooldown to prevent immediate re-entry
                     self.market_cooldowns[market_id] = datetime.now(timezone.utc)
@@ -1139,9 +1171,20 @@ class ShortExpiryTrader:
                         pnl = -position_size
                         pnl_pct = -100
 
-                    self.position_manager.close_position(
-                        market_id, outcome, current_price, exit_reason
+                    # Close via TradeExecutor (validates slippage for SELL order)
+                    close_result = self.trade_executor.execute_close_trade(
+                        market_id=market_id,
+                        outcome=outcome,
+                        token_id=pos.get('token_id', ''),
+                        exit_price=current_price,
+                        position_size=position_size,
+                        exit_reason=exit_reason,
+                        question=pos.get('question', '')
                     )
+
+                    if not close_result.success:
+                        logger.warning(f"❌ Position close rejected by TradeExecutor: {close_result.rejection_reason}")
+                        continue
 
                     # Record market cooldown to prevent immediate re-entry
                     self.market_cooldowns[market_id] = datetime.now(timezone.utc)

@@ -19,6 +19,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from core.polymarket_client import PolymarketClient, MarketFilter
 from core.price_fetcher import PriceFetcher
+from core.trade_executor import TradeExecutor
 from utils.event_detector import EventDetector
 from features.feature_extractor import FeatureEngineering
 from models.models_v2 import PriceMovementPredictor, TradingSignalGenerator, ModelPerformanceTracker
@@ -275,6 +276,15 @@ class PolymarketTrader:
         # Initialize position manager (with persistence!)
         self.position_manager = PositionManager(db_path='data/positions.db')
         logger.info("✓ Position manager initialized")
+
+        # Initialize trade executor (centralized validation pipeline)
+        self.trade_executor = TradeExecutor(
+            client=self.client,
+            position_manager=self.position_manager,
+            config=config,
+            paper_trading=config.get('paper_trading', True)
+        )
+        logger.info("✓ Trade executor initialized")
 
         # Paper trading balance
         self.paper_balance_file = 'data/paper_trading_balance.json'
@@ -1292,13 +1302,26 @@ class PolymarketTrader:
             pnl = -size
             pnl_pct = -100
 
-        # Update database (persistence!)
-        self.position_manager.close_position(
+        # Get full position info from database (including token_id)
+        db_position = self.position_manager.get_position(market_id, outcome)
+        token_id = db_position.get('token_id', '') if db_position else ''
+        question = db_position.get('question', '') if db_position else ''
+
+        # Close via TradeExecutor (validates slippage for SELL order)
+        close_result = self.trade_executor.execute_close_trade(
             market_id=market_id,
             outcome=outcome,
+            token_id=token_id,
             exit_price=exit_price,
-            exit_reason=exit_reason
+            position_size=size,
+            exit_reason=exit_reason,
+            question=question
         )
+
+        if not close_result.success:
+            logger.warning(f"❌ Position close rejected by TradeExecutor: {close_result.rejection_reason}")
+            logger.warning(f"   Keeping position open - will retry on next cycle")
+            return
 
         # Update paper balance (add the payout)
         if self.config.get('paper_trading', True):
