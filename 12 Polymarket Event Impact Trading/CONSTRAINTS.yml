@@ -197,11 +197,13 @@ constraints:
       alert: info
   - id: RISK-003
     title: Slippage estimation before order execution
-    description: 'All trades (opening AND closing) MUST pass slippage estimation before submission.
+    description: 'All trades (opening AND closing) MUST pass slippage estimation before
+      submission.
 
       **Opening positions (BUY orders)**: Validates slippage when buying YES/NO tokens
 
-      **Closing positions (SELL orders)**: Validates slippage when selling tokens back
+      **Closing positions (SELL orders)**: Validates slippage when selling tokens
+      back
 
 
       Rejection criteria (per-bot thresholds):
@@ -233,7 +235,8 @@ constraints:
     implemented_date: '2026-02-09'
     validation:
     - type: integration_test
-      command: pytest tests/integration/test_slippage_estimation.py -v
+      command: PYTHONPATH=src pytest tests/integration/test_slippage_estimation.py
+        -v
     - type: structural_test
       command: PYTHONPATH=src pytest tests/test_slippage_estimator.py -v
     telemetry:
@@ -629,7 +632,7 @@ operations:
     alert: critical
     description: Alert if retraining fails 2+ times consecutively
 metadata:
-  last_validated: '2026-02-27T08:00:09.459396'
+  last_validated: '2026-02-27T08:17:54.747201'
   validation_status: FAIL
   total_constraints: 14
   enforced_constraints: 14
