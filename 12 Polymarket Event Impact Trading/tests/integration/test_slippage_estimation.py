@@ -167,3 +167,134 @@ class TestSlippageEstimationIntegration:
         assert result.slippage_bps >= 0, (
             "slippage_bps should be non-negative"
         )
+
+
+class TestTradeExecutorCloseTrade:
+    """Test TradeExecutor.execute_close_trade() for position closing with slippage validation."""
+
+    def test_execute_close_trade_method_exists(self):
+        """Verify execute_close_trade method exists in TradeExecutor."""
+        from src.core.trade_executor import TradeExecutor
+        from src.core.position_manager_v2 import PositionManager
+        from unittest.mock import Mock
+
+        client = Mock()
+        position_manager = Mock(spec=PositionManager)
+        config = {'slippage_estimation': {'enabled': True}}
+
+        executor = TradeExecutor(
+            client=client,
+            position_manager=position_manager,
+            config=config,
+            paper_trading=True
+        )
+
+        assert hasattr(executor, 'execute_close_trade'), (
+            "TradeExecutor should have execute_close_trade method"
+        )
+
+    def test_execute_close_trade_validates_slippage(self):
+        """Verify execute_close_trade validates slippage for SELL orders."""
+        from src.core.trade_executor import TradeExecutor
+        from src.core.position_manager_v2 import PositionManager
+        from unittest.mock import Mock
+        from datetime import datetime, timezone
+
+        # Setup mocks
+        client = Mock()
+        position_manager = Mock(spec=PositionManager)
+
+        # Mock orderbook with insufficient liquidity for SELL
+        client.get_orderbook.return_value = {
+            'bids': [[0.50, 10]],  # Only $5 liquidity
+            'asks': [[0.52, 1000]],
+            'timestamp': datetime.now(timezone.utc).isoformat()
+        }
+
+        client.get_market.return_value = {'volume_24h': 10000}
+
+        config = {
+            'slippage_estimation': {
+                'enabled': True,
+                'max_slippage_bps': 100,
+                'max_slippage_dollars': 5.0
+            }
+        }
+
+        executor = TradeExecutor(
+            client=client,
+            position_manager=position_manager,
+            config=config,
+            paper_trading=True
+        )
+
+        # Try to close $100 position (should be rejected - insufficient liquidity)
+        result = executor.execute_close_trade(
+            market_id='test_market',
+            outcome='YES',
+            token_id='test_token',
+            exit_price=0.50,
+            position_size=100.0,
+            exit_reason='test_close',
+            question='Test market'
+        )
+
+        # Should reject due to insufficient liquidity
+        assert not result.success, (
+            "Should reject close with insufficient liquidity"
+        )
+        assert result.rejection_stage == 'slippage', (
+            "Should reject at slippage stage"
+        )
+
+    def test_execute_close_trade_accepts_good_liquidity(self):
+        """Verify execute_close_trade accepts closes with good liquidity."""
+        from src.core.trade_executor import TradeExecutor
+        from src.core.position_manager_v2 import PositionManager
+        from unittest.mock import Mock
+        from datetime import datetime, timezone
+
+        # Setup mocks
+        client = Mock()
+        position_manager = Mock(spec=PositionManager)
+
+        # Mock orderbook with good liquidity and tight spread for SELL
+        client.get_orderbook.return_value = {
+            'bids': [[0.499, 1000]],  # Tight spread, plenty of liquidity
+            'asks': [[0.501, 1000]],
+            'timestamp': datetime.now(timezone.utc).isoformat()
+        }
+
+        client.get_market.return_value = {'volume_24h': 50000}
+
+        config = {
+            'slippage_estimation': {
+                'enabled': True,
+                'max_slippage_bps': 500,  # Higher threshold for test
+                'max_slippage_dollars': 50.0
+            }
+        }
+
+        executor = TradeExecutor(
+            client=client,
+            position_manager=position_manager,
+            config=config,
+            paper_trading=True
+        )
+
+        # Close $50 position (should succeed - good liquidity)
+        result = executor.execute_close_trade(
+            market_id='test_market',
+            outcome='YES',
+            token_id='test_token',
+            exit_price=0.499,  # Best bid price
+            position_size=50.0,
+            exit_reason='take_profit',
+            question='Test market'
+        )
+
+        # Should succeed
+        assert result.success, f"Should accept close with good liquidity: {result.reason}"
+
+        # Should have called position_manager.close_position
+        position_manager.close_position.assert_called_once()

@@ -197,7 +197,12 @@ constraints:
       alert: info
   - id: RISK-003
     title: Slippage estimation before order execution
-    description: 'All trades MUST pass slippage estimation before submission.
+    description: 'All trades (opening AND closing) MUST pass slippage estimation before submission.
+
+      **Opening positions (BUY orders)**: Validates slippage when buying YES/NO tokens
+
+      **Closing positions (SELL orders)**: Validates slippage when selling tokens back
+
 
       Rejection criteria (per-bot thresholds):
 
@@ -214,11 +219,13 @@ constraints:
       Warnings: liquidity < $500, spread > 5%, depth < 3 levels.
 
       '
-    rationale: 'Prevents execution at unfavorable prices.
+    rationale: 'Prevents execution at unfavorable prices for both entries and exits.
 
-      Ensures sufficient liquidity for position exit.
+      Ensures sufficient liquidity for position opening and closing.
 
       Per-bot thresholds reflect different market conditions and liquidity profiles.
+
+      Critical for live trading to avoid losses from poor exit execution.
 
       '
     status: enforced
@@ -622,7 +629,7 @@ operations:
     alert: critical
     description: Alert if retraining fails 2+ times consecutively
 metadata:
-  last_validated: '2026-02-27T07:44:40.431191'
+  last_validated: '2026-02-27T08:00:09.459396'
   validation_status: FAIL
   total_constraints: 14
   enforced_constraints: 14
