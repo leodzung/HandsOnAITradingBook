@@ -31,7 +31,7 @@ from features.short_expiry_features import ShortExpiryFeatureExtractor
 from core.polymarket_client import PolymarketClient
 from core.price_fetcher import PriceFetcher
 from core.slippage_estimator import SlippageEstimator
-from core.trade_executor import TradeExecutor
+from core.trade_executor import TradeExecutor, TradeRequest
 from core.position_manager_v2 import PositionManager, DuplicatePositionError
 from monitoring.telegram_notifier import TelegramNotifier
 from utils.price_tracker import PriceTracker
@@ -843,70 +843,7 @@ class ShortExpiryTrader:
             logger.warning(f"No token_id found for {outcome} - skipping trade")
             return
 
-        # Estimate slippage
-        slippage_config = self.config.get('slippage_estimation', {})
-        if slippage_config.get('enabled', True):
-            # Get bucket-specific limits
-            max_slippage_bps = slippage_config.get('max_slippage_bps', {}).get(bucket, 2000)
-            max_slippage_dollars = slippage_config.get('max_slippage_dollars', {}).get(bucket, 20.0)
-            warn_threshold_bps = slippage_config.get('warn_threshold_bps', {}).get(bucket, 1000)
-
-            # Override config with bucket-specific limits for estimation
-            bucket_slippage_config = slippage_config.copy()
-            bucket_slippage_config['max_slippage_bps'] = max_slippage_bps
-            bucket_slippage_config['max_slippage_dollars'] = max_slippage_dollars
-            bucket_slippage_config['warn_threshold_bps'] = warn_threshold_bps
-
-            # Create temporary estimator with bucket-specific config
-            estimator = SlippageEstimator(config=bucket_slippage_config)
-
-            # Get orderbook for slippage estimation
-            orderbook = self.client.get_orderbook(token_id)
-            if not orderbook:
-                logger.warning(f"Could not fetch orderbook for slippage estimation - skipping trade")
-                return
-
-            # Get market volume
-            market_data = self.client.get_market(market_id)
-            market_volume_24h = market_data.get('volume_24h', 0) if market_data else 0
-
-            # Estimate slippage using correct API
-            slippage_result = estimator.estimate_slippage(
-                order_side='BUY',
-                order_size=size,
-                orderbook=orderbook,
-                quoted_price=entry_price,
-                market_volume_24h=market_volume_24h
-            )
-
-            if not slippage_result.is_acceptable:
-                logger.warning(
-                    f"TRADE REJECTED - Slippage | Bucket: {bucket} | "
-                    f"Market: {market.get('question', '')[:50]} | "
-                    f"Reason: {slippage_result.rejection_reason} | "
-                    f"Slippage: {slippage_result.slippage_bps:.0f} bps (${slippage_result.slippage_dollars:.2f}) | "
-                    f"Limit: {max_slippage_bps} bps (${max_slippage_dollars})"
-                )
-                return  # Don't execute trade
-
-            # Log slippage info
-            slippage_bps = slippage_result.slippage_bps
-            slippage_dollars = slippage_result.slippage_dollars
-
-            if slippage_bps > warn_threshold_bps:
-                logger.warning(
-                    f"HIGH SLIPPAGE WARNING | Bucket: {bucket} | "
-                    f"Slippage: {slippage_bps:.0f} bps (${slippage_dollars:.2f}) | "
-                    f"Threshold: {warn_threshold_bps} bps | "
-                    f"Market: {market.get('question', '')[:50]}"
-                )
-            else:
-                logger.info(
-                    f"Slippage check passed | Bucket: {bucket} | "
-                    f"Slippage: {slippage_bps:.0f} bps (${slippage_dollars:.2f})"
-                )
-
-        # Paper trading: validate and update balance
+        # Paper trading: validate balance before TradeExecutor
         if self.paper_trading:
             # RISK-007: Check sufficient balance before opening position
             if self.balance < size:
@@ -924,9 +861,6 @@ class ShortExpiryTrader:
                     market_id=market_id
                 )
                 return  # Skip this trade
-
-            self.balance -= size
-            self._save_balance(self.balance)
 
         # Extract asset from market question for dashboard display
         question = market.get('question', '')
@@ -949,44 +883,43 @@ class ShortExpiryTrader:
         sl_pct = sl_pct_map.get(bucket, 15)  # Default 15% if bucket not found
         tp_pct = tp_pct_map.get(bucket, 50)  # Default 50% if bucket not found
 
-        # Record position using PositionManager V2
-        try:
-            self.position_manager.save_position(
-                market_id=market_id,
-                token_id=f"{market_id}_{outcome}",
-                outcome=outcome,
-                entry_time=datetime.now(timezone.utc),
-                entry_price=entry_price,
-                size=size,
-                edge=signal['edge'],
-                confidence=signal['confidence'],
-                signal_reason=signal['reason'],
-                hours_to_expiry=features['hours_to_expiry'].iloc[0],
-                bucket=bucket,
-                stop_loss_pct=sl_pct,  # RISK-001: Always set stop-loss
-                take_profit_pct=tp_pct,  # RISK-001: Always set take-profit
-                metadata={
-                    'question': question,
-                    'asset': asset,
-                    'features_json': features.to_json()
-                }
-            )
-        except DuplicatePositionError:
-            # Position already exists (likely from another bucket processing the same market)
-            # Refund the balance and skip this trade
-            logger.warning(
-                f"DUPLICATE POSITION SKIPPED | Market: {market.get('question', '')[:50]} | "
-                f"Bucket: {bucket} | Outcome: {outcome} | "
-                f"Position already exists (likely opened by another bucket)"
-            )
-            if self.paper_trading:
-                self.balance += size  # Refund
-                self._save_balance(self.balance)
+        # Create TradeRequest
+        trade_request = TradeRequest(
+            market_id=market_id,
+            token_id=token_id,
+            outcome=outcome,
+            entry_price=entry_price,
+            position_size=size,
+            question=question,
+            asset=asset,
+            edge=signal['edge'],
+            confidence=signal['confidence'],
+            signal_reason=signal['reason'],
+            stop_loss_pct=sl_pct,
+            take_profit_pct=tp_pct,
+            metadata={
+                'hours_to_expiry': features['hours_to_expiry'].iloc[0],
+                'bucket': bucket,
+                'features_json': features.to_json()
+            }
+        )
+
+        # Execute trade via TradeExecutor (validates slippage, price, and saves position)
+        # Note: Use bucket-specific slippage config if needed
+        trade_result = self.trade_executor.execute_trade(trade_request, order_side='BUY')
+
+        if not trade_result.success:
+            logger.warning(f"❌ Trade rejected by TradeExecutor: {trade_result.rejection_reason}")
             return
+
+        # Deduct from paper balance after successful trade
+        if self.paper_trading:
+            self.balance -= size
+            self._save_balance(self.balance)
 
         logger.info(f"TRADE OPENED | Market: {market.get('question', '')[:50]} | "
                    f"Bucket: {bucket} | Outcome: {outcome} | Size: ${size:.2f} | "
-                   f"Entry: {entry_price:.4f} | Reason: {signal['reason']} | "
+                   f"Entry: {trade_result.entry_price:.4f} | Reason: {signal['reason']} | "
                    f"Balance: ${self.balance:.2f}")
 
         # Send Telegram notification
@@ -996,7 +929,7 @@ class ShortExpiryTrader:
             f"<b>Bucket:</b> {bucket.replace('_', '-').title()}\n"
             f"<b>Side:</b> {outcome}\n"
             f"<b>Size:</b> ${size:.2f}\n"
-            f"<b>Entry:</b> {entry_price:.3f}\n"
+            f"<b>Entry:</b> {trade_result.entry_price:.3f}\n"
             f"<b>Edge:</b> {signal['edge']:.1%}\n"
             f"<b>Confidence:</b> {signal['confidence']:.1%}\n"
             f"<b>Strategy:</b> {signal['reason'].replace('_', ' ').title()}\n\n"

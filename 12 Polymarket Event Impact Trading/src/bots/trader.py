@@ -19,7 +19,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from core.polymarket_client import PolymarketClient, MarketFilter
 from core.price_fetcher import PriceFetcher
-from core.trade_executor import TradeExecutor
+from core.trade_executor import TradeExecutor, TradeRequest
 from utils.event_detector import EventDetector
 from features.feature_extractor import FeatureEngineering
 from models.models_v2 import PriceMovementPredictor, TradingSignalGenerator, ModelPerformanceTracker
@@ -913,112 +913,78 @@ class PolymarketTrader:
         else:
             quoted_price = yes_price if outcome == 'YES' else no_price
 
-        # Get orderbook for slippage estimation
-        orderbook = self.client.get_orderbook(token_id)
+        # Extract question and asset from market for dashboard display
+        question = market.get('question', '') if market else ''
+        asset = 'EVENT'  # Default for event-based markets
 
-        # Estimate slippage
-        from slippage_estimator import SlippageEstimator
+        # Try to infer asset from question for better dashboard categorization
+        if market and question:
+            question_lower = question.lower()
+            if 'gold' in question_lower or 'gc' in question_lower or 'xau' in question_lower:
+                asset = 'GOLD'
+            elif 'bitcoin' in question_lower or 'btc' in question_lower:
+                asset = 'BTC'
+            elif 'ethereum' in question_lower or 'eth' in question_lower:
+                asset = 'ETH'
+            elif any(keyword in question_lower for keyword in ['trump', 'biden', 'election', 'president']):
+                asset = 'POLITICS'
+            elif any(keyword in question_lower for keyword in ['nfl', 'nba', 'sports', 'super bowl']):
+                asset = 'SPORTS'
 
-        estimator = SlippageEstimator(config=self.config.get('slippage_estimation', {}))
+        # RISK-001: Get stop-loss and take-profit from config
+        tp_pct = self.config.get('take_profit', {}).get('pct', 50)
+        sl_pct = self.config.get('stop_loss', {}).get('pct', 15)
 
-        # Get market volume
-        market_volume_24h = market.get('volume', 0) if market else 0
-
-        slippage_est = estimator.estimate_slippage(
-            order_side='BUY',  # Always BUY for opening positions
-            order_size=position_size,
-            orderbook=orderbook,
-            quoted_price=quoted_price,
-            market_volume_24h=market_volume_24h
+        # Create TradeRequest
+        trade_request = TradeRequest(
+            market_id=market_id,
+            token_id=token_id,
+            outcome=outcome,
+            entry_price=quoted_price,
+            position_size=position_size,
+            question=question,
+            asset=asset,
+            edge=signal.get('edge', 0),
+            confidence=signal.get('confidence', 0),
+            signal_reason='event',
+            stop_loss_pct=sl_pct,
+            take_profit_pct=tp_pct,
+            metadata={
+                'signal_action': signal['action'],
+                'event_source': signal.get('source', 'unknown')
+            }
         )
 
-        # Check if slippage is acceptable
-        if not slippage_est.is_acceptable:
-            logger.warning(f"Trade REJECTED - {slippage_est.rejection_reason}")
+        # Execute trade via TradeExecutor (validates slippage, price, and saves position)
+        trade_result = self.trade_executor.execute_trade(trade_request, order_side='BUY')
+
+        if not trade_result.success:
+            logger.warning(f"❌ Trade rejected by TradeExecutor: {trade_result.rejection_reason}")
             return
 
-        # Log slippage estimate
-        logger.info(f"Slippage estimate: ${slippage_est.slippage_dollars:.3f} "
-                   f"({slippage_est.slippage_bps:.0f} bps), "
-                   f"levels: {slippage_est.levels_consumed}")
-
-        # Log warnings if any
-        for warning in slippage_est.warnings:
-            logger.warning(f"Slippage warning: {warning}")
-
-        # Use adjusted execution price
-        entry_price = slippage_est.expected_execution_price
-
-        # Place order
+        # Deduct from paper balance
         if self.config.get('paper_trading', True):
-            logger.info(f"[PAPER TRADE] BUY {outcome} ${position_size:.2f} "
-                       f"at ${entry_price:.3f}")
-
-            # Deduct from paper balance
             self._update_paper_balance(-position_size, f"Open BUY {outcome} position")
 
-            # Extract question and asset from market for dashboard display
-            question = market.get('question', '') if market else ''
-            asset = 'EVENT'  # Default for event-based markets
+        # Track paper position (in memory)
+        self.risk_manager.add_position(market_id, position_size)
+        self.position_timers[market_id] = {
+            'entry_time': datetime.now(timezone.utc),
+            'entry_price': trade_result.entry_price,  # Actual execution price from TradeExecutor
+            'side': outcome,  # Store YES or NO
+            'size': position_size
+        }
 
-            # Try to infer asset from question for better dashboard categorization
-            if market and question:
-                question_lower = question.lower()
-                if 'gold' in question_lower or 'gc' in question_lower or 'xau' in question_lower:
-                    asset = 'GOLD'
-                elif 'bitcoin' in question_lower or 'btc' in question_lower:
-                    asset = 'BTC'
-                elif 'ethereum' in question_lower or 'eth' in question_lower:
-                    asset = 'ETH'
-                elif any(keyword in question_lower for keyword in ['trump', 'biden', 'election', 'president']):
-                    asset = 'POLITICS'
-                elif any(keyword in question_lower for keyword in ['nfl', 'nba', 'sports', 'super bowl']):
-                    asset = 'SPORTS'
-
-            # RISK-001: Get stop-loss and take-profit from config
-            tp_pct = self.config.get('take_profit', {}).get('pct', 50)
-            sl_pct = self.config.get('stop_loss', {}).get('pct', 15)
-
-            # Save to database (persistence!) - store actual token price
-            self.position_manager.save_position(
-                market_id=market_id,
-                token_id=token_id,
-                entry_time=datetime.now(timezone.utc),
-                entry_price=entry_price,  # Actual token price (YES or NO)
-                outcome=outcome,  # YES or NO (V2 uses 'outcome' not 'side')
-                size=position_size,
-                edge=signal.get('edge', 0),  # V2: track expected edge
-                confidence=signal.get('confidence', 0),  # V2: track confidence
-                signal_reason='event',  # V2: track which strategy
-                stop_loss_pct=sl_pct,  # RISK-001: Always set stop-loss
-                take_profit_pct=tp_pct,  # RISK-001: Always set take-profit
-                metadata={
-                    'question': question,
-                    'asset': asset,
-                    'signal_action': signal['action'],
-                    'event_source': signal.get('source', 'unknown')
-                }
-            )
-
-            # Track paper position (in memory)
-            self.risk_manager.add_position(market_id, position_size)
-            self.position_timers[market_id] = {
-                'entry_time': datetime.now(timezone.utc),
-                'entry_price': entry_price,  # Actual token price
-                'side': outcome,  # Store YES or NO
-                'size': position_size
-            }
-
-            # Send Telegram notification
-            self.telegram.notify_position_opened(
-                market_id=market_id,
-                asset="CRYPTO",  # Event trader handles general crypto
-                outcome=outcome,
-                entry_price=entry_price,  # Actual token price
-                position_size=position_size,
-                edge=signal.get('expected_return'),
-                bot_name="Event Trader"
-            )
+        # Send Telegram notification
+        self.telegram.notify_position_opened(
+            market_id=market_id,
+            asset="CRYPTO",  # Event trader handles general crypto
+            outcome=outcome,
+            entry_price=trade_result.entry_price,  # Actual execution price
+            position_size=position_size,
+            edge=signal.get('expected_return'),
+            bot_name="Event Trader"
+        )
 
         else:
             # Real trading
