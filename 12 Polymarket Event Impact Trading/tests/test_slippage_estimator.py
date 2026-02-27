@@ -508,3 +508,136 @@ class TestSlippageEstimator:
                 quoted_price=0.52,
                 market_volume_24h=10000
             )
+
+    def test_sell_order_large_multiple_levels(self):
+        """Test SELL order slippage across multiple orderbook levels"""
+        # Use higher thresholds for multi-level test
+        high_threshold_config = self.config.copy()
+        high_threshold_config['max_slippage_bps'] = 2000
+        high_threshold_config['max_slippage_dollars'] = 50.0
+        estimator = SlippageEstimator(config=high_threshold_config)
+
+        orderbook = {
+            'bids': [
+                [0.65, 100],  # Level 1
+                [0.64, 150],  # Level 2
+                [0.63, 200],  # Level 3
+                [0.62, 150]   # Level 4
+            ],
+            'asks': [[0.67, 1000]]
+        }
+
+        order_size = 250.0  # Will consume 3+ levels
+        quoted_price = 0.65  # Best bid
+
+        result = estimator.estimate_slippage(
+            order_side='SELL',
+            order_size=order_size,
+            orderbook=orderbook,
+            quoted_price=quoted_price,
+            market_volume_24h=50000
+        )
+
+        # Should successfully fill across multiple levels
+        assert result.is_acceptable is True
+        assert result.order_fills_immediately is True
+        assert result.levels_consumed >= 3
+
+        # SELL order slippage: quoted_price - buffered_price (selling at worse prices)
+        # Should have consumed levels at 0.65, 0.64, 0.63
+        assert result.slippage_bps > 0
+
+    def test_sell_order_insufficient_liquidity(self):
+        """Test SELL order rejection when orderbook lacks liquidity"""
+        orderbook = {
+            'bids': [
+                [0.55, 50],   # Only $27.50 liquidity
+                [0.54, 30]    # Only $16.20 more
+            ],
+            'asks': [[0.57, 1000]]
+        }
+
+        order_size = 100.0  # Need $100 but only ~$44 available
+        quoted_price = 0.55  # Best bid
+
+        result = self.estimator.estimate_slippage(
+            order_side='SELL',
+            order_size=order_size,
+            orderbook=orderbook,
+            quoted_price=quoted_price,
+            market_volume_24h=20000
+        )
+
+        # Should reject due to insufficient liquidity
+        assert result.is_acceptable is False
+        assert result.order_fills_immediately is False
+        assert "Insufficient liquidity" in result.rejection_reason
+
+    def test_sell_order_wide_spread(self):
+        """Test SELL order with wide bid-ask spread applies volatility adjustment"""
+        # Wide spread: 15% (0.45 to 0.60)
+        orderbook = {
+            'bids': [[0.45, 1000], [0.44, 500]],
+            'asks': [[0.60, 1000]]
+        }
+
+        order_size = 50.0
+        quoted_price = 0.45  # Best bid
+
+        result = self.estimator.estimate_slippage(
+            order_side='SELL',
+            order_size=order_size,
+            orderbook=orderbook,
+            quoted_price=quoted_price,
+            market_volume_24h=10000
+        )
+
+        # Wide spread should trigger volatility adjustment buffer
+        # Check that warnings include spread-related warning
+        assert result.warnings
+        assert any('spread' in w.lower() or 'volatility' in w.lower() for w in result.warnings)
+
+    def test_invalid_quoted_price(self):
+        """Test invalid quoted_price raises ValueError"""
+        orderbook = {'bids': [[0.48, 1000]], 'asks': [[0.52, 1000]]}
+
+        # Test NaN price
+        import math
+        with pytest.raises(ValueError, match="Invalid quoted_price"):
+            self.estimator.estimate_slippage(
+                order_side='BUY',
+                order_size=50.0,
+                orderbook=orderbook,
+                quoted_price=math.nan,
+                market_volume_24h=10000
+            )
+
+        # Test negative price
+        with pytest.raises(ValueError, match="Invalid quoted_price"):
+            self.estimator.estimate_slippage(
+                order_side='BUY',
+                order_size=50.0,
+                orderbook=orderbook,
+                quoted_price=-0.5,
+                market_volume_24h=10000
+            )
+
+        # Test price > 1
+        with pytest.raises(ValueError, match="Invalid quoted_price"):
+            self.estimator.estimate_slippage(
+                order_side='BUY',
+                order_size=50.0,
+                orderbook=orderbook,
+                quoted_price=1.5,
+                market_volume_24h=10000
+            )
+
+        # Test price = 0
+        with pytest.raises(ValueError, match="Invalid quoted_price"):
+            self.estimator.estimate_slippage(
+                order_side='BUY',
+                order_size=50.0,
+                orderbook=orderbook,
+                quoted_price=0.0,
+                market_volume_24h=10000
+            )

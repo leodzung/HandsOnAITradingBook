@@ -240,7 +240,12 @@ class TradeExecutor:
         market = self.client.get_market(request.market_id)
         market_volume_24h = market.get('volume_24h', 0) if market else 0
 
-        # Estimate slippage using the correct method and parameters
+        # Estimate slippage for opening position
+        # NOTE: order_side is ALWAYS 'BUY' for opening positions because we're buying tokens.
+        # Both YES and NO outcomes involve buying tokens (YES token or NO token), consuming
+        # ask prices from the respective token's orderbook. The orderbook fetched above
+        # (via request.token_id) already corresponds to the correct token.
+        # SELL orders would only apply when closing positions (selling tokens back).
         slippage_result = self.slippage_estimator.estimate_slippage(
             order_side='BUY',
             order_size=request.position_size,
