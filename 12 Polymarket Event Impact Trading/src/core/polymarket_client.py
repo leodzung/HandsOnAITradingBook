@@ -1295,7 +1295,7 @@ class MarketFilter:
         Note:
             - Markets with both YES and NO prices as None are filtered out
             - Price check uses whichever price is available (YES or NO)
-            - Since YES + NO ≈ 1.0, checking one validates both sides
+            - YES and NO are fetched independently (YES + NO != 1.0 due to spread)
         """
         filtered = []
         rejection_counts = {
@@ -1308,29 +1308,13 @@ class MarketFilter:
         }
 
         for m in markets:
-            # Check spread
-            best_bid = m.get('bestBid', 0.45)
-            best_ask = m.get('bestAsk', 0.55)
-
-            if isinstance(best_bid, str):
-                best_bid = float(best_bid)
-            if isinstance(best_ask, str):
-                best_ask = float(best_ask)
-
-            spread = best_ask - best_bid
-            mid_price = (best_bid + best_ask) / 2.0
-            spread_pct = (spread / mid_price * 100) if mid_price > 0 else 0
-
-            if spread_pct > max_spread_pct:
-                rejection_counts['spread_too_wide'] += 1
-                continue
-
-            # Get prices using PriceFetcher
+            # Get market ID first - needed for PriceFetcher calls
             market_id = m.get('conditionId') or m.get('condition_id')
             if not market_id:
                 rejection_counts['no_market_id'] += 1
                 continue
 
+            # Get prices using PriceFetcher (single source of truth)
             entry_prices = price_fetcher.get_entry_prices(market_id)
             if entry_prices is None:
                 rejection_counts['no_entry_prices'] += 1
@@ -1344,8 +1328,19 @@ class MarketFilter:
                 rejection_counts['both_prices_none'] += 1
                 continue
 
-            # Check price range using whichever price is available
-            # YES and NO are complementary, so checking one validates both
+            # Check spread using PriceFetcher exit prices (bid)
+            exit_prices = price_fetcher.get_exit_prices(market_id)
+            if exit_prices is not None:
+                # Spread = ASK - BID, computed from live CLOB prices
+                spread = entry_prices.yes_price - exit_prices.yes_price
+                mid_price = (entry_prices.yes_price + exit_prices.yes_price) / 2.0
+                spread_pct = (spread / mid_price * 100) if mid_price > 0 else 0
+
+                if spread_pct > max_spread_pct:
+                    rejection_counts['spread_too_wide'] += 1
+                    continue
+
+            # Check price range (YES and NO are fetched independently, not complementary)
             check_price = yes_price if yes_price is not None else no_price
             if check_price < min_price or check_price > max_price:
                 rejection_counts['price_out_of_range'] += 1

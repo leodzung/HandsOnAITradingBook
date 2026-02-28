@@ -10,6 +10,8 @@ Uses CLOB API exclusively (not Gamma API) for accurate orderbook prices.
 """
 
 import logging
+import math
+import time
 from typing import Dict, Optional, Tuple
 from dataclasses import dataclass
 
@@ -24,8 +26,16 @@ class MarketPrices:
     source: str  # 'CLOB_ASK' or 'CLOB_BID'
     condition_id: str
 
+    def __post_init__(self):
+        if not isinstance(self.yes_price, (int, float)):
+            raise TypeError(f"yes_price must be numeric, got {type(self.yes_price).__name__}")
+        if not isinstance(self.no_price, (int, float)):
+            raise TypeError(f"no_price must be numeric, got {type(self.no_price).__name__}")
+
     def get_outcome_price(self, outcome: str) -> float:
         """Get price for specific outcome (YES or NO)."""
+        if outcome is None:
+            raise ValueError("outcome must be 'YES' or 'NO', got None")
         if outcome.upper() == 'YES':
             return self.yes_price
         elif outcome.upper() == 'NO':
@@ -49,7 +59,41 @@ class PriceFetcher:
             client: PolymarketClient instance
         """
         self.client = client
+        self._cache = {}  # {(condition_id, side): (timestamp, MarketPrices)}
+        self._cache_ttl = 5  # seconds
         logger.info("PriceFetcher initialized")
+
+    @staticmethod
+    def _validate_raw_price(price, label: str, condition_id: str) -> bool:
+        """Validate a raw price value. Returns True if valid."""
+        if not isinstance(price, (int, float)):
+            logger.warning(f"Invalid {label} price type for {condition_id[:16]}...: {type(price)}")
+            return False
+        if math.isnan(price) or math.isinf(price):
+            logger.warning(f"Invalid {label} price for {condition_id[:16]}...: NaN/Inf detected")
+            return False
+        if not (0 < price < 1):
+            logger.warning(f"{label} price out of range for {condition_id[:16]}...: {price}")
+            return False
+        return True
+
+    def _get_cached(self, condition_id: str, side: str) -> Optional[MarketPrices]:
+        """Get cached price if still within TTL."""
+        key = (condition_id, side)
+        if key in self._cache:
+            ts, prices = self._cache[key]
+            if time.time() - ts < self._cache_ttl:
+                return prices
+            del self._cache[key]
+        return None
+
+    def _set_cached(self, condition_id: str, side: str, prices: MarketPrices):
+        """Cache a price result with current timestamp."""
+        self._cache[(condition_id, side)] = (time.time(), prices)
+
+    def clear_cache(self):
+        """Clear all cached prices."""
+        self._cache.clear()
 
     def get_entry_prices(self, condition_id: str) -> Optional[MarketPrices]:
         """
@@ -66,6 +110,10 @@ class PriceFetcher:
         Returns:
             MarketPrices with ASK prices, or None if unavailable
         """
+        cached = self._get_cached(condition_id, 'BUY')
+        if cached is not None:
+            return cached
+
         prices = self.client.get_market_prices(condition_id, side='BUY')
 
         yes_price = prices.get('yes')
@@ -78,12 +126,19 @@ class PriceFetcher:
             )
             return None
 
-        return MarketPrices(
+        if not self._validate_raw_price(yes_price, 'YES ASK', condition_id):
+            return None
+        if not self._validate_raw_price(no_price, 'NO ASK', condition_id):
+            return None
+
+        result = MarketPrices(
             yes_price=yes_price,
             no_price=no_price,
             source='CLOB_ASK',
             condition_id=condition_id
         )
+        self._set_cached(condition_id, 'BUY', result)
+        return result
 
     def get_exit_prices(self, condition_id: str) -> Optional[MarketPrices]:
         """
@@ -101,6 +156,10 @@ class PriceFetcher:
         Returns:
             MarketPrices with BID prices, or None if unavailable
         """
+        cached = self._get_cached(condition_id, 'SELL')
+        if cached is not None:
+            return cached
+
         prices = self.client.get_market_prices(condition_id, side='SELL')
 
         yes_price = prices.get('yes')
@@ -113,12 +172,19 @@ class PriceFetcher:
             )
             return None
 
-        return MarketPrices(
+        if not self._validate_raw_price(yes_price, 'YES BID', condition_id):
+            return None
+        if not self._validate_raw_price(no_price, 'NO BID', condition_id):
+            return None
+
+        result = MarketPrices(
             yes_price=yes_price,
             no_price=no_price,
             source='CLOB_BID',
             condition_id=condition_id
         )
+        self._set_cached(condition_id, 'SELL', result)
+        return result
 
     def get_entry_and_exit_prices(self, condition_id: str) -> Optional[Tuple[MarketPrices, MarketPrices]]:
         """
@@ -215,17 +281,3 @@ class PriceFetcher:
             )
 
         return (True, None)
-
-
-def get_price_for_outcome(prices: MarketPrices, outcome: str) -> float:
-    """
-    Helper function to get price for a specific outcome.
-
-    Args:
-        prices: MarketPrices object
-        outcome: 'YES' or 'NO'
-
-    Returns:
-        Price for the specified outcome
-    """
-    return prices.get_outcome_price(outcome)
