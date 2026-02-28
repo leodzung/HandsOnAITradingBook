@@ -28,6 +28,7 @@ from core.position_manager_v2 import PositionManager
 from core.trade_executor import TradeExecutor, TradeRequest
 from utils.conditional_resolution import ConditionalResolutionAnalyzer
 from core.exposure_manager import ExposureManager
+from core.position_sizer import PositionSizer
 from monitoring.telegram_notifier import TelegramNotifier
 from ml.ml_predictor import MLPredictor, MLPredictorFactory
 from ml.snapshot_collector import MarketSnapshotCollector
@@ -155,14 +156,6 @@ class PriceLevelSignalGenerator:
                 'position_size': 0
             }
 
-        # Calculate position size using Kelly Criterion
-        # Kelly = (edge / odds) where odds = 1 for binary markets
-        # Apply multiplier to reduce risk
-        kelly_fraction = abs(edge) * self.kelly_multiplier
-        kelly_fraction = min(kelly_fraction, 0.25)  # Cap at 25%
-
-        position_size = balance * kelly_fraction
-
         # Determine action
         if edge > self.edge_threshold:
             action = 'BUY'
@@ -181,8 +174,6 @@ class PriceLevelSignalGenerator:
             'model_prob': model_prob,
             'market_price': market_price,
             'edge': edge,
-            'kelly_fraction': kelly_fraction,
-            'position_size': position_size
         }
 
 
@@ -249,6 +240,10 @@ class PriceLevelTrader:
         # Initialize exposure manager
         self.exposure_manager = ExposureManager(self.config.get('exposure_limits', {}))
         logger.info("✓ Exposure manager initialized")
+
+        # Initialize unified position sizer
+        self.position_sizer = PositionSizer(self.config.get('position_sizing', {}))
+        logger.info("✓ Position sizer initialized")
 
         # Paper trading balance
         self.balance_file = Path('data/paper_trading_balance_price_level.json')
@@ -1175,11 +1170,18 @@ class PriceLevelTrader:
         if self._check_circuit_breaker():
             return
 
-        # Cap position size
-        position_size = min(
-            signal['position_size'],
-            self.config.get('max_position_size', 100)
+        # Calculate position size using unified PositionSizer
+        condition_id = parsed_market.get('conditionId')
+        orderbook = self.client.get_orderbook(condition_id) if condition_id else None
+        position_size = self.position_sizer.calculate(
+            edge=signal['edge'],
+            confidence=signal.get('model_prob', signal.get('confidence', 0.5)),
+            balance=self.balance,
+            orderbook=orderbook
         )
+        if position_size == 0:
+            logger.info("Position size too small after sizing — skipping")
+            return
 
         # Get outcome (YES/NO) from signal
         outcome = signal.get('outcome')

@@ -33,6 +33,7 @@ from core.price_fetcher import PriceFetcher
 from core.slippage_estimator import SlippageEstimator
 from core.trade_executor import TradeExecutor, TradeRequest
 from core.exposure_manager import ExposureManager
+from core.position_sizer import PositionSizer
 from core.position_manager_v2 import PositionManager, DuplicatePositionError
 from monitoring.telegram_notifier import TelegramNotifier
 from utils.price_tracker import PriceTracker
@@ -274,6 +275,10 @@ class ShortExpiryTrader:
         # Initialize exposure manager (portfolio concentration limits)
         self.exposure_manager = ExposureManager(self.config.get('exposure_limits', {}))
         logger.info("✓ Exposure manager initialized")
+
+        # Initialize unified position sizer
+        self.position_sizer = PositionSizer(self.config.get('position_sizing', {}))
+        logger.info("✓ Position sizer initialized")
 
         # Initialize price tracker for historical price data (enables momentum signals)
         self.price_tracker = PriceTracker(self.config['database']['tracking_db'])
@@ -824,12 +829,18 @@ class ShortExpiryTrader:
         market_id = market.get('conditionId', '')
         outcome = signal['outcome']
 
-        # Calculate position size
-        size = self.risk_manager.calculate_position_size(
-            signal['edge'],
-            signal['confidence'],
-            bucket
+        # Calculate position size using unified PositionSizer
+        orderbook = self.client.get_orderbook(market_id) if market_id else None
+        size = self.position_sizer.calculate(
+            edge=signal['edge'],
+            confidence=signal['confidence'],
+            balance=self.balance,
+            orderbook=orderbook,
+            bucket=bucket
         )
+        if size == 0:
+            logger.info("Position size too small after sizing — skipping")
+            return
 
         # Get entry price using PriceFetcher
         prices = self._get_prices(market)

@@ -188,6 +188,29 @@ constraints:
       threshold: 0
       alert: critical
       description: Count of direct position_manager calls from bot code
+  - id: ARCH-006
+    title: PositionSizer is single source for position sizing
+    description: 'All position sizing MUST use src/core/position_sizer.py.
+
+      Inline Kelly calculations, hardcoded sizing, or per-bot sizing methods are FORBIDDEN.
+
+      '
+    rationale: 'Three bots had inconsistent sizing formulas (2026-02-27). Event trader
+
+      used fake Kelly (balance*0.1*confidence), price-level used real Kelly, short-expiry
+
+      used max_size*confidence with no balance/edge consideration. Unified PositionSizer
+
+      provides consistent Kelly + liquidity caps across all bots.
+
+      '
+    status: enforced
+    priority: high
+    implemented_date: '2026-02-27'
+    validation:
+    - type: structural_test
+      command: PYTHONPATH=src pytest tests/test_position_sizer.py -v
+      description: Verify PositionSizer Kelly, confidence, liquidity, and cap logic
   risk_management:
   - id: RISK-001
     title: Stop-loss and take-profit always active
@@ -902,7 +925,7 @@ operations:
     alert: critical
     description: Alert if retraining fails 2+ times consecutively
 metadata:
-  last_validated: '2026-02-27T17:25:00.807239'
+  last_validated: '2026-02-27T21:29:35.942231'
   validation_status: FAIL
   total_constraints: 20
   enforced_constraints: 19

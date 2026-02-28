@@ -21,6 +21,7 @@ from core.polymarket_client import PolymarketClient, MarketFilter
 from core.price_fetcher import PriceFetcher
 from core.trade_executor import TradeExecutor, TradeRequest
 from core.exposure_manager import ExposureManager
+from core.position_sizer import PositionSizer
 from utils.event_detector import EventDetector
 from features.feature_extractor import FeatureEngineering
 from models.models_v2 import PriceMovementPredictor, TradingSignalGenerator, ModelPerformanceTracker
@@ -268,6 +269,10 @@ class PolymarketTrader:
         # Initialize exposure manager (portfolio concentration limits)
         self.exposure_manager = ExposureManager(config.get('exposure_limits', {}))
         logger.info("✓ Exposure manager initialized")
+
+        # Initialize unified position sizer
+        self.position_sizer = PositionSizer(config.get('position_sizing', {}))
+        logger.info("✓ Position sizer initialized")
 
         self.performance_tracker = ModelPerformanceTracker()
 
@@ -896,11 +901,17 @@ class PolymarketTrader:
             logger.warning(f"Insufficient balance: ${balance}")
             return
 
-        # Calculate position size
-        position_size = self.risk_manager.get_position_size(
-            signal.get('confidence', 0.5),
-            balance
+        # Calculate position size using unified PositionSizer
+        orderbook = self.client.get_orderbook(token_id) if token_id else None
+        position_size = self.position_sizer.calculate(
+            edge=signal.get('edge', 0),
+            confidence=signal.get('confidence', 0.5),
+            balance=balance,
+            orderbook=orderbook
         )
+        if position_size == 0:
+            logger.info("Position size too small after sizing — skipping")
+            return
 
         # Check risk limits
         can_open, reason = self.risk_manager.can_open_position(position_size)

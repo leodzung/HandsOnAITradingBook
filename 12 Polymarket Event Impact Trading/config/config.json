@@ -118,5 +118,12 @@
   "use_ml_model": true,
   "ml_model_path": "data/models/event_model.pkl",
   "ml_confidence_threshold": 0.6,
-  "ml_position_size_scaling": true
+  "ml_position_size_scaling": true,
+  "position_sizing": {
+    "kelly_multiplier": 0.5,
+    "max_kelly_fraction": 0.25,
+    "max_position_size": 100,
+    "min_position_size": 5,
+    "liquidity_cap_pct": 0.10
+  }
 }
