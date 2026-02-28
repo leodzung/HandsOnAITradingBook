@@ -16,7 +16,7 @@ jobs:
     timeout-minutes: 3
 
     steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v4
 
     - name: Set up Python
       uses: actions/setup-python@v4
@@ -24,7 +24,7 @@ jobs:
         python-version: '3.9'
 
     - name: Cache pip
-      uses: actions/cache@v3
+      uses: actions/cache@v4
       with:
         path: ~/.cache/pip
         key: ${{ runner.os }}-pip-structural-${{ hashFiles('**/requirements*.txt') }}
@@ -45,7 +45,7 @@ jobs:
     timeout-minutes: 2
 
     steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v4
 
     - name: Check PriceFetcher constraint
       working-directory: "12 Polymarket Event Impact Trading"
@@ -73,7 +73,7 @@ jobs:
     timeout-minutes: 5
 
     steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v4
 
     - name: Set up Python
       uses: actions/setup-python@v4
@@ -81,7 +81,7 @@ jobs:
         python-version: '3.9'
 
     - name: Cache pip
-      uses: actions/cache@v3
+      uses: actions/cache@v4
       with:
         path: ~/.cache/pip
         key: ${{ runner.os }}-pip-unit-${{ hashFiles('**/requirements*.txt') }}
@@ -102,7 +102,7 @@ jobs:
     timeout-minutes: 5
 
     steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v4
 
     - name: Set up Python
       uses: actions/setup-python@v4
@@ -110,7 +110,7 @@ jobs:
         python-version: '3.9'
 
     - name: Cache pip
-      uses: actions/cache@v3
+      uses: actions/cache@v4
       with:
         path: ~/.cache/pip
         key: ${{ runner.os }}-pip-integration-${{ hashFiles('**/requirements*.txt') }}
