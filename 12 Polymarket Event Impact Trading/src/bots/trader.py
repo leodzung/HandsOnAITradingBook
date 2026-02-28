@@ -1004,23 +1004,6 @@ class PolymarketTrader:
             bot_name="Event Trader"
         )
 
-        else:
-            # Real trading
-            order = self.client.place_order(
-                token_id=token_id,
-                side=signal['action'],
-                price=signal.get('suggested_price', current_price),
-                size=position_size / current_price,
-                order_type='GTC'
-            )
-
-            if order:
-                logger.info(f"Order placed: {order}")
-                self.risk_manager.add_position(market_id, position_size)
-                self.open_orders[market_id] = order
-            else:
-                logger.error(f"Failed to place order")
-
     @staticmethod
     def calculate_hours_remaining(entry_time: datetime, hours_to_expiry_at_entry: float) -> float:
         """Calculate current hours remaining until expiry.
