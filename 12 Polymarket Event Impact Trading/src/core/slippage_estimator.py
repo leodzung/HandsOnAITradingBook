@@ -88,13 +88,23 @@ class SlippageEstimator:
         logger.info(f"SlippageEstimator initialized: max_slippage={self.max_slippage_bps}bps, "
                    f"max_dollars=${self.max_slippage_dollars}, buffer={self.depth_buffer_pct*100}%")
 
+    def _resolve(self, value, bucket: Optional[str], default: float) -> float:
+        """Resolve a config value that may be scalar or per-bucket dict."""
+        if isinstance(value, dict):
+            if bucket and bucket in value:
+                return float(value[bucket])
+            # Fallback: use max of all bucket values (most permissive)
+            return float(max(value.values())) if value else default
+        return float(value)
+
     def estimate_slippage(
         self,
         order_side: str,
         order_size: float,
         orderbook: Dict,
         quoted_price: float,
-        market_volume_24h: float = 0
+        market_volume_24h: float = 0,
+        bucket: Optional[str] = None
     ) -> SlippageEstimate:
         """
         Estimate slippage for a proposed trade.
@@ -279,20 +289,23 @@ class SlippageEstimator:
         slippage_bps = (slippage_dollars / order_size) * 10000 if order_size > 0 else 0
         slippage_pct = (slippage_dollars / order_size) * 100 if order_size > 0 else 0
 
-        # Validate against thresholds
+        # Validate against thresholds (resolve per-bucket dicts)
         is_acceptable = True
         rejection_reason = None
+        max_bps = self._resolve(self.max_slippage_bps, bucket, 100)
+        max_dollars = self._resolve(self.max_slippage_dollars, bucket, 5.0)
+        warn_bps = self._resolve(self.warn_threshold_bps, bucket, 50)
 
-        if slippage_bps > self.max_slippage_bps:
+        if slippage_bps > max_bps:
             is_acceptable = False
-            rejection_reason = f"Slippage {slippage_bps:.0f} bps exceeds limit {self.max_slippage_bps} bps"
-        elif slippage_dollars > self.max_slippage_dollars:
+            rejection_reason = f"Slippage {slippage_bps:.0f} bps exceeds limit {max_bps:.0f} bps"
+        elif slippage_dollars > max_dollars:
             is_acceptable = False
-            rejection_reason = f"Slippage ${slippage_dollars:.2f} exceeds limit ${self.max_slippage_dollars}"
+            rejection_reason = f"Slippage ${slippage_dollars:.2f} exceeds limit ${max_dollars:.2f}"
 
         # Add warning if above warning threshold (but still acceptable)
-        if is_acceptable and slippage_bps > self.warn_threshold_bps:
-            warnings.append(f"Slippage {slippage_bps:.0f} bps above warning threshold {self.warn_threshold_bps} bps")
+        if is_acceptable and slippage_bps > warn_bps:
+            warnings.append(f"Slippage {slippage_bps:.0f} bps above warning threshold {warn_bps:.0f} bps")
 
         return SlippageEstimate(
             quoted_price=quoted_price,

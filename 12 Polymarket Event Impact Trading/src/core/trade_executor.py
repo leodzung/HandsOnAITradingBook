@@ -249,12 +249,14 @@ class TradeExecutor:
         # Estimate slippage
         # BUY: Opening positions (buying tokens, consuming asks)
         # SELL: Closing positions (selling tokens back, consuming bids)
+        bucket = (request.metadata or {}).get('bucket')
         slippage_result = self.slippage_estimator.estimate_slippage(
             order_side=order_side,
             order_size=request.position_size,
             orderbook=orderbook,
             quoted_price=request.entry_price,
-            market_volume_24h=market_volume_24h
+            market_volume_24h=market_volume_24h,
+            bucket=bucket
         )
 
         # Check if trade is acceptable
