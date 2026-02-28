@@ -144,11 +144,18 @@ class MLPredictor:
         try:
             # Extract features
             features = self.extract_features(market, additional_context)
-            
+
             # Create DataFrame with correct feature order
             feature_values = [features.get(fname, 0) for fname in self.feature_names]
             X = pd.DataFrame([feature_values], columns=self.feature_names)
-            
+
+            # ML-004: Defense-in-depth - reject NaN/Inf features
+            if X.isnull().any().any() or np.isinf(X.select_dtypes(include=[np.number])).any().any():
+                bad_cols = [c for c in X.columns
+                           if X[c].isnull().any() or (X[c].dtype.kind in 'fi' and np.isinf(X[c]).any())]
+                logger.warning(f"ML-004: NaN/Inf in features {bad_cols} - rejecting prediction")
+                return False, 0.0, f"Invalid features: {bad_cols}"
+
             # Get prediction
             prob_correct = self.model.predict_proba(X)[0][1]
             

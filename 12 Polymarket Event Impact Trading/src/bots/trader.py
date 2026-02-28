@@ -791,6 +791,14 @@ class PolymarketTrader:
             logger.warning(f"Feature transformation failed for {market.get('question', '')[:60]} - skipping signal")
             return
 
+        # ML-004: Validate features before ML prediction
+        invalid_features = {k: v for k, v in model_features.items()
+                           if isinstance(v, float) and (np.isnan(v) or np.isinf(v))}
+        if invalid_features:
+            logger.warning(f"Invalid features (NaN/Inf) for {market.get('question', '')[:60]}: "
+                          f"{list(invalid_features.keys())} - skipping signal")
+            return
+
         features_df = pd.DataFrame([model_features])
 
         # Track this event-market pair for later labeling

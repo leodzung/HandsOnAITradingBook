@@ -39,7 +39,8 @@ constraints:
       allowed_files:
       - src/core/price_fetcher.py
     - type: structural_test
-      command: pytest tests/structural/test_price_fetcher_constraint.py -v
+      command: PYTHONPATH=src pytest tests/structural/test_price_fetcher_constraint.py
+        -v
       description: Verify all bots use PriceFetcher methods
     telemetry:
     - metric: direct_market_access_violations
@@ -74,7 +75,8 @@ constraints:
       allowed_files:
       - src/core/position_manager.py
     - type: structural_test
-      command: pytest tests/structural/test_position_manager_constraint.py -v
+      command: PYTHONPATH=src pytest tests/structural/test_position_manager_constraint.py
+        -v
   - id: ARCH-003
     title: Common features centralized in common_features.py
     description: 'Orderbook, volume, and time features MUST be extracted from
@@ -98,7 +100,7 @@ constraints:
       command: python3 scripts/check_feature_duplication.py
       max_duplicate_lines: 10
     - type: structural_test
-      command: pytest tests/test_common_features.py -v
+      command: PYTHONPATH=src pytest tests/test_common_features.py -v
     telemetry:
     - metric: feature_extraction_failures
       threshold: 0
@@ -124,9 +126,9 @@ constraints:
     implemented_date: '2026-02-13'
     validation:
     - type: integration_test
-      command: pytest tests/integration/test_orderbook_manager.py -v
+      command: PYTHONPATH=src pytest tests/integration/test_orderbook_manager.py -v
     - type: behavioral_test
-      command: pytest tests/behavioral/test_websocket_fallback.py -v
+      command: PYTHONPATH=src pytest tests/behavioral/test_websocket_fallback.py -v
     telemetry:
     - metric: websocket_fallback_rate
       threshold: 0.2
@@ -228,7 +230,8 @@ constraints:
 
       where max_slippage_bps was a dict). Caused TypeError crash in main trading loop.
 
-      This pattern will recur anywhere config supports both scalar and per-bucket formats.
+      This pattern will recur anywhere config supports both scalar and per-bucket
+      formats.
 
       '
     status: enforced
@@ -238,6 +241,34 @@ constraints:
     - type: structural_test
       command: PYTHONPATH=src pytest tests/structural/test_config_type_safety.py -v
       description: AST scan ensures dict-capable config attrs are never in raw comparisons
+  - id: ARCH-008
+    title: No synthetic NO price calculation from YES price
+    description: 'Bot code MUST NOT compute NO price as (1.0 - yes_price) or (1 -
+      market_price).
+
+      YES and NO prices MUST be fetched independently from PriceFetcher because
+
+      YES + NO != 1.0 due to market maker spread. Synthetic calculation creates
+
+      dead code (arbitrage check can never fire) and incorrect price assumptions.
+
+      '
+    rationale: 'Short-expiry arbitrage rule computed no_price = 1.0 - market_price,
+
+      making total = yes + (1 - yes) = 1.0 always. The check "if total < 0.98"
+
+      could never fire - pure dead code. Price-level bot had same pattern in
+
+      conditional analysis. Real YES+NO typically = 1.03-1.10 due to spread.
+
+      '
+    status: enforced
+    priority: critical
+    implemented_date: '2026-02-28'
+    validation:
+    - type: structural_test
+      command: PYTHONPATH=src pytest tests/structural/test_independent_prices.py -v
+      description: Regex scan ensures no synthetic NO price patterns in bot files
   risk_management:
   - id: RISK-001
     title: Stop-loss and take-profit always active
@@ -258,7 +289,7 @@ constraints:
     implemented_date: '2026-01-31'
     validation:
     - type: integration_test
-      command: pytest tests/integration/test_position_monitoring.py::TestStopLossTakeProfitEnforcement::test_sl_tp_always_set
+      command: PYTHONPATH=src pytest tests/integration/test_position_monitoring.py::TestStopLossTakeProfitEnforcement::test_sl_tp_always_set
         -v
     telemetry:
     - metric: positions_without_sl_tp
@@ -288,7 +319,7 @@ constraints:
     implemented_date: '2026-01-24'
     validation:
     - type: behavioral_test
-      command: pytest tests/behavioral/test_circuit_breaker.py -v
+      command: PYTHONPATH=src pytest tests/behavioral/test_circuit_breaker.py -v
     telemetry:
     - metric: circuit_breaker_trips
       alert_on_change: true
@@ -373,9 +404,9 @@ constraints:
     implemented_date: '2026-02-26'
     validation:
     - type: structural_test
-      command: pytest tests/structural/test_market_cooldown.py -v
+      command: PYTHONPATH=src pytest tests/structural/test_market_cooldown.py -v
     - type: behavioral_test
-      command: pytest tests/behavioral/test_no_rapid_reentry.py -v
+      command: PYTHONPATH=src pytest tests/behavioral/test_no_rapid_reentry.py -v
     telemetry:
     - metric: cooldown_violations
       threshold: 0
@@ -406,7 +437,7 @@ constraints:
     implemented_date: '2026-02-26'
     validation:
     - type: structural_test
-      command: pytest tests/structural/test_minimum_expiry.py -v
+      command: PYTHONPATH=src pytest tests/structural/test_minimum_expiry.py -v
     telemetry:
     - metric: entries_under_min_expiry
       threshold: 0
@@ -437,7 +468,7 @@ constraints:
     implemented_date: '2026-02-26'
     validation:
     - type: structural_test
-      command: pytest tests/structural/test_balance_protection.py -v
+      command: PYTHONPATH=src pytest tests/structural/test_balance_protection.py -v
     telemetry:
     - metric: trades_below_min_balance
       threshold: 0
@@ -470,9 +501,9 @@ constraints:
     implemented_date: '2026-02-26'
     validation:
     - type: structural_test
-      command: pytest tests/structural/test_sufficient_balance.py -v
+      command: PYTHONPATH=src pytest tests/structural/test_sufficient_balance.py -v
     - type: behavioral_test
-      command: pytest tests/behavioral/test_no_overdraw.py -v
+      command: PYTHONPATH=src pytest tests/behavioral/test_no_overdraw.py -v
     telemetry:
     - metric: rejected_trades_insufficient_balance
       threshold: null
@@ -519,7 +550,7 @@ constraints:
     implemented_date: '2026-02-27'
     validation:
     - type: structural_test
-      command: pytest tests/structural/test_buy_sell_parity.py -v
+      command: PYTHONPATH=src pytest tests/structural/test_buy_sell_parity.py -v
     telemetry:
     - metric: buy_sell_test_ratio
       threshold: 0.8
@@ -667,7 +698,7 @@ constraints:
     implemented_date: '2026-02-27'
     validation:
     - type: structural_test
-      command: pytest tests/structural/test_input_validation.py -v
+      command: PYTHONPATH=src pytest tests/structural/test_input_validation.py -v
     telemetry:
     - metric: invalid_input_rejections
       threshold: null
@@ -694,12 +725,38 @@ constraints:
     implemented_date: '2026-02-27'
     validation:
     - type: structural_test
-      command: pytest tests/structural/test_pythonpath_constraint.py -v
+      command: PYTHONPATH=src pytest tests/structural/test_pythonpath_constraint.py
+        -v
     telemetry:
     - metric: pythonpath_violations
       threshold: 0
       alert: warning
       description: Count of test commands missing PYTHONPATH in CONSTRAINTS.yml
+  - id: TEST-002
+    title: Collector modules must have test coverage
+    description: 'All collector modules (alchemy_collector, gdelt_collector, data_collector)
+
+      MUST have corresponding test files with at least basic tests for init,
+
+      API mocking, and error handling. Zero-test modules are FORBIDDEN.
+
+      '
+    rationale: '5 collector modules had zero tests. Bugs in collectors cause silent
+
+      data quality degradation that only surfaces weeks later in model performance.
+
+      '
+    status: enforced
+    priority: high
+    implemented_date: '2026-02-28'
+    validation:
+    - type: structural_test
+      command: PYTHONPATH=src pytest tests/structural/test_collector_coverage.py -v
+      description: Verify test files exist for all collector modules
+    - type: integration_test
+      command: PYTHONPATH=src pytest tests/integration/test_alchemy_collector.py tests/integration/test_gdelt_collector.py
+        tests/integration/test_data_collector.py -v
+      description: Run collector integration tests with mocked HTTP
   model_quality:
   - id: ML-001
     title: "Cross-validation (k\u22655) before model deployment"
@@ -785,11 +842,45 @@ constraints:
     implemented_date: '2026-02-23'
     validation:
     - type: structural_test
-      command: pytest tests/test_label_creation.py::TestLabelCreationTokenMapping::test_uses_token_condition_map
+      command: PYTHONPATH=src pytest tests/test_label_creation.py::TestLabelCreationTokenMapping::test_uses_token_condition_map
         -v
     - type: label_quality_check
       command: python3 scripts/validate_label_quality.py --sample-size 100
       description: Spot-check 100 random labels against known outcomes
+  - id: ML-004
+    title: Feature validation before ML prediction
+    description: 'All features MUST be validated for NaN/Inf before being passed to
+      ML models.
+
+      Validation MUST occur at two levels:
+
+      1. Bot level: Check model_features dict before creating DataFrame
+
+      2. MLPredictor level: Defense-in-depth check in predict() method
+
+      Invalid features MUST cause the prediction to be skipped, not produce garbage
+      output.
+
+      '
+    rationale: 'np.std() on empty arrays returns NaN. Missing price histories leave
+      NaN in features.
+
+      Without validation, NaN propagates through ML pipeline producing meaningless
+
+      predictions that the bot treats as valid trading signals.
+
+      '
+    status: enforced
+    priority: critical
+    implemented_date: '2026-02-28'
+    validation:
+    - type: structural_test
+      command: PYTHONPATH=src pytest tests/structural/test_feature_validation.py -v
+      description: Verify validate_features pattern exists before predict calls
+    - type: integration_test
+      command: PYTHONPATH=src pytest tests/integration/test_feature_nan_handling.py
+        -v
+      description: Test with NaN/Inf features to verify rejection
 technical_debt:
   resolved:
   - id: DEBT-001
@@ -813,7 +904,8 @@ technical_debt:
     impact: "Exponential backoff (1s\u219260s), unlimited retries, \xB130% jitter"
     validation:
     - type: integration_test
-      command: pytest tests/integration/test_websocket_reconnection.py -v
+      command: PYTHONPATH=src pytest tests/integration/test_websocket_reconnection.py
+        -v
   - id: DEBT-003
     title: Backup files cleanup
     description: Remove .backup files from repository
@@ -858,7 +950,7 @@ operations:
   implemented_date: '2026-02-15'
   validation:
   - type: integration_test
-    command: pytest tests/integration/test_bot_health_monitor.py -v
+    command: PYTHONPATH=src pytest tests/integration/test_bot_health_monitor.py -v
   telemetry:
   - metric: bots_silent
     threshold: 0
@@ -882,7 +974,7 @@ operations:
   implemented_date: '2026-01-31'
   validation:
   - type: behavioral_test
-    command: pytest tests/behavioral/test_position_persistence.py -v
+    command: PYTHONPATH=src pytest tests/behavioral/test_position_persistence.py -v
   telemetry:
   - metric: positions_lost_on_restart
     threshold: 0
@@ -937,7 +1029,7 @@ operations:
   implemented_date: '2026-02-26'
   validation:
   - type: integration_test
-    command: pytest tests/test_auto_retraining.py -v
+    command: PYTHONPATH=src pytest tests/test_auto_retraining.py -v
     description: Verify retraining triggers, training, validation, deployment
   - type: cli_check
     command: python scripts/auto_retrain.py --check
@@ -951,11 +1043,39 @@ operations:
     threshold: 2
     alert: critical
     description: Alert if retraining fails 2+ times consecutively
+- id: OPS-005
+  title: Database integrity check at startup
+  description: 'All SQLite databases used in critical-path operations MUST run
+
+    PRAGMA integrity_check at initialization. If the check fails, the bot MUST
+
+    refuse to start rather than operate on corrupted data.
+
+    '
+  rationale: 'ML-002 validation failed due to malformed feature_importance_tracker.db.
+
+    Without integrity checks, corrupted databases cause silent data corruption
+
+    and misleading results. Early detection prevents cascading failures.
+
+    '
+  status: enforced
+  priority: high
+  implemented_date: '2026-02-28'
+  validation:
+  - type: structural_test
+    command: PYTHONPATH=src pytest tests/structural/test_db_integrity_check.py -v
+    description: Verify PRAGMA integrity_check in critical-path DB init methods
+  telemetry:
+  - metric: db_integrity_failures
+    threshold: 0
+    alert: critical
+    description: Number of databases that failed integrity check at startup
 metadata:
-  last_validated: '2026-02-28T07:00:12.300151'
+  last_validated: '2026-02-28T08:16:50.696764'
   validation_status: FAIL
-  total_constraints: 21
-  enforced_constraints: 21
+  total_constraints: 26
+  enforced_constraints: 26
   proposed_constraints: 0
   contact:
     maintainer: Trading System Team

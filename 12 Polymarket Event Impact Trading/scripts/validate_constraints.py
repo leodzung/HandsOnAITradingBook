@@ -287,12 +287,27 @@ class ConstraintValidator:
             }
 
     def _check_code_duplication(self, validation: Dict[str, Any]) -> Dict[str, Any]:
-        """Check for code duplication (stub - requires pylint or similar)"""
-        # This is a placeholder - would need actual duplication detection
-        return {
-            'passed': True,
-            'details': "Code duplication check not yet implemented"
-        }
+        """Check for code duplication using check_feature_duplication.py."""
+        cmd = validation.get('command', 'python3 scripts/check_feature_duplication.py')
+        max_lines = validation.get('max_duplicate_lines', 10)
+
+        try:
+            result = subprocess.run(
+                cmd.split(),
+                capture_output=True,
+                text=True,
+                timeout=30,
+                cwd=str(self.constraints_file.parent)
+            )
+            if result.returncode == 0:
+                return {'passed': True, 'details': result.stdout.strip()}
+            else:
+                return {
+                    'passed': False,
+                    'error': result.stdout.strip() or result.stderr.strip()
+                }
+        except Exception as e:
+            return {'passed': False, 'error': f"Duplication check error: {e}"}
 
     def _check_telemetry(self, constraint: Dict[str, Any]) -> Dict[str, bool]:
         """Check telemetry metrics against thresholds"""

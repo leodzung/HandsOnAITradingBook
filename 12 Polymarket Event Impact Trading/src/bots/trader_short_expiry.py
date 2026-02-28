@@ -659,9 +659,9 @@ class ShortExpiryTrader:
                     yes_price = entry_prices.yes_price
                     no_price = entry_prices.no_price
                 else:
-                    # Fallback to features if PriceFetcher fails
+                    # Fallback to features if PriceFetcher fails (ARCH-008: no synthetic NO price)
                     yes_price = features['market_probability'].iloc[0]
-                    no_price = 1.0 - yes_price
+                    no_price = 0.0  # Unknown - don't synthesize from YES
 
                 # Calculate spread
                 spread = yes_price + no_price - 1.0
@@ -743,8 +743,15 @@ class ShortExpiryTrader:
 
         # Rule 1: Arbitrage (YES + NO < 0.98)
         if rules_config['arbitrage']['enabled']:
-            yes_price = market_price
-            no_price = 1.0 - market_price
+            # Fetch independent YES/NO prices from PriceFetcher (ARCH-008)
+            market_id = market.get('condition_id', market.get('conditionId', ''))
+            arb_prices = self.price_fetcher.get_entry_prices(market_id) if market_id else None
+            if arb_prices:
+                yes_price = arb_prices.yes_price
+                no_price = arb_prices.no_price
+            else:
+                yes_price = market_price
+                no_price = market_price  # Safe fallback: total = 2*price, never < 0.98 for valid prices
             total = yes_price + no_price
 
             if total < rules_config['arbitrage']['max_total_price']:

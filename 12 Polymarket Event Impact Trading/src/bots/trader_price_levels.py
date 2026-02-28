@@ -686,7 +686,7 @@ class PriceLevelTrader:
                             market_id=parsed_market.get('conditionId', ''),
                             question=parsed_market.get('question', ''),
                             yes_price=signal['market_price'],
-                            no_price=signal.get('no_price', 1.0 - signal['market_price']),
+                            no_price=signal.get('no_price', 0.0),  # ARCH-008: no synthetic fallback
                             profit_pct=signal.get('arb_profit_pct', 0),
                             metadata={
                                 'asset': parsed_market.get('asset'),
@@ -1078,7 +1078,7 @@ class PriceLevelTrader:
                 cond_recommendation = self.conditional_analyzer.get_trading_recommendation(
                     cond_resolution,
                     current_yes_price=market_price,
-                    current_no_price=1.0 - market_price
+                    current_no_price=no_price  # Use PriceFetcher value, not synthetic (ARCH-008)
                 )
 
                 # Override ML signal if 50-50 analysis suggests different action

@@ -53,8 +53,20 @@ class PositionManager:
         """Create enhanced positions table with V2 schema."""
         conn = sqlite3.connect(self.db_path)
 
-        # Check if this is a V1 database (has market_id as PRIMARY KEY)
+        # OPS-005: Database integrity check at startup
         cursor = conn.cursor()
+        try:
+            cursor.execute("PRAGMA integrity_check")
+            result = cursor.fetchone()
+            if result and result[0] != 'ok':
+                logger.error(f"Database integrity check FAILED for {self.db_path}: {result[0]}")
+                raise RuntimeError(f"Database corruption detected in {self.db_path}: {result[0]}")
+            logger.debug(f"Database integrity check passed for {self.db_path}")
+        except sqlite3.DatabaseError as e:
+            logger.error(f"Database integrity check error for {self.db_path}: {e}")
+            raise
+
+        # Check if this is a V1 database (has market_id as PRIMARY KEY)
         cursor.execute("SELECT sql FROM sqlite_master WHERE type='table' AND name='positions'")
         result = cursor.fetchone()
 
