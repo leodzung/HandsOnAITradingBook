@@ -61,8 +61,15 @@ class AlchemyDataCollector:
     BLOCKS_PER_HOUR = 1800
     BLOCKS_PER_DAY = 43200
 
+    # Batch size per endpoint (Alchemy free tier = 10 blocks max)
+    ENDPOINT_BATCH_SIZES = {
+        "alchemy.com": 9,
+        "drpc.org": 500,
+        "1rpc.io": 200,
+    }
+
     def __init__(self, api_key: str, db_path: str = 'data/alchemy_trades.db',
-                 rate_limit_per_sec: float = 5.0, batch_size_blocks: int = 9):
+                 rate_limit_per_sec: float = 5.0, batch_size_blocks: int = 500):
         """
         Initialize the Alchemy collector.
 
@@ -79,17 +86,17 @@ class AlchemyDataCollector:
         self.min_request_interval = 1.0 / rate_limit_per_sec
         self.last_request_time = 0
         self.is_running = False  # For continuous mode
+        self._timestamp_cache = {}  # block_number -> datetime
 
-        # Use Alchemy first (free tier: 9 blocks max), public RPC as fallback
+        # dRPC primary (supports 2000+ block batches, no old-block crashes)
+        # Alchemy free tier: 10-block max, crashes on old blocks
         self.endpoints = [
+            "https://polygon.drpc.org",  # dRPC - primary
             f"https://polygon-mainnet.g.alchemy.com/v2/{api_key}",
-            "https://polygon.drpc.org",  # dRPC
             "https://1rpc.io/matic",  # 1RPC
-            "https://polygon.meowrpc.com"  # MeowRPC
         ]
         self.current_endpoint_idx = 0
 
-        # Alchemy Polygon endpoint
         self.endpoint = self.endpoints[self.current_endpoint_idx]
         logger.info(f"Using RPC endpoint: {self.endpoint}")
 
@@ -163,6 +170,13 @@ class AlchemyDataCollector:
         conn.close()
         logger.info(f"Database initialized: {self.db_path}")
 
+    def _get_batch_size(self) -> int:
+        """Get appropriate batch size for the current endpoint."""
+        for domain, size in self.ENDPOINT_BATCH_SIZES.items():
+            if domain in self.endpoint:
+                return size
+        return self.batch_size_blocks
+
     def _rate_limit(self):
         """Enforce rate limiting between requests."""
         elapsed = time.time() - self.last_request_time
@@ -187,7 +201,7 @@ class AlchemyDataCollector:
                     self.endpoint,
                     json=payload,
                     headers={"Content-Type": "application/json"},
-                    timeout=30
+                    timeout=60
                 )
 
                 # Retry on 503/429 with exponential backoff, try next endpoint
@@ -205,16 +219,17 @@ class AlchemyDataCollector:
 
                 if "error" in result:
                     error = result['error']
-                    # Handle rate limit errors with exponential backoff
-                    if error.get('code') == -32090 or 'rate' in str(error.get('message', '')).lower():
-                        # Switch endpoint and use exponential backoff
+                    error_code = error.get('code')
+                    error_msg = str(error.get('message', '')).lower()
+                    # Retryable errors: rate limits, server crashes, internal errors
+                    if error_code in (-32090, -32000, -32603) or 'rate' in error_msg or 'crash' in error_msg:
                         self.current_endpoint_idx = (self.current_endpoint_idx + 1) % len(self.endpoints)
                         self.endpoint = self.endpoints[self.current_endpoint_idx]
                         wait_time = (2 ** attempt) * 5  # 5, 10, 20, 40, 80 seconds
-                        logger.warning(f"Rate limited, switching to {self.endpoint}, waiting {wait_time}s (attempt {attempt + 1}/{max_retries})")
+                        logger.warning(f"RPC error {error_code}: {error.get('message')}, switching to {self.endpoint}, waiting {wait_time}s (attempt {attempt + 1}/{max_retries})")
                         time.sleep(wait_time)
                         continue
-                    logger.error(f"RPC error: {error}")
+                    logger.error(f"RPC error (non-retryable): {error}")
                     return None
 
                 return result.get("result")
@@ -238,15 +253,58 @@ class AlchemyDataCollector:
         return None
 
     def get_block_timestamp(self, block_number: int) -> Optional[datetime]:
-        """Get timestamp for a block."""
+        """Get timestamp for a block (with in-memory cache)."""
+        if block_number in self._timestamp_cache:
+            return self._timestamp_cache[block_number]
         result = self._make_rpc_call(
             "eth_getBlockByNumber",
             [hex(block_number), False]
         )
         if result and "timestamp" in result:
             ts = int(result["timestamp"], 16)
-            return datetime.fromtimestamp(ts, tz=timezone.utc)
+            dt = datetime.fromtimestamp(ts, tz=timezone.utc)
+            self._timestamp_cache[block_number] = dt
+            return dt
         return None
+
+    def get_batch_timestamps(self, block_numbers: set) -> Dict[int, str]:
+        """
+        Get timestamps for a batch of blocks efficiently.
+
+        Fetches timestamps for the min and max blocks, then interpolates
+        the rest using Polygon's ~2 second block time. This reduces RPC
+        calls from N to 2 per batch.
+        """
+        if not block_numbers:
+            return {}
+
+        sorted_blocks = sorted(block_numbers)
+        min_block, max_block = sorted_blocks[0], sorted_blocks[-1]
+
+        # Fetch actual timestamps for boundary blocks
+        min_ts = self.get_block_timestamp(min_block)
+        max_ts = self.get_block_timestamp(max_block)
+
+        if not min_ts:
+            return {}
+        if not max_ts:
+            max_ts = min_ts
+
+        # Interpolate timestamps for intermediate blocks
+        block_range = max_block - min_block
+        if block_range > 0:
+            time_range = (max_ts - min_ts).total_seconds()
+            secs_per_block = time_range / block_range
+        else:
+            secs_per_block = 2.0  # Polygon average
+
+        timestamps = {}
+        for block_num in sorted_blocks:
+            offset_secs = (block_num - min_block) * secs_per_block
+            block_time = min_ts + timedelta(seconds=offset_secs)
+            timestamps[block_num] = block_time.isoformat()
+
+        return timestamps
 
     def estimate_block_at_time(self, target_time: datetime, current_block: int = None) -> int:
         """
@@ -482,7 +540,8 @@ class AlchemyDataCollector:
         current = start_block
 
         while current < end_block:
-            batch_end = min(current + self.batch_size_blocks - 1, end_block)
+            batch_size = self._get_batch_size()
+            batch_end = min(current + batch_size - 1, end_block)
 
             # Fetch logs for this batch
             logs = self.fetch_order_filled_logs(current, batch_end)
@@ -499,12 +558,8 @@ class AlchemyDataCollector:
                         trades.append(decoded)
                         block_numbers.add(decoded["block_number"])
 
-                # Fetch block timestamps
-                block_timestamps = {}
-                for block_num in block_numbers:
-                    ts = self.get_block_timestamp(block_num)
-                    if ts:
-                        block_timestamps[block_num] = ts.isoformat()
+                # Fetch block timestamps (interpolated - 2 RPC calls instead of N)
+                block_timestamps = self.get_batch_timestamps(block_numbers)
 
                 # Store trades
                 stored = self.store_trades(trades, block_timestamps)
@@ -519,6 +574,8 @@ class AlchemyDataCollector:
 
             current = batch_end + 1
 
+        # Clear cache after backfill
+        self._timestamp_cache.clear()
         logger.info(f"Backfill complete: {total_logs} total logs, {total_trades} trades stored")
 
         # Remind users about mapping
@@ -559,7 +616,8 @@ class AlchemyDataCollector:
         current = last_block + 1
 
         while current < current_block:
-            batch_end = min(current + self.batch_size_blocks - 1, current_block)
+            batch_size = self._get_batch_size()
+            batch_end = min(current + batch_size - 1, current_block)
 
             logs = self.fetch_order_filled_logs(current, batch_end)
 
@@ -573,11 +631,8 @@ class AlchemyDataCollector:
                         trades.append(decoded)
                         block_numbers.add(decoded["block_number"])
 
-                block_timestamps = {}
-                for block_num in block_numbers:
-                    ts = self.get_block_timestamp(block_num)
-                    if ts:
-                        block_timestamps[block_num] = ts.isoformat()
+                # Fetch block timestamps (interpolated - 2 RPC calls instead of N)
+                block_timestamps = self.get_batch_timestamps(block_numbers)
 
                 stored = self.store_trades(trades, block_timestamps)
                 total_trades += stored
