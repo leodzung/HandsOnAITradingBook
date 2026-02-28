@@ -20,6 +20,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from core.polymarket_client import PolymarketClient, MarketFilter
 from core.price_fetcher import PriceFetcher
 from core.trade_executor import TradeExecutor, TradeRequest
+from core.exposure_manager import ExposureManager
 from utils.event_detector import EventDetector
 from features.feature_extractor import FeatureEngineering
 from models.models_v2 import PriceMovementPredictor, TradingSignalGenerator, ModelPerformanceTracker
@@ -44,7 +45,6 @@ class RiskManager:
     def __init__(self, max_position_size: float = 100,
                  max_positions: int = 10,
                  max_daily_loss: float = 500,
-                 max_market_exposure: float = 0.5,
                  circuit_breaker_losses: int = 3,
                  circuit_breaker_cooldown_hours: float = 4.0):
         """
@@ -54,14 +54,12 @@ class RiskManager:
             max_position_size: Maximum size per position ($)
             max_positions: Maximum concurrent positions
             max_daily_loss: Maximum loss per day ($)
-            max_market_exposure: Maximum exposure to single market (0-1)
             circuit_breaker_losses: Number of consecutive losses to trigger circuit breaker
             circuit_breaker_cooldown_hours: Hours to wait before resuming after circuit breaker
         """
         self.max_position_size = max_position_size
         self.max_positions = max_positions
         self.max_daily_loss = max_daily_loss
-        self.max_market_exposure = max_market_exposure
 
         # Circuit breaker settings
         self.circuit_breaker_losses = circuit_breaker_losses
@@ -266,6 +264,10 @@ class PolymarketTrader:
             circuit_breaker_losses=config.get('circuit_breaker_losses', 3),
             circuit_breaker_cooldown_hours=config.get('circuit_breaker_cooldown_hours', 4.0)
         )
+
+        # Initialize exposure manager (portfolio concentration limits)
+        self.exposure_manager = ExposureManager(config.get('exposure_limits', {}))
+        logger.info("✓ Exposure manager initialized")
 
         self.performance_tracker = ModelPerformanceTracker()
 
@@ -931,6 +933,22 @@ class PolymarketTrader:
             elif any(keyword in question_lower for keyword in ['nfl', 'nba', 'sports', 'super bowl']):
                 asset = 'SPORTS'
 
+        # Check exposure limits (portfolio concentration)
+        existing_positions = self.position_manager.get_open_positions()
+        total_capital = self.paper_balance + sum(p.get('size', 0) for p in existing_positions) if self.config.get('paper_trading', True) else balance + sum(p.get('size', 0) for p in existing_positions)
+        new_position = {
+            'asset': asset,
+            'size': position_size,
+            'outcome': outcome,
+            'strike_price': None,  # Event markets don't have strike prices
+        }
+        can_open_exp, exp_reason, exp_warnings = self.exposure_manager.can_open_position(
+            new_position, existing_positions, total_capital
+        )
+        if not can_open_exp:
+            logger.warning(f"  ⚠️ BLOCKED by exposure limits: {exp_reason}")
+            return
+
         # RISK-001: Get stop-loss and take-profit from config
         tp_pct = self.config.get('take_profit', {}).get('pct', 50)
         sl_pct = self.config.get('stop_loss', {}).get('pct', 15)
@@ -1343,6 +1361,18 @@ class PolymarketTrader:
             logger.info(f"Performance - Total trades: {stats.get('total_predictions', 0)}, "
                        f"Accuracy: {stats.get('overall_accuracy', 0):.2%}, "
                        f"24h accuracy: {stats.get('accuracy_last_24h', 0):.2%}")
+
+    def _log_exposure_report(self):
+        """Log portfolio exposure report."""
+        positions = self.position_manager.get_open_positions()
+        total_capital = self.paper_balance + sum(p.get('size', 0) for p in positions) if self.config.get('paper_trading', True) else sum(p.get('size', 0) for p in positions)
+
+        if not positions:
+            return
+
+        report = self.exposure_manager.format_exposure_report(positions, total_capital)
+        for line in report.split('\n'):
+            logger.info(line)
 
 
 def load_config(config_path: str = 'config/config.json') -> Dict:

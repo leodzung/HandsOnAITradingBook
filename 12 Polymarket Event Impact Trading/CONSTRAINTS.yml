@@ -138,20 +138,32 @@ constraints:
       window_minutes: 60
   - id: ARCH-005
     title: All position operations must go through TradeExecutor
-    description: |
-      Opening AND closing positions MUST use TradeExecutor to ensure consistent validation:
-      - Opening: trade_executor.execute_trade(request, order_side='BUY')
+    description: 'Opening AND closing positions MUST use TradeExecutor to ensure consistent
+      validation:
+
+      - Opening: trade_executor.execute_trade(request, order_side=''BUY'')
+
       - Closing: trade_executor.execute_close_trade(...)
 
+
       Direct calls to position_manager.open_position() or position_manager.close_position()
-      from bot code are FORBIDDEN (bypasses slippage validation, price checks, risk limits).
+
+      from bot code are FORBIDDEN (bypasses slippage validation, price checks, risk
+      limits).
+
 
       Exception: TradeExecutor itself can call position_manager directly.
-    rationale: |
-      Bug found 2026-02-27: trader_price_levels.py closed positions without slippage checks,
+
+      '
+    rationale: 'Bug found 2026-02-27: trader_price_levels.py closed positions without
+      slippage checks,
+
       assuming infinite liquidity. Would cause severe losses in live trading.
 
+
       TradeExecutor provides centralized validation pipeline that must not be bypassed.
+
+      '
     status: enforced
     priority: critical
     implemented_date: '2026-02-27'
@@ -169,7 +181,8 @@ constraints:
       - src/core/trade_executor.py
       - tests/
     - type: structural_test
-      command: PYTHONPATH=src pytest tests/structural/test_trade_executor_constraint.py -v
+      command: PYTHONPATH=src pytest tests/structural/test_trade_executor_constraint.py
+        -v
     telemetry:
     - metric: direct_position_manager_calls
       threshold: 0
@@ -421,39 +434,67 @@ constraints:
       description: Number of times balance went negative
   - id: RISK-008
     title: Symmetric test coverage for BUY/SELL operations
-    description: |
-      For every BUY order test scenario, there MUST be a corresponding SELL order test.
+    description: 'For every BUY order test scenario, there MUST be a corresponding
+      SELL order test.
+
 
       Required parity (minimum 80% ratio):
+
       - Large order multi-level: BUY + SELL
+
       - Insufficient liquidity: BUY + SELL
+
       - Wide spread: BUY + SELL
+
       - Invalid inputs: BUY + SELL
+
       - Slippage threshold: BUY + SELL
 
+
       Ratio = SELL_tests / BUY_tests >= 0.8
-    rationale: |
-      Asymmetric test coverage (12 BUY tests, 1 SELL test) allowed SELL order bugs
+
+      '
+    rationale: 'Asymmetric test coverage (12 BUY tests, 1 SELL test) allowed SELL
+      order bugs
+
       to go undetected during slippage estimator development.
 
-      Markets behave differently for bid vs ask consumption - both must be tested equally.
+
+      Markets behave differently for bid vs ask consumption - both must be tested
+      equally.
+
+      '
     status: enforced
     priority: high
     implemented_date: '2026-02-27'
     validation:
     - type: structural_test
-      command: |
-        PYTHONPATH=src python -c "
+      command: 'PYTHONPATH=src python -c "
+
         import ast, sys
+
         from pathlib import Path
-        test_file = Path('tests/test_slippage_estimator.py').read_text()
+
+        test_file = Path(''tests/test_slippage_estimator.py'').read_text()
+
         tree = ast.parse(test_file)
-        buy_tests = [n.name for n in ast.walk(tree) if isinstance(n, ast.FunctionDef) and 'buy' in n.name.lower()]
-        sell_tests = [n.name for n in ast.walk(tree) if isinstance(n, ast.FunctionDef) and 'sell' in n.name.lower()]
+
+        buy_tests = [n.name for n in ast.walk(tree) if isinstance(n, ast.FunctionDef)
+        and ''buy'' in n.name.lower()]
+
+        sell_tests = [n.name for n in ast.walk(tree) if isinstance(n, ast.FunctionDef)
+        and ''sell'' in n.name.lower()]
+
         ratio = len(sell_tests) / max(len(buy_tests), 1)
-        print(f'BUY tests: {len(buy_tests)}, SELL tests: {len(sell_tests)}, Ratio: {ratio:.2f}')
+
+        print(f''BUY tests: {len(buy_tests)}, SELL tests: {len(sell_tests)}, Ratio:
+        {ratio:.2f}'')
+
         sys.exit(0 if ratio >= 0.8 else 1)
+
         "
+
+        '
     telemetry:
     - metric: buy_sell_test_ratio
       threshold: 0.8
@@ -461,28 +502,46 @@ constraints:
       description: Ratio of SELL to BUY tests should be >= 80%
   - id: RISK-009
     title: Configuration validation at startup
-    description: |
-      All bots MUST validate configuration parameters at startup before trading:
+    description: 'All bots MUST validate configuration parameters at startup before
+      trading:
+
 
       Slippage thresholds:
-      - min: 50 bps (markets tighter than this don't exist)
+
+      - min: 50 bps (markets tighter than this don''t exist)
+
       - max: 5000 bps (50% - anything higher likely config error)
+
       - warn: <200 bps (may block valid trades) or >3000 bps (too permissive)
 
+
       Position sizing:
+
       - min_position_size > 0
+
       - max_position_size < account_balance
+
       - max_position_size >= min_position_size
 
+
       Stop-loss/Take-profit:
+
       - stop_loss_pct: 1-50%
+
       - take_profit_pct: 1-100%
 
+
       Raise ConfigurationError and refuse to start if invalid.
-    rationale: |
-      Event trader had max_slippage_bps=100 (blocked all trades in normal spreads).
+
+      '
+    rationale: 'Event trader had max_slippage_bps=100 (blocked all trades in normal
+      spreads).
+
       Price-level trader had max_slippage_bps=12000 (would accept 120% slippage!).
+
       No validation caught these dangerous misconfigurations.
+
+      '
     status: proposed
     priority: high
     implemented_date: null
@@ -494,41 +553,97 @@ constraints:
       threshold: 0
       alert: critical
       description: Number of times bot startup blocked by invalid config
+  - id: RISK-011
+    title: ExposureManager enforced across all bots
+    description: 'All trading bots MUST use ExposureManager for portfolio concentration
+      limits.
+
+      Each bot MUST import ExposureManager, initialize it with config, and check
+      can_open_position() before opening any position.
+
+      Each bot config MUST have an exposure_limits section.
+
+      '
+    rationale: 'Only 1 of 3 bots had ExposureManager (price-level bot). Event and
+      short-expiry bots had no concentration or capital deployment limits, risking
+      portfolio over-concentration.
+
+      ExposureManager provides 6-layer defense: per-asset count, per-asset capital,
+      directional balance, strike clustering, expiry concentration, total portfolio
+      limits.
+
+      '
+    status: enforced
+    priority: high
+    implemented_date: '2026-02-27'
+    validation:
+    - type: structural_test
+      command: PYTHONPATH=src pytest tests/structural/test_exposure_manager_constraint.py
+        -v
+    - type: unit_test
+      command: PYTHONPATH=src pytest tests/test_exposure_manager.py -v
+    telemetry:
+    - metric: exposure_check_blocks
+      threshold: null
+      alert: info
+      description: Count of positions blocked by exposure limits
   - id: RISK-010
     title: Input validation for all external data
-    description: |
-      All data from external sources (API, WebSocket, user input) MUST be validated:
+    description: 'All data from external sources (API, WebSocket, user input) MUST
+      be validated:
+
 
       Prices:
+
       - Not NaN, not Infinity
+
       - 0 < price < 1 (Polymarket binary outcomes)
+
       - Type check: isinstance(price, (int, float))
 
+
       Orderbooks:
-      - Has 'timestamp' field
+
+      - Has ''timestamp'' field
+
       - Timestamp not stale (< orderbook_staleness_seconds config)
+
       - Bids/asks are lists of [price, size] pairs
+
       - All prices and sizes are valid numbers > 0
 
+
       Sizes:
+
       - order_size > 0
+
       - position_size > 0
 
+
       Raise ValueError immediately, do NOT process invalid data.
-    rationale: |
-      No validation existed for invalid inputs. Could have caused:
+
+      '
+    rationale: 'No validation existed for invalid inputs. Could have caused:
+
       - NaN propagation through calculations
+
       - Trading on stale orderbook data (10+ seconds old)
+
       - Negative position sizes
+
       - Division by zero errors
 
+
       Found during slippage estimator review 2026-02-27.
+
+      '
     status: enforced
     priority: critical
     implemented_date: '2026-02-27'
     validation:
     - type: structural_test
-      command: PYTHONPATH=src pytest tests/test_slippage_estimator.py::TestInputValidation -v
+      command: PYTHONPATH=src pytest tests/test_slippage_estimator.py::TestInputValidation
+        -v
     telemetry:
     - metric: invalid_input_rejections
       threshold: null
@@ -537,45 +652,34 @@ constraints:
   testing:
   - id: TEST-001
     title: All pytest commands must set PYTHONPATH=src
-    description: |
-      All pytest commands in CONSTRAINTS.yml MUST include PYTHONPATH=src prefix:
+    description: "All pytest commands in CONSTRAINTS.yml MUST include PYTHONPATH=src\
+      \ prefix:\n\n\u2705 Correct: PYTHONPATH=src pytest tests/integration/test_foo.py\
+      \ -v\n\u274C Wrong:   pytest tests/integration/test_foo.py -v\n\nThis ensures\
+      \ tests can import from src/ in CI/CD environments.\n"
+    rationale: 'RISK-003 integration tests failed in CI with "ModuleNotFoundError:
+      No module named ''core''".
 
-      ✅ Correct: PYTHONPATH=src pytest tests/integration/test_foo.py -v
-      ❌ Wrong:   pytest tests/integration/test_foo.py -v
+      Local testing worked due to IDE PYTHONPATH, but CI/CD didn''t have it set.
 
-      This ensures tests can import from src/ in CI/CD environments.
-    rationale: |
-      RISK-003 integration tests failed in CI with "ModuleNotFoundError: No module named 'core'".
-      Local testing worked due to IDE PYTHONPATH, but CI/CD didn't have it set.
 
       Discovered during constraint validation 2026-02-27.
+
+      '
     status: enforced
     priority: medium
     implemented_date: '2026-02-27'
     validation:
     - type: structural_test
-      command: |
-        python -c "
-        import yaml, sys
-        from pathlib import Path
-        data = yaml.safe_load(Path('CONSTRAINTS.yml').read_text())
-        violations = []
-        for section in data['constraints'].values():
-            if not isinstance(section, list):
-                continue
-            for c in section:
-                for val in c.get('validation', []):
-                    if val.get('type') in ['integration_test', 'structural_test']:
-                        cmd = val.get('command', '')
-                        if 'pytest' in cmd and 'src' in cmd and 'PYTHONPATH=src' not in cmd:
-                            violations.append(f\"{c['id']}: {cmd[:60]}\")
-        if violations:
-            print('Missing PYTHONPATH in:')
-            for v in violations:
-                print(f'  - {v}')
-            sys.exit(1)
-        print('✓ All integration/structural tests have PYTHONPATH=src')
-        "
+      command: "python -c \"\nimport yaml, sys\nfrom pathlib import Path\ndata = yaml.safe_load(Path('CONSTRAINTS.yml').read_text())\n\
+        violations = []\nfor section in data['constraints'].values():\n    if not\
+        \ isinstance(section, list):\n        continue\n    for c in section:\n  \
+        \      for val in c.get('validation', []):\n            if val.get('type')\
+        \ in ['integration_test', 'structural_test']:\n                cmd = val.get('command',\
+        \ '')\n                if 'pytest' in cmd and 'src' in cmd and 'PYTHONPATH=src'\
+        \ not in cmd:\n                    violations.append(f\\\"{c['id']}: {cmd[:60]}\\\
+        \")\nif violations:\n    print('Missing PYTHONPATH in:')\n    for v in violations:\n\
+        \        print(f'  - {v}')\n    sys.exit(1)\nprint('\u2713 All integration/structural\
+        \ tests have PYTHONPATH=src')\n\"\n"
     telemetry:
     - metric: pythonpath_violations
       threshold: 0
@@ -833,10 +937,10 @@ operations:
     alert: critical
     description: Alert if retraining fails 2+ times consecutively
 metadata:
-  last_validated: '2026-02-27T08:17:54.747201'
+  last_validated: '2026-02-27T17:00:10.649753'
   validation_status: FAIL
-  total_constraints: 19
-  enforced_constraints: 18
+  total_constraints: 20
+  enforced_constraints: 19
   proposed_constraints: 1
   contact:
     maintainer: Trading System Team

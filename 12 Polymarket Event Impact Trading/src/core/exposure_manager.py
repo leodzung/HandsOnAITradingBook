@@ -82,13 +82,14 @@ class ExposureManager:
             if isinstance(metadata, str):
                 try:
                     metadata = json.loads(metadata)
-                except:
+                except (json.JSONDecodeError, TypeError, ValueError) as e:
+                    logger.debug(f"Failed to parse position metadata: {e}")
                     metadata = {}
 
             asset = metadata.get('asset', 'UNKNOWN')
             size = pos.get('size', 0)
             side = pos.get('side', 'YES')  # YES or NO
-            strike = metadata.get('strike_price', 0)
+            strike = metadata.get('strike_price') or 0
             expiry = metadata.get('expiry_date')
 
             # Update totals
@@ -115,7 +116,8 @@ class ExposureManager:
                 if isinstance(expiry, str):
                     try:
                         expiry = datetime.fromisoformat(expiry.replace('Z', '+00:00'))
-                    except:
+                    except (ValueError, TypeError) as e:
+                        logger.debug(f"Failed to parse expiry date: {e}")
                         expiry = None
 
                 if expiry:
@@ -153,11 +155,15 @@ class ExposureManager:
         warnings = []
         blocking_reason = None
 
+        # Guard against invalid capital
+        if total_capital <= 0:
+            return False, "Total capital must be positive", []
+
         # Extract new position details
         new_asset = new_position.get('asset', 'UNKNOWN')
         new_size = new_position.get('size', 0)
         new_side = new_position.get('outcome', new_position.get('side', 'YES'))
-        new_strike = new_position.get('strike_price', 0)
+        new_strike = new_position.get('strike_price') or 0
         new_expiry = new_position.get('expiry_date')
 
         # Get current exposure
@@ -212,7 +218,8 @@ class ExposureManager:
             if isinstance(new_expiry, str):
                 try:
                     new_expiry = datetime.fromisoformat(new_expiry.replace('Z', '+00:00'))
-                except:
+                except (ValueError, TypeError) as e:
+                    logger.debug(f"Failed to parse new_expiry date: {e}")
                     new_expiry = None
 
             if new_expiry:
@@ -240,7 +247,8 @@ class ExposureManager:
 
         # Log the check
         if warnings:
-            logger.info(f"[EXPOSURE CHECK] {new_asset} ${new_strike:,.0f} {new_side}")
+            strike_str = f"${new_strike:,.0f}" if new_strike else "N/A"
+            logger.info(f"[EXPOSURE CHECK] {new_asset} {strike_str} {new_side}")
             for w in warnings:
                 logger.warning(f"  {w}")
 
@@ -290,7 +298,7 @@ class ExposureManager:
         if len(assets_held) == 1 and analysis['total_positions'] >= 3:
             only_asset = list(assets_held)[0]
             suggestions.append(
-                f"Portfolio is 100% {only_asset}. Consider adding ETH, SOL, or other assets."
+                f"Portfolio is 100% {only_asset}. Consider diversifying into other assets."
             )
 
         return suggestions

@@ -32,6 +32,7 @@ from core.polymarket_client import PolymarketClient
 from core.price_fetcher import PriceFetcher
 from core.slippage_estimator import SlippageEstimator
 from core.trade_executor import TradeExecutor, TradeRequest
+from core.exposure_manager import ExposureManager
 from core.position_manager_v2 import PositionManager, DuplicatePositionError
 from monitoring.telegram_notifier import TelegramNotifier
 from utils.price_tracker import PriceTracker
@@ -269,6 +270,10 @@ class ShortExpiryTrader:
         )
         self.feature_extractor = ShortExpiryFeatureExtractor()
         self.risk_manager = ShortExpiryRiskManager(self.config)
+
+        # Initialize exposure manager (portfolio concentration limits)
+        self.exposure_manager = ExposureManager(self.config.get('exposure_limits', {}))
+        logger.info("✓ Exposure manager initialized")
 
         # Initialize price tracker for historical price data (enables momentum signals)
         self.price_tracker = PriceTracker(self.config['database']['tracking_db'])
@@ -877,6 +882,22 @@ class ShortExpiryTrader:
         elif 'solana' in question_lower or 'sol' in question_lower:
             asset = 'SOL'
 
+        # Check exposure limits (portfolio concentration)
+        existing_positions = self.position_manager.get_open_positions()
+        total_capital = self.balance + sum(p.get('size', 0) for p in existing_positions)
+        new_position = {
+            'asset': asset,
+            'size': size,
+            'outcome': outcome,
+            'strike_price': None,  # Short-expiry markets don't have strike prices
+        }
+        can_open_exp, exp_reason, exp_warnings = self.exposure_manager.can_open_position(
+            new_position, existing_positions, total_capital
+        )
+        if not can_open_exp:
+            logger.warning(f"  ⚠️ BLOCKED by exposure limits: {exp_reason}")
+            return
+
         # RISK-001: Get bucket-specific stop-loss and take-profit from config
         sl_pct_map = self.config.get('stop_loss_pct', {})
         tp_pct_map = self.config.get('take_profit_pct', {})
@@ -1166,6 +1187,19 @@ class ShortExpiryTrader:
                     f"⚠️ Position check error:\nMarket: {market_id[:16]}...\nError: {str(e)[:150]}",
                     bot_name="Short-Expiry Trader"
                 )
+
+
+    def _log_exposure_report(self):
+        """Log portfolio exposure report."""
+        positions = self.position_manager.get_open_positions()
+        total_capital = self.balance + sum(p.get('size', 0) for p in positions)
+
+        if not positions:
+            return
+
+        report = self.exposure_manager.format_exposure_report(positions, total_capital)
+        for line in report.split('\n'):
+            logger.info(line)
 
 
 def main():
