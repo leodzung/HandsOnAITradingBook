@@ -211,6 +211,33 @@ constraints:
     - type: structural_test
       command: PYTHONPATH=src pytest tests/test_position_sizer.py -v
       description: Verify PositionSizer Kelly, confidence, liquidity, and cap logic
+  - id: ARCH-007
+    title: Per-bucket config values must be resolved before comparison
+    description: 'Config values that may be per-bucket dicts (e.g., max_slippage_bps,
+
+      max_slippage_dollars, warn_threshold_bps) MUST NOT be compared directly
+
+      to numeric values. All such values MUST go through _resolve() or equivalent
+
+      to extract the scalar for the current bucket before any > < >= <= comparison.
+
+      '
+    rationale: 'Bug 2026-02-28: SlippageEstimator stored per-bucket dict config values
+
+      and compared them directly to floats (e.g., slippage_bps > self.max_slippage_bps
+
+      where max_slippage_bps was a dict). Caused TypeError crash in main trading loop.
+
+      This pattern will recur anywhere config supports both scalar and per-bucket formats.
+
+      '
+    status: enforced
+    priority: critical
+    implemented_date: '2026-02-28'
+    validation:
+    - type: structural_test
+      command: PYTHONPATH=src pytest tests/structural/test_config_type_safety.py -v
+      description: AST scan ensures dict-capable config attrs are never in raw comparisons
   risk_management:
   - id: RISK-001
     title: Stop-loss and take-profit always active
@@ -540,9 +567,9 @@ constraints:
       No validation caught these dangerous misconfigurations.
 
       '
-    status: proposed
+    status: enforced
     priority: high
-    implemented_date: null
+    implemented_date: '2026-02-28'
     validation:
     - type: integration_test
       command: PYTHONPATH=src pytest tests/integration/test_config_validation.py -v
@@ -925,11 +952,11 @@ operations:
     alert: critical
     description: Alert if retraining fails 2+ times consecutively
 metadata:
-  last_validated: '2026-02-27T21:29:35.942231'
+  last_validated: '2026-02-28T07:00:12.300151'
   validation_status: FAIL
-  total_constraints: 20
-  enforced_constraints: 19
-  proposed_constraints: 1
+  total_constraints: 21
+  enforced_constraints: 21
+  proposed_constraints: 0
   contact:
     maintainer: Trading System Team
     documentation: See IMPROVEMENT_CHECKLIST.md for context

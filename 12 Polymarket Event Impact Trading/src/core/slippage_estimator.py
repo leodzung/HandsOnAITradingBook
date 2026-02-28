@@ -85,8 +85,35 @@ class SlippageEstimator:
         self.volume_limit_pct = self.config.get('volume_limit_pct', 0.01)
         self.warn_threshold_bps = self.config.get('warn_threshold_bps', 50)
 
+        # RISK-009: Validate config types and ranges at startup
+        self._validate_config()
+
         logger.info(f"SlippageEstimator initialized: max_slippage={self.max_slippage_bps}bps, "
                    f"max_dollars=${self.max_slippage_dollars}, buffer={self.depth_buffer_pct*100}%")
+
+    def _validate_config(self):
+        """RISK-009: Validate config types and ranges at startup."""
+        threshold_fields = {
+            'max_slippage_bps': (self.max_slippage_bps, 50, 5000),
+            'max_slippage_dollars': (self.max_slippage_dollars, 0.01, 500),
+            'warn_threshold_bps': (self.warn_threshold_bps, 10, 5000),
+        }
+        for name, (value, lo, hi) in threshold_fields.items():
+            if isinstance(value, dict):
+                for bucket_key, v in value.items():
+                    if not isinstance(v, (int, float)):
+                        raise ValueError(
+                            f"Config {name}[{bucket_key}] must be numeric, got {type(v).__name__}"
+                        )
+                    if not (lo <= v <= hi):
+                        logger.warning(f"Config {name}[{bucket_key}]={v} outside recommended range [{lo}, {hi}]")
+            elif isinstance(value, (int, float)):
+                if not (lo <= value <= hi):
+                    logger.warning(f"Config {name}={value} outside recommended range [{lo}, {hi}]")
+            else:
+                raise ValueError(
+                    f"Config {name} must be numeric or dict-of-numeric, got {type(value).__name__}"
+                )
 
     def _resolve(self, value, bucket: Optional[str], default: float) -> float:
         """Resolve a config value that may be scalar or per-bucket dict."""
