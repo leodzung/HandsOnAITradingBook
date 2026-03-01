@@ -520,6 +520,12 @@ class PriceLevelTrader:
                 if entry_price <= 0:
                     continue
 
+                # Cap TP target at $1.00 (Polymarket max price)
+                if entry_price > 0:
+                    tp_target = entry_price * (1 + take_profit_pct / 100)
+                    if tp_target > 1.0:
+                        take_profit_pct = max(((1.0 - entry_price) / entry_price) * 100, 0.5)
+
                 # Calculate P&L % based on position type
                 # entry_price and current_token_price are both actual token prices (YES or NO)
                 pnl_pct = ((current_token_price - entry_price) / entry_price) * 100

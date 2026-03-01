@@ -20,6 +20,7 @@ import logging
 import time
 import sys
 import os
+import traceback
 from datetime import datetime, timezone, timedelta
 from typing import Dict, List, Optional, Tuple
 import pandas as pd
@@ -220,9 +221,17 @@ class ShortExpiryRiskManager:
         # Get dynamic TP/SL thresholds based on time remaining
         take_profit_pct, stop_loss_pct = self.get_dynamic_tp_sl(hours_remaining, bucket)
 
+        # Cap TP target at $1.00 (Polymarket max price)
+        if entry_price > 0:
+            tp_target = entry_price * (1 + take_profit_pct / 100)
+            if tp_target > 1.0:
+                take_profit_pct = ((1.0 - entry_price) / entry_price) * 100
+                # Ensure at least a small TP margin (0.5%) to avoid spurious triggers
+                take_profit_pct = max(take_profit_pct, 0.5)
+
         # Log dynamic thresholds for monitoring
         logger.debug(f"Dynamic TP/SL for {bucket}: hours_remaining={hours_remaining:.1f}h, "
-                    f"tp={take_profit_pct}%, sl={stop_loss_pct}%")
+                    f"tp={take_profit_pct:.1f}%, sl={stop_loss_pct}%")
 
         # Stop-loss
         if pnl_pct <= -stop_loss_pct:
@@ -447,9 +456,10 @@ class ShortExpiryTrader:
                 logger.info("Shutting down...")
                 break
             except Exception as e:
-                logger.error(f"Error in main loop: {e}", exc_info=True)
+                tb = traceback.format_exc()
+                logger.error(f"Error in main loop: {e}\n{tb}")
                 self.telegram.notify_error(
-                    f"⚠️ Main loop error:\n{str(e)[:200]}",
+                    f"⚠️ Main loop error:\n{str(e)[:200]}\n\nTraceback:\n{tb[-500:]}",
                     bot_name="Short-Expiry Trader"
                 )
                 time.sleep(60)

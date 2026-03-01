@@ -430,6 +430,11 @@ class TradeExecutor:
 
         return metadata
 
+    # Exit reasons where closing is mandatory (no slippage check)
+    FORCED_EXIT_REASONS = frozenset({
+        'expiry_time', 'market_closed', 'pre_expiry_exit', 'expiry', 'time_exit'
+    })
+
     def execute_close_trade(
         self,
         market_id: str,
@@ -439,7 +444,8 @@ class TradeExecutor:
         position_size: float,
         exit_reason: str,
         question: str = "",
-        bucket: Optional[str] = None
+        bucket: Optional[str] = None,
+        force_close: bool = False
     ) -> TradeResult:
         """
         Execute position close with slippage validation.
@@ -453,14 +459,19 @@ class TradeExecutor:
             exit_reason: Why closing (stop_loss, take_profit, expiry, etc.)
             question: Market question (for logging)
             bucket: Trading bucket for per-bucket slippage thresholds (e.g., 'ultra_short')
+            force_close: Skip slippage validation (for expired/closed markets)
 
         Returns:
             TradeResult with success/failure status
         """
         slippage_bps = None
 
+        # Auto-force close for mandatory exit reasons
+        if exit_reason in self.FORCED_EXIT_REASONS:
+            force_close = True
+
         # Stage 1: Slippage estimation for SELL order
-        if self.slippage_enabled:
+        if self.slippage_enabled and not force_close:
             # Get orderbook for the specific token
             orderbook = self.client.get_orderbook(token_id)
             if not orderbook:
@@ -514,6 +525,9 @@ class TradeExecutor:
             # Log warnings if any
             for warning in slippage_result.warnings:
                 logger.warning(f"⚠️ Close slippage warning: {warning}")
+
+        if force_close and self.slippage_enabled:
+            logger.info(f"Force close: skipping slippage check for {exit_reason} | {outcome} @ ${exit_price:.3f}")
 
         # Stage 2: Close position
         if self.paper_trading:
