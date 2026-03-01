@@ -216,10 +216,12 @@ class TestWebSocketReconnection:
 
         # Track delays between reconnection attempts
         delays = []
-        original_sleep = time.sleep
+        got_enough = threading.Event()
 
         def mock_sleep(duration):
             delays.append(duration)
+            if len(delays) >= 2:
+                got_enough.set()
             # Don't actually sleep in tests
             return None
 
@@ -230,8 +232,9 @@ class TestWebSocketReconnection:
             thread.daemon = True
             thread.start()
 
-            # Wait for reconnections to complete
-            time.sleep(0.5)
+            # Wait until at least 2 backoff delays are captured
+            # (uses Event.wait which doesn't call time.sleep)
+            got_enough.wait(timeout=2.0)
 
             # Stop WebSocket
             ws._running = False

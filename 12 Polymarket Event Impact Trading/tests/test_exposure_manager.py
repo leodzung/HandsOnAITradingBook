@@ -130,12 +130,13 @@ class TestAnalyzeExposure:
 
     def test_expiry_week_grouping(self):
         em = ExposureManager()
-        # Two positions expiring in the same week
-        next_monday = datetime.now(timezone.utc) + timedelta(days=7)
-        next_tuesday = next_monday + timedelta(days=1)
+        # Two positions expiring in the same ISO week (Mon-Sun)
+        # Use fixed dates to avoid day-of-week sensitivity
+        wednesday = datetime(2026, 3, 4, 12, 0, 0, tzinfo=timezone.utc)  # Wed W10
+        thursday = datetime(2026, 3, 5, 12, 0, 0, tzinfo=timezone.utc)   # Thu W10
         positions = [
-            make_position(expiry_date=next_monday.isoformat()),
-            make_position(expiry_date=next_tuesday.isoformat()),
+            make_position(expiry_date=wednesday.isoformat()),
+            make_position(expiry_date=thursday.isoformat()),
         ]
         analysis = em.analyze_exposure(positions, 1000)
         # Both should be in the same week key
