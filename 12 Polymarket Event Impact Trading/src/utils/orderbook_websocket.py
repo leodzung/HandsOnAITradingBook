@@ -21,15 +21,14 @@ import random
 from datetime import datetime
 from typing import Dict, List, Optional, Callable, Set
 from dataclasses import dataclass, field
-from collections import defaultdict
-import asyncio
+from collections import defaultdict, deque
 
 try:
     import websocket
     WEBSOCKET_AVAILABLE = True
 except ImportError:
     WEBSOCKET_AVAILABLE = False
-    print("Warning: websocket-client not installed. Run: pip install websocket-client")
+    logging.getLogger(__name__).warning("websocket-client not installed. Run: pip install websocket-client")
 
 logger = logging.getLogger(__name__)
 
@@ -53,17 +52,17 @@ class OrderBook:
 
     @property
     def best_bid(self) -> Optional[float]:
-        """Get best (highest) bid price."""
+        """Get best (highest) bid price. O(1) since bids are sorted descending."""
         if not self.bids:
             return None
-        return max(level.price for level in self.bids)
+        return self.bids[0].price
 
     @property
     def best_ask(self) -> Optional[float]:
-        """Get best (lowest) ask price."""
+        """Get best (lowest) ask price. O(1) since asks are sorted ascending."""
         if not self.asks:
             return None
-        return min(level.price for level in self.asks)
+        return self.asks[0].price
 
     @property
     def mid_price(self) -> Optional[float]:
@@ -230,8 +229,9 @@ class OrderBookWebSocket:
         self.on_book_update = on_book_update
         self.on_arb_signal = on_arb_signal
 
-        # Order book state
+        # Order book state (capped to prevent unbounded growth from unsubscribed assets)
         self._order_books: Dict[str, OrderBook] = {}
+        self._max_order_books = 2000
         self._lock = threading.Lock()
 
         # Subscription management
@@ -251,7 +251,8 @@ class OrderBookWebSocket:
         self._current_backoff_delay = self.INITIAL_RECONNECT_DELAY
         self._last_data_message_time = time.time()  # Track last data message (not ping/pong)
 
-        # Statistics
+        # Statistics (protected by _stats_lock for thread safety)
+        self._stats_lock = threading.Lock()
         self.stats = {
             'messages_received': 0,
             'book_updates': 0,
@@ -260,6 +261,11 @@ class OrderBookWebSocket:
             'errors': 0,
             'reconnects': 0
         }
+
+    def _inc_stat(self, key: str, amount: int = 1) -> None:
+        """Thread-safe stat increment."""
+        with self._stats_lock:
+            self.stats[key] += amount
 
     def add_market(self, condition_id: str, yes_asset_id: str, no_asset_id: str,
                    question: str = "") -> None:
@@ -397,7 +403,7 @@ class OrderBookWebSocket:
             signal = self.check_arbitrage(condition_id)
             if signal and signal.is_profitable:
                 signals.append(signal)
-                self.stats['arb_signals'] += 1
+                self._inc_stat('arb_signals')
 
         return signals
 
@@ -462,12 +468,12 @@ class OrderBookWebSocket:
 
             except Exception as e:
                 logger.error(f"WebSocket error: {e}")
-                self.stats['errors'] += 1
+                self._inc_stat('errors')
 
             # Only reconnect if still running (not explicitly stopped)
             if self._running:
                 self._reconnect_count += 1
-                self.stats['reconnects'] += 1
+                self._inc_stat('reconnects')
 
                 # Calculate exponential backoff with jitter
                 jitter = random.uniform(
@@ -497,7 +503,7 @@ class OrderBookWebSocket:
             if self._connected and self._ws:
                 try:
                     self._ws.send("PING")
-                except:
+                except Exception:
                     pass
 
     def _monitor_data_staleness(self) -> None:
@@ -518,13 +524,13 @@ class OrderBookWebSocket:
                         f"Data stream stale for {time_since_last_data:.0f}s "
                         f"(threshold: {self.DATA_STALENESS_TIMEOUT}s) - forcing reconnect"
                     )
-                    self.stats['reconnects'] += 1
+                    self._inc_stat('reconnects')
 
                     # Force close and reconnect
                     if self._ws:
                         try:
                             self._ws.close()
-                        except:
+                        except Exception:
                             pass
 
     def _on_open(self, ws) -> None:
@@ -540,18 +546,18 @@ class OrderBookWebSocket:
 
         logger.info("WebSocket connected successfully (backoff reset)")
 
-        # Send initial subscription
+        # Send initial subscription (same format as dynamic subscribe())
         if self._subscribed_assets:
             msg = json.dumps({
                 "assets_ids": list(self._subscribed_assets),
                 "type": "market"
             })
             ws.send(msg)
-            logger.info(f"Subscribed to {len(self._subscribed_assets)} assets")
+            logger.info(f"Subscribed to {len(self._subscribed_assets)} assets via initial handshake")
 
     def _on_message(self, ws, message: str) -> None:
         """Handle incoming WebSocket message."""
-        self.stats['messages_received'] += 1
+        self._inc_stat('messages_received')
 
         # Handle PONG
         if message == "PONG":
@@ -582,9 +588,9 @@ class OrderBookWebSocket:
         elif 'price_changes' in data:
             # price_changes event contains best_bid/best_ask updates
             self._handle_price_changes(data)
-            self.stats['price_changes'] += 1
+            self._inc_stat('price_changes')
         elif event_type == 'price_change':
-            self.stats['price_changes'] += 1
+            self._inc_stat('price_changes')
         # Ignore other event types for now
 
     def _handle_book_update(self, data: Dict) -> None:
@@ -605,11 +611,15 @@ class OrderBookWebSocket:
         if not asset_id:
             return
 
-        self.stats['book_updates'] += 1
+        self._inc_stat('book_updates')
 
         with self._lock:
             book = self._order_books.get(asset_id)
             if not book:
+                # Skip unsubscribed assets if at capacity
+                if (len(self._order_books) >= self._max_order_books and
+                        asset_id not in self._subscribed_assets):
+                    return
                 book = OrderBook(asset_id=asset_id)
                 self._order_books[asset_id] = book
 
@@ -715,9 +725,20 @@ class OrderBookWebSocket:
                     self._order_books[asset_id] = book
 
                 try:
-                    # Update with simplified order book (just best bid/ask)
-                    book.bids = [OrderBookLevel(price=float(best_bid), size=0)]
-                    book.asks = [OrderBookLevel(price=float(best_ask), size=0)]
+                    new_best_bid = float(best_bid)
+                    new_best_ask = float(best_ask)
+
+                    # Update best level without destroying existing depth
+                    if book.bids:
+                        book.bids[0] = OrderBookLevel(price=new_best_bid, size=book.bids[0].size)
+                    else:
+                        book.bids = [OrderBookLevel(price=new_best_bid, size=0)]
+
+                    if book.asks:
+                        book.asks[0] = OrderBookLevel(price=new_best_ask, size=book.asks[0].size)
+                    else:
+                        book.asks = [OrderBookLevel(price=new_best_ask, size=0)]
+
                     book.last_update = datetime.now()
 
                     # Track condition for arbitrage check
@@ -737,17 +758,24 @@ class OrderBookWebSocket:
     def _on_error(self, ws, error) -> None:
         """Handle WebSocket error."""
         logger.error(f"WebSocket error: {error}")
-        self.stats['errors'] += 1
+        self._inc_stat('errors')
 
     def _on_close(self, ws, close_status_code, close_msg) -> None:
-        """Handle WebSocket connection closed."""
+        """Handle WebSocket connection closed. Marks all book data as stale."""
         self._connected = False
+        # Mark all order books as stale so consumers know data may be outdated
+        with self._lock:
+            stale_time = datetime(1970, 1, 1)
+            for book in self._order_books.values():
+                book.last_update = stale_time
         logger.info(f"WebSocket closed: {close_status_code} - {close_msg}")
 
     def get_stats(self) -> Dict:
         """Get connection statistics."""
+        with self._stats_lock:
+            stats_copy = dict(self.stats)
         return {
-            **self.stats,
+            **stats_copy,
             'connected': self._connected,
             'subscribed_assets': len(self._subscribed_assets),
             'tracked_markets': len(self._condition_to_assets),
@@ -794,9 +822,9 @@ class RealTimeArbitrageMonitor:
         self._monitored_markets: Dict[str, Dict] = {}
         self._lock = threading.Lock()
 
-        # Opportunity log
-        self._opportunities: List[ArbitrageSignal] = []
+        # Opportunity log (deque for O(1) bounded append)
         self._max_opportunities = 1000
+        self._opportunities: deque = deque(maxlen=self._max_opportunities)
 
         # Deduplication tracking
         self._last_signal_time: Dict[str, datetime] = {}  # condition_id -> last_signal_time
@@ -956,10 +984,8 @@ class RealTimeArbitrageMonitor:
                 )
                 self._signal_count[condition_id] += 1
 
-                # Store opportunity
+                # Store opportunity (deque handles max size automatically)
                 self._opportunities.append(signal)
-                if len(self._opportunities) > self._max_opportunities:
-                    self._opportunities = self._opportunities[-self._max_opportunities:]
 
         # Fire callback and log (outside lock to avoid blocking)
         if should_signal:

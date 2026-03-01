@@ -55,7 +55,8 @@ class SharedOrderbookManager:
     @classmethod
     def is_initialized(cls) -> bool:
         """Check if singleton is already initialized."""
-        return cls._initialized
+        with cls._lock:
+            return cls._initialized
 
     @classmethod
     def reset(cls):

@@ -8,9 +8,8 @@ Provides a single interface that can switch between:
 
 import logging
 import threading
-import time
 from typing import Dict, Optional, List
-from datetime import datetime, timedelta
+from datetime import datetime
 
 logger = logging.getLogger(__name__)
 
@@ -51,12 +50,14 @@ class OrderbookManager:
         # WebSocket state
         self._ws_client: Optional[OrderBookWebSocket] = None
         self._ws_running = False
+        self._ws_lock = threading.Lock()  # Protects _ws_client and _ws_running
         self._token_to_condition: Dict[str, str] = {}  # token_id -> condition_id
         self._condition_to_tokens: Dict[str, Dict[str, str]] = {}  # condition_id -> {yes, no}
 
         # Cache for REST mode
         self._rest_cache: Dict[str, Dict] = {}  # token_id -> orderbook dict
         self._cache_ttl = self.config.get('cache_ttl_seconds', 5)
+        self._cache_max_size = self.config.get('cache_max_size', 500)
         self._cache_lock = threading.Lock()
 
         # Validate source
@@ -76,8 +77,9 @@ class OrderbookManager:
 
     def stop(self):
         """Stop the orderbook manager."""
-        if self.source == 'websocket' and self._ws_client:
-            self._stop_websocket()
+        with self._ws_lock:
+            if self.source == 'websocket' and self._ws_client:
+                self._stop_websocket()
 
     def register_market(self, condition_id: str, yes_token_id: str, no_token_id: str,
                        question: str = ""):
@@ -98,10 +100,11 @@ class OrderbookManager:
                 'no': no_token_id
             }
 
-        # Subscribe via WebSocket if running
-        if self.source == 'websocket' and self._ws_client:
-            self._ws_client.add_market(condition_id, yes_token_id, no_token_id, question)
-            logger.debug(f"Registered market via WebSocket: {question[:50]}")
+        # Subscribe via WebSocket if running (hold ws_lock for atomic check-and-use)
+        with self._ws_lock:
+            if self.source == 'websocket' and self._ws_client:
+                self._ws_client.add_market(condition_id, yes_token_id, no_token_id, question)
+                logger.debug(f"Registered market via WebSocket: {question[:50]}")
 
     def get_orderbook(self, token_id: str) -> Dict:
         """
@@ -121,15 +124,20 @@ class OrderbookManager:
     def _start_websocket(self) -> bool:
         """Start WebSocket client."""
         try:
-            self._ws_client = OrderBookWebSocket()
-            self._ws_client.start()
+            ws_client = OrderBookWebSocket()
+            ws_client.start()
 
-            # Give it a moment to connect
-            import time
-            time.sleep(2)
+            # Wait for connection instead of hardcoded sleep
+            connected = ws_client.wait_for_connection(timeout=10)
 
-            self._ws_running = True
-            logger.info("WebSocket orderbook manager started")
+            with self._ws_lock:
+                self._ws_client = ws_client
+                self._ws_running = connected
+
+            if connected:
+                logger.info("WebSocket orderbook manager started")
+            else:
+                logger.warning("WebSocket started but not yet connected")
             return True
 
         except Exception as e:
@@ -137,21 +145,24 @@ class OrderbookManager:
             return False
 
     def _stop_websocket(self):
-        """Stop WebSocket client."""
+        """Stop WebSocket client. Caller must hold _ws_lock."""
         if self._ws_client:
             self._ws_client.stop()
+            self._ws_client = None
             self._ws_running = False
             logger.info("WebSocket orderbook manager stopped")
 
     def _get_websocket_orderbook(self, token_id: str) -> Dict:
         """Get orderbook from WebSocket."""
-        if not self._ws_client:
+        with self._ws_lock:
+            ws_client = self._ws_client
+        if not ws_client:
             logger.warning("WebSocket not running, falling back to REST")
             return self._get_rest_orderbook(token_id)
 
         try:
             # Get orderbook from WebSocket cache
-            ws_book = self._ws_client.get_order_book(token_id)
+            ws_book = ws_client.get_order_book(token_id)
 
             if not ws_book:
                 logger.debug(f"No WebSocket data for {token_id}, using REST")
@@ -177,12 +188,19 @@ class OrderbookManager:
         # Generate synthetic orderbook
         orderbook = self.client.get_synthetic_orderbook(token_id)
 
-        # Cache it
+        # Cache it (with size limit to prevent unbounded growth)
         with self._cache_lock:
             self._rest_cache[token_id] = {
                 'orderbook': orderbook,
                 'timestamp': datetime.now()
             }
+            # Evict oldest entries if cache exceeds max size
+            if len(self._rest_cache) > self._cache_max_size:
+                oldest_key = min(
+                    self._rest_cache,
+                    key=lambda k: self._rest_cache[k]['timestamp']
+                )
+                del self._rest_cache[oldest_key]
 
         return orderbook
 
@@ -206,13 +224,17 @@ class OrderbookManager:
 
     def get_stats(self) -> Dict:
         """Get statistics about orderbook manager."""
+        with self._ws_lock:
+            ws_running = self._ws_running
+            ws_client = self._ws_client
+
         stats = {
             'source': self.source,
-            'running': self._ws_running if self.source == 'websocket' else True
+            'running': ws_running if self.source == 'websocket' else True
         }
 
-        if self.source == 'websocket' and self._ws_client:
-            stats.update(self._ws_client.stats)
+        if self.source == 'websocket' and ws_client:
+            stats.update(ws_client.stats)
         else:
             with self._cache_lock:
                 stats['cached_tokens'] = len(self._rest_cache)

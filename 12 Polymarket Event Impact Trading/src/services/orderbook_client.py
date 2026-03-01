@@ -15,6 +15,7 @@ Usage:
 """
 
 import logging
+import threading
 import requests
 from typing import Dict, Optional
 from datetime import datetime, timedelta
@@ -42,6 +43,7 @@ class OrderbookServiceClient:
         self.cache_ttl = timedelta(seconds=cache_ttl_seconds)
         self._cache: Dict[str, Dict] = {}
         self._cache_timestamps: Dict[str, datetime] = {}
+        self._cache_lock = threading.Lock()
 
         logger.info(f"OrderbookServiceClient initialized (service={service_url})")
 
@@ -60,11 +62,12 @@ class OrderbookServiceClient:
             >>> orderbook = client.get_orderbook("80986750124...")
             >>> print(orderbook['bids'][0])  # Best bid
         """
-        # Check cache first
-        if token_id in self._cache:
-            age = datetime.now() - self._cache_timestamps[token_id]
-            if age < self.cache_ttl:
-                return self._cache[token_id]
+        # Check cache first (thread-safe)
+        with self._cache_lock:
+            if token_id in self._cache:
+                age = datetime.now() - self._cache_timestamps[token_id]
+                if age < self.cache_ttl:
+                    return self._cache[token_id]
 
         # Fetch from microservice
         try:
@@ -82,9 +85,10 @@ class OrderbookServiceClient:
                     'asks': data.get('asks', [])
                 }
 
-                # Update cache
-                self._cache[token_id] = orderbook
-                self._cache_timestamps[token_id] = datetime.now()
+                # Update cache (thread-safe)
+                with self._cache_lock:
+                    self._cache[token_id] = orderbook
+                    self._cache_timestamps[token_id] = datetime.now()
 
                 return orderbook
 

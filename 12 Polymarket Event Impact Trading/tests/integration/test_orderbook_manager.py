@@ -11,7 +11,10 @@ Implementation: OrderbookManager class in src/core/orderbook_manager.py
 """
 
 import pytest
+import threading
+import time
 from unittest.mock import Mock, MagicMock, patch
+from datetime import datetime, timedelta
 from pathlib import Path
 import sys
 
@@ -19,6 +22,7 @@ import sys
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 from src.core.orderbook_manager import OrderbookManager
+from src.utils.orderbook_websocket import OrderBook, OrderBookLevel
 
 
 class TestOrderbookManagerExists:
@@ -157,30 +161,97 @@ class TestRESTMode:
 
 
 class TestWebSocketMode:
-    """
-    Test WebSocket mode (real-time orderbook).
+    """Test WebSocket mode (real-time orderbook) with mocked WebSocket."""
 
-    NOTE: WebSocket functionality is validated through the fallback tests in TestAutoFallback.
-    Direct WebSocket tests require websocket-client library and live environment.
-    The critical requirement (ARCH-004) is the FALLBACK behavior, which is fully tested.
-    """
+    def test_websocket_convert_ws_orderbook(self):
+        """Test _convert_ws_orderbook converts OrderBook to dict format."""
+        mock_client = Mock()
+        manager = OrderbookManager(mock_client, source='rest')
 
-    def test_websocket_mode_documented(self):
-        """
-        WebSocket mode is documented and fallback behavior validated.
+        ws_book = OrderBook(
+            asset_id='token_123',
+            condition_id='cond_456',
+            bids=[
+                OrderBookLevel(price=0.55, size=100),
+                OrderBookLevel(price=0.54, size=200),
+            ],
+            asks=[
+                OrderBookLevel(price=0.56, size=150),
+                OrderBookLevel(price=0.57, size=250),
+            ],
+            last_update=datetime(2026, 1, 1, 12, 0, 0),
+            last_trade_price=0.555,
+        )
 
-        WebSocket happy-path tests omitted because:
-        1. Require websocket-client library installed
-        2. Critical constraint is FALLBACK (fully tested in TestAutoFallback)
-        3. Integration tests run in environment without websocket-client
+        result = manager._convert_ws_orderbook(ws_book)
 
-        Core ARCH-004 validation:
-        - ✅ REST mode works (TestRESTMode)
-        - ✅ Fallback when WebSocket unavailable (TestAutoFallback)
-        - ✅ Fallback during get_orderbook failures (TestAutoFallback)
-        """
-        # This test passes to document the rationale
-        assert True
+        assert result['bids'] == [[0.55, 100], [0.54, 200]]
+        assert result['asks'] == [[0.56, 150], [0.57, 250]]
+        assert result['asset_id'] == 'token_123'
+        assert result['last_trade_price'] == 0.555
+        assert '2026-01-01' in result['timestamp']
+
+    def test_websocket_register_market_calls_ws_client(self):
+        """register_market should call add_market on the WebSocket client."""
+        mock_client = Mock()
+
+        with patch('src.core.orderbook_manager.WEBSOCKET_AVAILABLE', True):
+            with patch('src.core.orderbook_manager.OrderBookWebSocket', create=True) as MockWS:
+                mock_ws = MagicMock()
+                mock_ws.wait_for_connection.return_value = True
+                MockWS.return_value = mock_ws
+
+                manager = OrderbookManager(mock_client, source='websocket')
+                manager.start()
+
+                manager.register_market('cond1', 'yes1', 'no1', 'Test Q?')
+
+                mock_ws.add_market.assert_called_once_with('cond1', 'yes1', 'no1', 'Test Q?')
+
+    def test_websocket_get_orderbook_returns_converted_book(self):
+        """get_orderbook in websocket mode should return converted OrderBook dict."""
+        mock_client = Mock()
+
+        with patch('src.core.orderbook_manager.WEBSOCKET_AVAILABLE', True):
+            with patch('src.core.orderbook_manager.OrderBookWebSocket', create=True) as MockWS:
+                mock_ws = MagicMock()
+                mock_ws.wait_for_connection.return_value = True
+
+                ws_book = OrderBook(
+                    asset_id='token_abc',
+                    bids=[OrderBookLevel(price=0.60, size=500)],
+                    asks=[OrderBookLevel(price=0.62, size=300)],
+                    last_trade_price=0.61,
+                )
+                mock_ws.get_order_book.return_value = ws_book
+                MockWS.return_value = mock_ws
+
+                manager = OrderbookManager(mock_client, source='websocket')
+                manager.start()
+
+                result = manager.get_orderbook('token_abc')
+
+                assert result['bids'] == [[0.60, 500]]
+                assert result['asks'] == [[0.62, 300]]
+                assert result['asset_id'] == 'token_abc'
+
+    def test_websocket_stats_includes_ws_data(self):
+        """Stats in websocket mode should include WebSocket stats."""
+        mock_client = Mock()
+
+        with patch('src.core.orderbook_manager.WEBSOCKET_AVAILABLE', True):
+            with patch('src.core.orderbook_manager.OrderBookWebSocket', create=True) as MockWS:
+                mock_ws = MagicMock()
+                mock_ws.wait_for_connection.return_value = True
+                mock_ws.stats = {'messages_received': 42, 'book_updates': 10}
+                MockWS.return_value = mock_ws
+
+                manager = OrderbookManager(mock_client, source='websocket')
+                manager.start()
+
+                stats = manager.get_stats()
+                assert stats['source'] == 'websocket'
+                assert stats['messages_received'] == 42
 
 
 class TestAutoFallback:
@@ -366,3 +437,169 @@ class TestOrderbookManagerStats:
 
         assert 'running' in stats
         assert isinstance(stats['running'], bool)
+
+
+class TestCacheExpiry:
+    """Test cache TTL expiration (#23)."""
+
+    def test_cache_expires_after_ttl(self):
+        """Cache entries should expire after TTL, causing a fresh API call."""
+        mock_client = Mock()
+        mock_client.get_synthetic_orderbook = Mock(return_value={
+            'bids': [[0.50, 1000]],
+            'asks': [[0.52, 1000]]
+        })
+
+        manager = OrderbookManager(mock_client, source='rest', config={'cache_ttl_seconds': 1})
+        manager.start()
+
+        # First call
+        manager.get_orderbook(token_id='0xtest')
+        assert mock_client.get_synthetic_orderbook.call_count == 1
+
+        # Immediately again - should be cached
+        manager.get_orderbook(token_id='0xtest')
+        assert mock_client.get_synthetic_orderbook.call_count == 1
+
+        # Manually expire the cache entry
+        with manager._cache_lock:
+            manager._rest_cache['0xtest']['timestamp'] = datetime.now() - timedelta(seconds=10)
+
+        # Now should call API again
+        manager.get_orderbook(token_id='0xtest')
+        assert mock_client.get_synthetic_orderbook.call_count == 2
+
+    def test_cache_max_size_evicts_oldest(self):
+        """Cache should evict oldest entry when max size exceeded."""
+        mock_client = Mock()
+        mock_client.get_synthetic_orderbook = Mock(return_value={
+            'bids': [[0.50, 1000]],
+            'asks': [[0.52, 1000]]
+        })
+
+        manager = OrderbookManager(mock_client, source='rest', config={
+            'cache_ttl_seconds': 300,
+            'cache_max_size': 3
+        })
+        manager.start()
+
+        # Fill cache with 3 entries
+        for i in range(3):
+            manager.get_orderbook(token_id=f'token_{i}')
+
+        with manager._cache_lock:
+            assert len(manager._rest_cache) == 3
+
+        # Add one more - should evict oldest
+        manager.get_orderbook(token_id='token_3')
+
+        with manager._cache_lock:
+            assert len(manager._rest_cache) == 3
+            assert 'token_3' in manager._rest_cache
+
+
+class TestConcurrency:
+    """Test thread safety of OrderbookManager (#22)."""
+
+    def test_concurrent_get_orderbook(self):
+        """Multiple threads calling get_orderbook simultaneously should not crash."""
+        mock_client = Mock()
+        mock_client.get_synthetic_orderbook = Mock(return_value={
+            'bids': [[0.50, 1000]],
+            'asks': [[0.52, 1000]]
+        })
+
+        manager = OrderbookManager(mock_client, source='rest')
+        manager.start()
+
+        errors = []
+
+        def worker(token_id):
+            try:
+                for _ in range(20):
+                    result = manager.get_orderbook(token_id=token_id)
+                    assert 'bids' in result
+            except Exception as e:
+                errors.append(e)
+
+        threads = [threading.Thread(target=worker, args=(f'token_{i}',)) for i in range(5)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join(timeout=10)
+
+        assert len(errors) == 0, f"Concurrent get_orderbook errors: {errors}"
+
+    def test_concurrent_register_and_get(self):
+        """Concurrent register_market + get_orderbook should not crash."""
+        mock_client = Mock()
+        mock_client.get_synthetic_orderbook = Mock(return_value={
+            'bids': [[0.50, 1000]],
+            'asks': [[0.52, 1000]]
+        })
+
+        manager = OrderbookManager(mock_client, source='rest')
+        manager.start()
+
+        errors = []
+
+        def register_worker():
+            try:
+                for i in range(20):
+                    manager.register_market(f'cond_{i}', f'yes_{i}', f'no_{i}', f'Q {i}?')
+            except Exception as e:
+                errors.append(e)
+
+        def get_worker():
+            try:
+                for i in range(20):
+                    manager.get_orderbook(token_id=f'yes_{i}')
+            except Exception as e:
+                errors.append(e)
+
+        t1 = threading.Thread(target=register_worker)
+        t2 = threading.Thread(target=get_worker)
+        t1.start()
+        t2.start()
+        t1.join(timeout=10)
+        t2.join(timeout=10)
+
+        assert len(errors) == 0, f"Concurrent register+get errors: {errors}"
+
+    def test_concurrent_get_and_stop(self):
+        """Concurrent get_orderbook + stop should not crash."""
+        mock_client = Mock()
+        mock_client.get_synthetic_orderbook = Mock(return_value={
+            'bids': [[0.50, 1000]],
+            'asks': [[0.52, 1000]]
+        })
+
+        with patch('src.core.orderbook_manager.WEBSOCKET_AVAILABLE', True):
+            with patch('src.core.orderbook_manager.OrderBookWebSocket', create=True) as MockWS:
+                mock_ws = MagicMock()
+                mock_ws.wait_for_connection.return_value = True
+                mock_ws.get_order_book.return_value = None
+                MockWS.return_value = mock_ws
+
+                manager = OrderbookManager(mock_client, source='websocket')
+                manager.start()
+
+                errors = []
+
+                def get_worker():
+                    try:
+                        for _ in range(20):
+                            manager.get_orderbook(token_id='token_1')
+                    except Exception as e:
+                        errors.append(e)
+
+                t1 = threading.Thread(target=get_worker)
+                t1.start()
+
+                # Stop while get_worker is running
+                time.sleep(0.01)
+                manager.stop()
+
+                t1.join(timeout=10)
+
+                assert len(errors) == 0, f"Concurrent get+stop errors: {errors}"

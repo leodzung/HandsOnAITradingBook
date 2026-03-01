@@ -12,6 +12,7 @@ API will be available at: http://localhost:8765
 import sys
 import os
 import logging
+from contextlib import asynccontextmanager
 from datetime import datetime
 from typing import Dict, Optional
 import uvicorn
@@ -35,11 +36,42 @@ logger = logging.getLogger(__name__)
 client: Optional[PolymarketClient] = None
 orderbook_manager: Optional[OrderbookManager] = None
 
+
+@asynccontextmanager
+async def lifespan(app):
+    """Manage startup and shutdown of the orderbook service."""
+    global client, orderbook_manager
+
+    # Startup
+    logger.info("Starting Orderbook Microservice...")
+    client = PolymarketClient()
+    orderbook_manager = OrderbookManager(
+        client=client,
+        source='websocket',
+        config={'cache_ttl_seconds': 5}
+    )
+    success = orderbook_manager.start()
+    if success:
+        logger.info("WebSocket orderbook manager started successfully")
+    else:
+        logger.warning("WebSocket failed to start, using REST fallback")
+    logger.info("Orderbook Microservice ready at http://localhost:8765")
+
+    yield
+
+    # Shutdown
+    logger.info("Shutting down Orderbook Microservice...")
+    if orderbook_manager:
+        orderbook_manager.stop()
+    logger.info("Orderbook Microservice stopped")
+
+
 # FastAPI app
 app = FastAPI(
     title="Polymarket Orderbook Service",
     description="Centralized WebSocket orderbook service for trading bots",
-    version="1.0.0"
+    version="1.0.0",
+    lifespan=lifespan
 )
 
 
@@ -62,46 +94,6 @@ class HealthResponse(BaseModel):
 startup_time = datetime.now()
 
 
-@app.on_event("startup")
-async def startup_event():
-    """Initialize WebSocket connection on service startup."""
-    global client, orderbook_manager
-
-    logger.info("🚀 Starting Orderbook Microservice...")
-
-    # Initialize Polymarket client
-    client = PolymarketClient()
-
-    # Initialize orderbook manager with WebSocket
-    orderbook_manager = OrderbookManager(
-        client=client,
-        source='websocket',
-        config={'cache_ttl_seconds': 5}
-    )
-
-    # Start WebSocket connection
-    success = orderbook_manager.start()
-
-    if success:
-        logger.info("✅ WebSocket orderbook manager started successfully")
-    else:
-        logger.warning("⚠️  WebSocket failed to start, using REST fallback")
-
-    logger.info("✅ Orderbook Microservice ready at http://localhost:8765")
-
-
-@app.on_event("shutdown")
-async def shutdown_event():
-    """Clean up on service shutdown."""
-    global orderbook_manager
-
-    logger.info("Shutting down Orderbook Microservice...")
-
-    if orderbook_manager:
-        orderbook_manager.stop()
-
-    logger.info("✅ Orderbook Microservice stopped")
-
 
 @app.get("/health", response_model=HealthResponse)
 async def health_check():
@@ -114,8 +106,9 @@ async def health_check():
     uptime = (datetime.now() - startup_time).total_seconds()
 
     websocket_connected = False
-    if orderbook_manager and orderbook_manager._ws_running:
-        websocket_connected = True
+    if orderbook_manager:
+        stats = orderbook_manager.get_stats()
+        websocket_connected = stats.get('running', False)
 
     return HealthResponse(
         status="healthy" if orderbook_manager else "initializing",
