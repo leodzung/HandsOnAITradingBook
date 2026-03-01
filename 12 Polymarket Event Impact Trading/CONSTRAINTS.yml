@@ -269,20 +269,122 @@ constraints:
     - type: structural_test
       command: PYTHONPATH=src pytest tests/structural/test_independent_prices.py -v
       description: Regex scan ensures no synthetic NO price patterns in bot files
+  - id: ARCH-009
+    title: Thread-safe shared state in orderbook modules
+    description: 'All mutable shared state in orderbook modules MUST be protected by locks.
+
+      Stats MUST use _inc_stat() (not direct self.stats[key] += 1).
+
+      _ws_client access outside __init__ MUST be under _ws_lock.
+
+      Cache access in OrderbookServiceClient MUST be under _cache_lock.
+
+      _initialized in SharedOrderbookManager MUST be read under _lock.
+
+      '
+    rationale: 'Commit d6356bd fixed 5 thread safety races (#1, #2, #3, #19, #20).
+
+      Direct stat mutation from multiple threads causes lost increments.
+
+      Unprotected _ws_client access causes use-after-None crashes during reconnect.
+
+      '
+    status: enforced
+    priority: critical
+    implemented_date: '2026-03-01'
+    validation:
+    - type: structural_test
+      command: PYTHONPATH=src pytest tests/structural/test_orderbook_thread_safety.py
+        -v
+      description: Verify thread-safe patterns in all orderbook modules
+  - id: ARCH-012
+    title: No hardcoded sleeps for connection waiting
+    description: 'Orderbook modules MUST use wait_for_connection() or similar event-based
+
+      waiting instead of hardcoded time.sleep() calls for connection readiness.
+
+      time.sleep() in _start_websocket is FORBIDDEN.
+
+      '
+    rationale: 'Commit d6356bd fixed issue #6 where time.sleep(2) was used instead
+
+      of wait_for_connection(). Hardcoded sleeps are fragile (too short on slow
+
+      networks, wasteful on fast ones) and cause flaky tests.
+
+      '
+    status: enforced
+    priority: high
+    implemented_date: '2026-03-01'
+    validation:
+    - type: structural_test
+      command: PYTHONPATH=src pytest tests/structural/test_orderbook_no_hardcoded_sleep.py
+        -v
+      description: Verify no hardcoded sleeps in connection startup
+  - id: ARCH-013
+    title: Bounded caches and collections in orderbook modules
+    description: 'All caches and collections in orderbook modules MUST have maximum
+
+      size limits to prevent unbounded memory growth. REST cache MUST have
+
+      _cache_max_size with eviction. WebSocket _order_books MUST have
+
+      _max_order_books limit. Opportunity logs MUST use deque(maxlen=).
+
+      '
+    rationale: 'Commit d6356bd fixed issues #8, #9, #10 where unbounded dicts and
+
+      lists grew without limit. In production, 10,000+ markets could cause OOM.
+
+      '
+    status: enforced
+    priority: high
+    implemented_date: '2026-03-01'
+    validation:
+    - type: structural_test
+      command: PYTHONPATH=src pytest tests/structural/test_orderbook_bounded_collections.py
+        -v
+      description: Verify all orderbook collections have size bounds
+  - id: ARCH-014
+    title: Code quality standards in orderbook modules
+    description: 'Orderbook modules MUST NOT contain bare except clauses, print()
+
+      statements outside __main__ guard, or private attribute access from
+
+      the service layer. These patterns indicate incomplete error handling,
+
+      debug leftovers, and broken encapsulation respectively.
+
+      '
+    rationale: 'Commit d6356bd fixed issues #11, #12, #13, #17 covering bare except
+
+      (swallows errors silently), print statements (bypasses logging), and
+
+      service accessing manager private attributes (breaks encapsulation).
+
+      '
+    status: enforced
+    priority: medium
+    implemented_date: '2026-03-01'
+    validation:
+    - type: structural_test
+      command: PYTHONPATH=src pytest tests/structural/test_orderbook_code_quality.py
+        -v
+      description: Verify code quality standards in orderbook modules
   - id: ARCH-010
     title: TradeExecutor must not mutate TradeRequest inputs
     description: 'execute_trade() MUST NOT modify request.entry_price or any other
       field on the TradeRequest dataclass. Slippage-adjusted execution prices MUST
-      be tracked via a local variable (execution_price) and passed explicitly to
-      _execute_position() and TradeResult.
+      be tracked via a local variable (execution_price) and passed explicitly to _execute_position()
+      and TradeResult.
 
       Mutating caller inputs is a hidden side effect that breaks caller assumptions.
 
       '
     rationale: 'Bug 2026-02-28: execute_trade() mutated request.entry_price = recommended_price
-      on line 178. Callers that inspected request after the call would see the
-      slippage-adjusted price instead of their original quoted price. This violated
-      the principle of least surprise and could cause incorrect logging/tracking.
+      on line 178. Callers that inspected request after the call would see the slippage-adjusted
+      price instead of their original quoted price. This violated the principle of
+      least surprise and could cause incorrect logging/tracking.
 
       '
     status: enforced
@@ -297,14 +399,14 @@ constraints:
     title: execute_close_trade must accept bucket for per-bucket thresholds
     description: 'execute_close_trade() MUST accept a bucket parameter and pass it
       to SlippageEstimator.estimate_slippage(). Without bucket, per-bucket configs
-      (short-expiry bot) fall back to max(all_buckets), bypassing the intended
-      per-bucket slippage limits on exit trades.
+      (short-expiry bot) fall back to max(all_buckets), bypassing the intended per-bucket
+      slippage limits on exit trades.
 
       '
     rationale: 'Bug 2026-02-28: Short-expiry bot had per-bucket slippage thresholds
       (ultra_short: 3000bps, short: 2000bps, medium: 1500bps) but execute_close_trade
-      never passed bucket to estimate_slippage. All close trades used the most
-      permissive threshold (3000bps) regardless of actual bucket.
+      never passed bucket to estimate_slippage. All close trades used the most permissive
+      threshold (3000bps) regardless of actual bucket.
 
       '
     status: enforced
@@ -691,15 +793,14 @@ constraints:
   - id: RISK-012
     title: TradeExecutor price validation must check both bounds
     description: '_validate_price() MUST reject entry prices outside (0, 1) range
-      in addition to the max_entry_price upper bound. Prediction market prices
-      are strictly between 0 and 1 exclusive. Prices of 0, negative, or >= 1.0
-      indicate data corruption or API errors.
+      in addition to the max_entry_price upper bound. Prediction market prices are
+      strictly between 0 and 1 exclusive. Prices of 0, negative, or >= 1.0 indicate
+      data corruption or API errors.
 
       '
-    rationale: 'Review 2026-02-28: _validate_price only checked upper bound
-      (max_entry_price). With slippage disabled, a price of 0, -1, or 1.5 would
-      pass through unchecked. SlippageEstimator validated 0 < price < 1 but only
-      when enabled.
+    rationale: 'Review 2026-02-28: _validate_price only checked upper bound (max_entry_price).
+      With slippage disabled, a price of 0, -1, or 1.5 would pass through unchecked.
+      SlippageEstimator validated 0 < price < 1 but only when enabled.
 
       '
     status: enforced
@@ -718,8 +819,8 @@ constraints:
 
       '
     rationale: 'Review 2026-02-28: No position size validation existed in TradeExecutor.
-      A position_size of 0 or negative would pass through all validation stages
-      and be saved to the database, corrupting position tracking.
+      A position_size of 0 or negative would pass through all validation stages and
+      be saved to the database, corrupting position tracking.
 
       '
     status: enforced
@@ -1181,10 +1282,10 @@ operations:
     alert: critical
     description: Number of databases that failed integrity check at startup
 metadata:
-  last_validated: '2026-02-28T22:00:09.771298'
+  last_validated: '2026-03-01T12:00:11.288498'
   validation_status: FAIL
-  total_constraints: 31
-  enforced_constraints: 31
+  total_constraints: 35
+  enforced_constraints: 35
   proposed_constraints: 0
   contact:
     maintainer: Trading System Team
