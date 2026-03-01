@@ -1030,7 +1030,8 @@ class ShortExpiryTrader:
                         exit_price=entry_price,
                         position_size=position_size,
                         exit_reason='expiry_time',
-                        question=pos.get('question', '')
+                        question=pos.get('question', ''),
+                        bucket=bucket
                     )
 
                     if not close_result.success:
@@ -1084,7 +1085,8 @@ class ShortExpiryTrader:
                         exit_price=entry_price,
                         position_size=position_size,
                         exit_reason='market_closed',
-                        question=pos.get('question', '')
+                        question=pos.get('question', ''),
+                        bucket=bucket
                     )
 
                     if not close_result.success:
@@ -1151,7 +1153,8 @@ class ShortExpiryTrader:
                         exit_price=current_price,
                         position_size=position_size,
                         exit_reason=exit_reason,
-                        question=pos.get('question', '')
+                        question=pos.get('question', ''),
+                        bucket=bucket
                     )
 
                     if not close_result.success:

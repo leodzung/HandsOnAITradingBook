@@ -11,7 +11,7 @@ Provides consistent trade validation and execution logic:
 """
 
 import logging
-from typing import Dict, Optional, Callable
+from typing import Dict, Optional
 from datetime import datetime, timezone
 from dataclasses import dataclass
 
@@ -119,12 +119,13 @@ class TradeExecutor:
         Execute trade with full validation pipeline.
 
         Validation stages:
-        1. Price validation (max_entry_price)
-        2. Slippage estimation (if enabled)
-        3. Position tracking
+        1. Price validation (0 < price < 1 and <= max_entry_price)
+        2. Position size validation (> 0)
+        3. Slippage estimation (if enabled)
+        4. Position tracking
 
         Args:
-            request: TradeRequest with all trade parameters
+            request: TradeRequest with all trade parameters (not mutated)
             order_side: 'BUY' for opening positions (default), 'SELL' for closing positions
 
         Returns:
@@ -144,7 +145,21 @@ class TradeExecutor:
                 rejection_stage='price'
             )
 
-        # Stage 2: Slippage estimation
+        # Stage 2: Position size validation
+        size_check = self._validate_position_size(request)
+        if not size_check['valid']:
+            return TradeResult(
+                success=False,
+                reason=size_check['reason'],
+                rejection_reason=size_check['reason'],
+                rejection_stage='size'
+            )
+
+        # Track execution price separately — never mutate the request
+        execution_price = request.entry_price
+        slippage_bps = None
+
+        # Stage 3: Slippage estimation
         if self.slippage_enabled:
             slippage_check = self._estimate_slippage(request, order_side=order_side)
             if not slippage_check['valid']:
@@ -152,9 +167,11 @@ class TradeExecutor:
                     success=False,
                     reason=slippage_check['reason'],
                     rejection_reason=slippage_check['reason'],
-                    rejection_stage='slippage',
+                    rejection_stage='api_error' if slippage_check.get('api_error') else 'slippage',
                     slippage_bps=slippage_check.get('slippage_bps')
                 )
+
+            slippage_bps = slippage_check.get('slippage_bps')
 
             # Use slippage estimator's recommended price if available
             if slippage_check.get('recommended_price'):
@@ -175,18 +192,18 @@ class TradeExecutor:
                         rejection_stage='price'
                     )
 
-                request.entry_price = recommended_price
+                execution_price = recommended_price
 
-        # Stage 3: Execute trade
-        execution_result = self._execute_position(request)
+        # Stage 4: Execute trade
+        execution_result = self._execute_position(request, execution_price)
 
         if execution_result['success']:
             return TradeResult(
                 success=True,
                 reason='Trade executed successfully',
-                entry_price=request.entry_price,
+                entry_price=execution_price,
                 position_size=request.position_size,
-                slippage_bps=slippage_check.get('slippage_bps') if self.slippage_enabled else None
+                slippage_bps=slippage_bps
             )
         else:
             return TradeResult(
@@ -200,7 +217,9 @@ class TradeExecutor:
         """
         Validate entry price is within acceptable range.
 
-        Rejects trades where entry price > max_entry_price (e.g., 0.90).
+        Rejects trades where:
+        - entry_price <= 0 or >= 1.0 (invalid for binary prediction markets)
+        - entry_price > max_entry_price (e.g., 0.90)
 
         Args:
             request: TradeRequest
@@ -208,6 +227,17 @@ class TradeExecutor:
         Returns:
             Dict with 'valid' (bool) and 'reason' (str)
         """
+        if request.entry_price <= 0 or request.entry_price >= 1.0:
+            reason = (
+                f"Entry price ${request.entry_price:.3f} outside valid range (0, 1)"
+            )
+            logger.warning(
+                f"⚠️ Trade rejected - Invalid price | "
+                f"{request.outcome} @ ${request.entry_price:.3f} | "
+                f"Market: {request.question[:50]}"
+            )
+            return {'valid': False, 'reason': reason}
+
         if request.entry_price > self.max_entry_price:
             reason = (
                 f"Entry price ${request.entry_price:.3f} exceeds "
@@ -222,6 +252,27 @@ class TradeExecutor:
             return {'valid': False, 'reason': reason}
 
         return {'valid': True, 'reason': 'Price within limit'}
+
+    def _validate_position_size(self, request: TradeRequest) -> Dict:
+        """
+        Validate position size is positive.
+
+        Args:
+            request: TradeRequest
+
+        Returns:
+            Dict with 'valid' (bool) and 'reason' (str)
+        """
+        if request.position_size <= 0:
+            reason = f"Position size must be positive, got ${request.position_size:.2f}"
+            logger.warning(
+                f"⚠️ Trade rejected - Invalid size | "
+                f"${request.position_size:.2f} | "
+                f"Market: {request.question[:50]}"
+            )
+            return {'valid': False, 'reason': reason}
+
+        return {'valid': True, 'reason': 'Position size valid'}
 
     def _estimate_slippage(self, request: TradeRequest, order_side: str = 'BUY') -> Dict:
         """
@@ -239,7 +290,8 @@ class TradeExecutor:
         if not orderbook:
             return {
                 'valid': False,
-                'reason': 'Could not fetch orderbook for slippage estimation'
+                'reason': 'Could not fetch orderbook for slippage estimation',
+                'api_error': True
             }
 
         # Get market data for volume
@@ -292,12 +344,14 @@ class TradeExecutor:
             'recommended_price': slippage_result.expected_execution_price
         }
 
-    def _execute_position(self, request: TradeRequest) -> Dict:
+    def _execute_position(self, request: TradeRequest, execution_price: float) -> Dict:
         """
         Execute position (paper trading or live).
 
         Args:
-            request: TradeRequest
+            request: TradeRequest (read-only, not mutated)
+            execution_price: Actual execution price (may differ from request.entry_price
+                after slippage adjustment)
 
         Returns:
             Dict with 'success' (bool) and 'reason' (str)
@@ -307,7 +361,7 @@ class TradeExecutor:
                 f"\n  💰 [PAPER TRADE] BUY {request.outcome} ${request.position_size:.2f}"
             )
             logger.info(f"     Market: {request.question[:50]}")
-            logger.info(f"     {request.outcome} Price: ${request.entry_price:.3f}")
+            logger.info(f"     {request.outcome} Price: ${execution_price:.3f}")
             if request.edge:
                 logger.info(f"     Edge: {request.edge:+.2%}")
             if request.confidence:
@@ -321,15 +375,15 @@ class TradeExecutor:
             self.position_manager.save_position(
                 market_id=request.market_id,
                 token_id=request.token_id,
-                outcome=request.outcome,  # V2 uses 'outcome' instead of 'side'
+                outcome=request.outcome,
                 entry_time=datetime.now(timezone.utc),
-                entry_price=request.entry_price,
+                entry_price=execution_price,
                 size=request.position_size,
-                edge=request.edge,  # V2: track expected edge
-                confidence=request.confidence,  # V2: track confidence
-                signal_reason=request.signal_reason,  # V2: track strategy
-                stop_loss_pct=request.stop_loss_pct,  # RISK-001: Always set stop-loss
-                take_profit_pct=request.take_profit_pct,  # RISK-001: Always set take-profit
+                edge=request.edge,
+                confidence=request.confidence,
+                signal_reason=request.signal_reason,
+                stop_loss_pct=request.stop_loss_pct,
+                take_profit_pct=request.take_profit_pct,
                 metadata=metadata
             )
             logger.info("✓ Position tracked and persisted (SL: {}%, TP: {}%)".format(
@@ -347,32 +401,28 @@ class TradeExecutor:
         """
         Build metadata dict for position tracking.
 
+        Only includes fields NOT already stored as database columns.
+        Columns (market_id, token_id, outcome, entry_price, size, edge,
+        confidence, signal_reason, stop_loss_pct, take_profit_pct) are
+        stored separately and should not be duplicated here.
+
         Args:
             request: TradeRequest
 
         Returns:
-            Dict with metadata fields
+            Dict with supplementary metadata fields
         """
         metadata = {
             'question': request.question,
-            'outcome': request.outcome,
-            'entry_price': request.entry_price,
-            'position_size': request.position_size,
         }
 
-        # Add optional fields if present
+        # Add optional fields not stored as columns
         if request.asset:
             metadata['asset'] = request.asset
         if request.strike_price:
             metadata['strike_price'] = request.strike_price
         if request.expiry_date:
             metadata['expiry_date'] = request.expiry_date
-        if request.edge:
-            metadata['edge'] = request.edge
-        if request.confidence:
-            metadata['confidence'] = request.confidence
-        if request.signal_reason:
-            metadata['signal_reason'] = request.signal_reason
 
         # Merge additional metadata if provided
         if request.metadata:
@@ -388,7 +438,8 @@ class TradeExecutor:
         exit_price: float,
         position_size: float,
         exit_reason: str,
-        question: str = ""
+        question: str = "",
+        bucket: Optional[str] = None
     ) -> TradeResult:
         """
         Execute position close with slippage validation.
@@ -401,10 +452,13 @@ class TradeExecutor:
             position_size: Dollar amount to close
             exit_reason: Why closing (stop_loss, take_profit, expiry, etc.)
             question: Market question (for logging)
+            bucket: Trading bucket for per-bucket slippage thresholds (e.g., 'ultra_short')
 
         Returns:
             TradeResult with success/failure status
         """
+        slippage_bps = None
+
         # Stage 1: Slippage estimation for SELL order
         if self.slippage_enabled:
             # Get orderbook for the specific token
@@ -414,7 +468,7 @@ class TradeExecutor:
                     success=False,
                     reason='Could not fetch orderbook for slippage estimation',
                     rejection_reason='Could not fetch orderbook for slippage estimation',
-                    rejection_stage='slippage'
+                    rejection_stage='api_error'
                 )
 
             # Get market data for volume
@@ -427,8 +481,11 @@ class TradeExecutor:
                 order_size=position_size,
                 orderbook=orderbook,
                 quoted_price=exit_price,
-                market_volume_24h=market_volume_24h
+                market_volume_24h=market_volume_24h,
+                bucket=bucket
             )
+
+            slippage_bps = slippage_result.slippage_bps
 
             # Check if close is acceptable
             if not slippage_result.is_acceptable:
@@ -478,9 +535,8 @@ class TradeExecutor:
             return TradeResult(
                 success=True,
                 reason='Position closed successfully',
-                entry_price=exit_price,  # Using as exit price
                 position_size=position_size,
-                slippage_bps=slippage_result.slippage_bps if self.slippage_enabled else None
+                slippage_bps=slippage_bps
             )
 
         except Exception as e:

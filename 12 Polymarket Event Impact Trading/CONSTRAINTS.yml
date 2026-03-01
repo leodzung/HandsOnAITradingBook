@@ -269,6 +269,51 @@ constraints:
     - type: structural_test
       command: PYTHONPATH=src pytest tests/structural/test_independent_prices.py -v
       description: Regex scan ensures no synthetic NO price patterns in bot files
+  - id: ARCH-010
+    title: TradeExecutor must not mutate TradeRequest inputs
+    description: 'execute_trade() MUST NOT modify request.entry_price or any other
+      field on the TradeRequest dataclass. Slippage-adjusted execution prices MUST
+      be tracked via a local variable (execution_price) and passed explicitly to
+      _execute_position() and TradeResult.
+
+      Mutating caller inputs is a hidden side effect that breaks caller assumptions.
+
+      '
+    rationale: 'Bug 2026-02-28: execute_trade() mutated request.entry_price = recommended_price
+      on line 178. Callers that inspected request after the call would see the
+      slippage-adjusted price instead of their original quoted price. This violated
+      the principle of least surprise and could cause incorrect logging/tracking.
+
+      '
+    status: enforced
+    priority: high
+    implemented_date: '2026-02-28'
+    validation:
+    - type: structural_test
+      command: PYTHONPATH=src pytest tests/structural/test_trade_executor_immutability.py
+        -v
+      description: Verify execute_trade does not mutate request fields
+  - id: ARCH-011
+    title: execute_close_trade must accept bucket for per-bucket thresholds
+    description: 'execute_close_trade() MUST accept a bucket parameter and pass it
+      to SlippageEstimator.estimate_slippage(). Without bucket, per-bucket configs
+      (short-expiry bot) fall back to max(all_buckets), bypassing the intended
+      per-bucket slippage limits on exit trades.
+
+      '
+    rationale: 'Bug 2026-02-28: Short-expiry bot had per-bucket slippage thresholds
+      (ultra_short: 3000bps, short: 2000bps, medium: 1500bps) but execute_close_trade
+      never passed bucket to estimate_slippage. All close trades used the most
+      permissive threshold (3000bps) regardless of actual bucket.
+
+      '
+    status: enforced
+    priority: high
+    implemented_date: '2026-02-28'
+    validation:
+    - type: structural_test
+      command: PYTHONPATH=src pytest tests/structural/test_close_trade_bucket.py -v
+      description: Verify execute_close_trade passes bucket to estimate_slippage
   risk_management:
   - id: RISK-001
     title: Stop-loss and take-profit always active
@@ -643,6 +688,70 @@ constraints:
       threshold: null
       alert: info
       description: Count of positions blocked by exposure limits
+  - id: RISK-012
+    title: TradeExecutor price validation must check both bounds
+    description: '_validate_price() MUST reject entry prices outside (0, 1) range
+      in addition to the max_entry_price upper bound. Prediction market prices
+      are strictly between 0 and 1 exclusive. Prices of 0, negative, or >= 1.0
+      indicate data corruption or API errors.
+
+      '
+    rationale: 'Review 2026-02-28: _validate_price only checked upper bound
+      (max_entry_price). With slippage disabled, a price of 0, -1, or 1.5 would
+      pass through unchecked. SlippageEstimator validated 0 < price < 1 but only
+      when enabled.
+
+      '
+    status: enforced
+    priority: high
+    implemented_date: '2026-02-28'
+    validation:
+    - type: structural_test
+      command: PYTHONPATH=src pytest tests/structural/test_price_bounds_validation.py
+        -v
+      description: Verify _validate_price checks both lower and upper bounds
+  - id: RISK-013
+    title: TradeExecutor must validate position size is positive
+    description: 'execute_trade() MUST reject position_size <= 0 before proceeding
+      to slippage estimation or execution. Zero or negative sizes indicate upstream
+      bugs in position sizing logic.
+
+      '
+    rationale: 'Review 2026-02-28: No position size validation existed in TradeExecutor.
+      A position_size of 0 or negative would pass through all validation stages
+      and be saved to the database, corrupting position tracking.
+
+      '
+    status: enforced
+    priority: high
+    implemented_date: '2026-02-28'
+    validation:
+    - type: structural_test
+      command: PYTHONPATH=src pytest tests/structural/test_position_size_validation.py
+        -v
+      description: Verify execute_trade rejects non-positive position sizes
+  - id: RISK-014
+    title: API errors must use distinct rejection_stage from trade rejections
+    description: 'When TradeExecutor cannot fetch orderbook or market data due to
+      API failures, TradeResult.rejection_stage MUST be ''api_error'', not ''slippage''.
+      This allows callers to distinguish transient API failures (retry-worthy) from
+      legitimate trade rejections (skip trade).
+
+      '
+    rationale: 'Review 2026-02-28: API failures returned rejection_stage=''slippage'',
+      same as legitimate slippage rejections. Bots logged "Trade rejected" and moved
+      on, silently losing trading opportunities during temporary connectivity issues.
+      With distinct stages, bots can implement retry logic for API errors.
+
+      '
+    status: enforced
+    priority: high
+    implemented_date: '2026-02-28'
+    validation:
+    - type: structural_test
+      command: PYTHONPATH=src pytest tests/structural/test_api_error_distinction.py
+        -v
+      description: Verify API failures use 'api_error' rejection_stage
   - id: RISK-010
     title: Input validation for all external data
     description: 'All data from external sources (API, WebSocket, user input) MUST
@@ -1072,10 +1181,10 @@ operations:
     alert: critical
     description: Number of databases that failed integrity check at startup
 metadata:
-  last_validated: '2026-02-28T08:16:50.696764'
+  last_validated: '2026-02-28T22:00:09.771298'
   validation_status: FAIL
-  total_constraints: 26
-  enforced_constraints: 26
+  total_constraints: 31
+  enforced_constraints: 31
   proposed_constraints: 0
   contact:
     maintainer: Trading System Team
