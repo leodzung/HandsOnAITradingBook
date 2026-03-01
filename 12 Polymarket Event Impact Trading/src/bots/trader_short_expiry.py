@@ -34,7 +34,7 @@ from core.slippage_estimator import SlippageEstimator
 from core.trade_executor import TradeExecutor, TradeRequest
 from core.exposure_manager import ExposureManager
 from core.position_sizer import PositionSizer
-from core.position_manager_v2 import PositionManager, DuplicatePositionError
+from core.position_manager_v2 import PositionManager
 from monitoring.telegram_notifier import TelegramNotifier
 from utils.price_tracker import PriceTracker
 from ml.ml_predictor import MLPredictor, MLPredictorFactory

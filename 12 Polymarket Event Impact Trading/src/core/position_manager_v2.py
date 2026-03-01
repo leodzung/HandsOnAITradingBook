@@ -312,7 +312,7 @@ class PositionManager:
                  edge, confidence, signal_reason, hours_to_expiry_at_entry, bucket,
                  current_price, highest_price_seen, lowest_price_seen,
                  stop_loss_pct, take_profit_pct, metadata)
-                VALUES (?, ?, ?, ?, ?, ?, 'open', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, 'OPEN', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ''', (
                 market_id, token_id, outcome,
                 entry_time.isoformat(), entry_price, size,
@@ -390,7 +390,7 @@ class PositionManager:
             if position['metadata']:
                 try:
                     position['metadata'] = json.loads(position['metadata'])
-                except:
+                except (json.JSONDecodeError, TypeError, ValueError):
                     position['metadata'] = {}
 
             positions.append(position)
@@ -413,7 +413,7 @@ class PositionManager:
         conn.row_factory = sqlite3.Row
 
         cursor = conn.execute(
-            "SELECT * FROM positions WHERE market_id = ? AND outcome = ?",
+            "SELECT * FROM positions WHERE market_id = ? AND outcome = ? AND UPPER(status) = 'OPEN'",
             (market_id, outcome)
         )
 
@@ -429,7 +429,7 @@ class PositionManager:
             if position['metadata']:
                 try:
                     position['metadata'] = json.loads(position['metadata'])
-                except:
+                except (json.JSONDecodeError, TypeError, ValueError):
                     position['metadata'] = {}
 
             return position
@@ -476,7 +476,7 @@ class PositionManager:
         row = cursor.fetchone()
         if not row:
             conn.close()
-            return
+            return None
 
         highest, lowest = row
         new_highest = max(highest or current_price, current_price)
@@ -490,6 +490,8 @@ class PositionManager:
 
         conn.commit()
         conn.close()
+
+        return {'highest_price_seen': new_highest, 'lowest_price_seen': new_lowest}
 
     def close_position(self, market_id: str, outcome: str, exit_price: float,
                       exit_reason: str, exit_time: datetime = None):
@@ -529,7 +531,7 @@ class PositionManager:
         # Close position
         cursor.execute('''
             UPDATE positions
-            SET status = 'closed',
+            SET status = 'CLOSED',
                 exit_time = ?,
                 exit_price = ?,
                 pnl = ?,
@@ -565,8 +567,8 @@ class PositionManager:
         """
         conn = sqlite3.connect(self.db_path)
         cursor = conn.execute(
-            "SELECT COUNT(*) FROM positions WHERE UPPER(status) = 'OPEN' AND metadata LIKE ?",
-            (f'%"{key}": "{value}"%',)
+            "SELECT COUNT(*) FROM positions WHERE UPPER(status) = 'OPEN' AND json_extract(metadata, ?) = ?",
+            (f'$.{key}', value)
         )
         count = cursor.fetchone()[0]
         conn.close()
