@@ -1,49 +1,97 @@
 services:
-  # Price Level Trading Bot
-  price-level-trader:
-    build: .
-    container_name: polymarket-price-level
-    command: python trader_price_levels.py
-    restart: always
+  # Event-Based Trading Bot
+  event-trader:
+    build:
+      context: .
+      target: base
+    container_name: polymarket-event-trader
+    command: python src/bots/trader.py
+    restart: unless-stopped
+    profiles: ["trading", "all"]
     volumes:
       - ./data:/app/data
       - ./logs:/app/logs
-      - ./config.json:/app/config.json:ro
-      - ./config_price_levels.json:/app/config_price_levels.json:ro
+      - ./config:/app/config:ro
+    env_file: .env
     environment:
       - PYTHONUNBUFFERED=1
-      - TZ=America/New_York
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+          cpus: "1.0"
     healthcheck:
-      test: ["CMD", "python", "-c", "import os; exit(0 if os.path.exists('/app/data/positions_price_level.db') else 1)"]
+      test: ["CMD", "python", "scripts/docker_healthcheck.py", "--service", "event-trader"]
       interval: 60s
       timeout: 10s
       retries: 3
-      start_period: 30s
+      start_period: 120s
     logging:
       driver: "json-file"
       options:
         max-size: "10m"
         max-file: "3"
 
-  # Event-Based Trading Bot
-  event-trader:
-    build: .
-    container_name: polymarket-event-trader
-    command: python trader.py
-    restart: always
+  # Price Level Trading Bot
+  price-level-trader:
+    build:
+      context: .
+      target: base
+    container_name: polymarket-price-level
+    command: python src/bots/trader_price_levels.py
+    restart: unless-stopped
+    profiles: ["trading", "all"]
     volumes:
       - ./data:/app/data
       - ./logs:/app/logs
-      - ./config.json:/app/config.json:ro
+      - ./config:/app/config:ro
+    env_file: .env
     environment:
       - PYTHONUNBUFFERED=1
-      - TZ=America/New_York
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+          cpus: "1.0"
     healthcheck:
-      test: ["CMD", "python", "-c", "import os; exit(0 if os.path.exists('/app/data/positions.db') else 1)"]
+      test: ["CMD", "python", "scripts/docker_healthcheck.py", "--service", "price-level-trader"]
       interval: 60s
       timeout: 10s
       retries: 3
-      start_period: 30s
+      start_period: 120s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # Short-Expiry Trading Bot
+  short-expiry-trader:
+    build:
+      context: .
+      target: base
+    container_name: polymarket-short-expiry
+    command: python src/bots/trader_short_expiry.py
+    restart: unless-stopped
+    profiles: ["trading", "all"]
+    volumes:
+      - ./data:/app/data
+      - ./logs:/app/logs
+      - ./config:/app/config:ro
+    env_file: .env
+    environment:
+      - PYTHONUNBUFFERED=1
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+          cpus: "1.0"
+    healthcheck:
+      test: ["CMD", "python", "scripts/docker_healthcheck.py", "--service", "short-expiry-trader"]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+      start_period: 120s
     logging:
       driver: "json-file"
       options:
@@ -52,24 +100,96 @@ services:
 
   # Arbitrage Bot
   arbitrage-bot:
-    build: .
+    build:
+      context: .
+      target: base
     container_name: polymarket-arbitrage
-    command: python arbitrage_bot.py
-    restart: always
+    command: python src/bots/arbitrage_bot.py --config config/config_arbitrage.json
+    restart: unless-stopped
+    profiles: ["trading", "all"]
     volumes:
       - ./data:/app/data
       - ./logs:/app/logs
-      - ./config.json:/app/config.json:ro
-      - ./config_arbitrage.json:/app/config_arbitrage.json:ro
+      - ./config:/app/config:ro
+    env_file: .env
     environment:
       - PYTHONUNBUFFERED=1
-      - TZ=America/New_York
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+          cpus: "0.5"
     healthcheck:
-      test: ["CMD", "python", "-c", "import os; exit(0 if os.path.exists('/app/data/arbitrage') else 1)"]
+      test: ["CMD", "python", "scripts/docker_healthcheck.py", "--service", "arbitrage-bot"]
       interval: 60s
       timeout: 10s
       retries: 3
-      start_period: 30s
+      start_period: 120s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # GDELT News Collector
+  gdelt-collector:
+    build:
+      context: .
+      target: base
+    container_name: polymarket-gdelt-collector
+    command: python src/collectors/gdelt_collector.py --continuous
+    restart: unless-stopped
+    profiles: ["collectors", "all"]
+    volumes:
+      - ./data:/app/data
+      - ./logs:/app/logs
+    env_file: .env
+    environment:
+      - PYTHONUNBUFFERED=1
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+          cpus: "0.5"
+    healthcheck:
+      test: ["CMD", "python", "scripts/docker_healthcheck.py", "--service", "gdelt-collector"]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # Alchemy On-Chain Data Collector
+  alchemy-collector:
+    build:
+      context: .
+      target: base
+    container_name: polymarket-alchemy-collector
+    command: python src/collectors/alchemy_collector.py --continuous
+    restart: unless-stopped
+    profiles: ["collectors", "all"]
+    volumes:
+      - ./data:/app/data
+      - ./logs:/app/logs
+      - ./config:/app/config:ro
+    env_file: .env
+    environment:
+      - PYTHONUNBUFFERED=1
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: "0.25"
+    healthcheck:
+      test: ["CMD", "python", "scripts/docker_healthcheck.py", "--service", "alchemy-collector"]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
     logging:
       driver: "json-file"
       options:
@@ -78,21 +198,27 @@ services:
 
   # Dashboard (Streamlit)
   dashboard:
-    build: .
+    build:
+      context: .
+      target: dashboard
     container_name: polymarket-dashboard
-    command: streamlit run dashboard.py --server.port 8502 --server.address 0.0.0.0 --browser.gatherUsageStats false
+    command: streamlit run src/monitoring/dashboard.py --server.port 8502 --server.address 0.0.0.0 --browser.gatherUsageStats false
     restart: always
+    profiles: ["monitoring", "all"]
     ports:
       - "8502:8502"
     volumes:
       - ./data:/app/data:ro
-      - ./config.json:/app/config.json:ro
-      - ./config_price_levels.json:/app/config_price_levels.json:ro
-      - ./config_arbitrage.json:/app/config_arbitrage.json:ro
+      - ./config:/app/config:ro
       - /var/run/docker.sock:/var/run/docker.sock:ro
+    env_file: .env
     environment:
       - PYTHONUNBUFFERED=1
-      - TZ=America/New_York
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+          cpus: "0.5"
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8502/_stcore/health"]
       interval: 30s
@@ -104,57 +230,3 @@ services:
       options:
         max-size: "10m"
         max-file: "3"
-
-  # GDELT News Collector
-  gdelt-collector:
-    build: .
-    container_name: polymarket-gdelt-collector
-    command: python gdelt_collector.py --collect 90
-    restart: unless-stopped
-    volumes:
-      - ./data:/app/data
-      - ./logs:/app/logs
-    environment:
-      - PYTHONUNBUFFERED=1
-      - TZ=America/New_York
-    healthcheck:
-      test: ["CMD", "python", "-c", "import sqlite3; c=sqlite3.connect('/app/data/gdelt_news.db'); c.execute('SELECT 1'); exit(0)"]
-      interval: 60s
-      timeout: 10s
-      retries: 3
-      start_period: 30s
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "10m"
-        max-file: "3"
-
-  # Alchemy On-Chain Data Collector
-  alchemy-collector:
-    build: .
-    container_name: polymarket-alchemy-collector
-    command: python alchemy_collector.py --backfill-days 180
-    restart: unless-stopped
-    volumes:
-      - ./data:/app/data
-      - ./logs:/app/logs
-      - ./config.json:/app/config.json:ro
-    environment:
-      - PYTHONUNBUFFERED=1
-      - TZ=America/New_York
-    healthcheck:
-      test: ["CMD", "python", "-c", "import sqlite3; c=sqlite3.connect('/app/data/alchemy_trades.db'); c.execute('SELECT 1'); exit(0)"]
-      interval: 60s
-      timeout: 10s
-      retries: 3
-      start_period: 30s
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "10m"
-        max-file: "3"
-
-# Named volumes for persistence
-volumes:
-  data:
-  logs:

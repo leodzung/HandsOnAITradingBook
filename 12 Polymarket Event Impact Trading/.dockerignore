@@ -23,17 +23,21 @@ ENV/
 *.log
 *.jsonl
 
-# Data files (mounted as volumes instead)
+# Data files (mounted as volumes)
 data/
 logs/
+
+# Database files (defense-in-depth)
+*.db
+*.db-shm
+*.db-wal
 
 # Documentation
 *.md
 !README.md
 
 # Test files
-test_*.py
-*_test.py
+tests/
 
 # Jupyter
 .ipynb_checkpoints/
@@ -45,5 +49,32 @@ test_*.py
 # Claude Code
 .claude/
 
-# Embeddings cache (will be regenerated)
+# Caches (regenerated at runtime)
 embedding_cache/
+.cache/
+
+# Archive (historical docs)
+archive/
+
+# Config (mounted at runtime - keeps secrets out of image)
+config/
+
+# Backups
+backups/
+
+# Scripts (except healthcheck)
+scripts/
+!scripts/docker_healthcheck.py
+
+# CI/CD
+.github/
+
+# Misc
+suggestions.yml
+CONSTRAINTS.yml
+.env
+.env.*
+!.env.example
+.pytest_cache/
+.coverage
+htmlcov/
