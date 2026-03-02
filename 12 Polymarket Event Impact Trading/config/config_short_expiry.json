@@ -62,7 +62,11 @@
       "short": 50,
       "medium": 75
     },
-    "pre_expiry_exit_hours": 1,
+    "pre_expiry_exit_hours": {
+      "ultra_short": 0.5,
+      "short": 1.0,
+      "medium": 2.0
+    },
     "circuit_breaker_losses": 4,
     "circuit_breaker_cooldown_hours": 4.0,
     "min_edge": 0.05,
@@ -74,7 +78,7 @@
     },
     "min_trading_balance": 50.0
   },
-  "orderbook_source": "rest",
+  "orderbook_source": "websocket",
   "orderbook": {
     "cache_ttl_seconds": 5
   },

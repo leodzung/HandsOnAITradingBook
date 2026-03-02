@@ -16,13 +16,14 @@ from datetime import datetime, timezone, timedelta
 
 # Add parent directory to path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
 
 from src.features.short_expiry_features import ShortExpiryFeatureExtractor
 from src.bots.trader_short_expiry import (
-    ShortExpiryPositionManager,
     ShortExpiryRiskManager,
     ShortExpiryTrader
 )
+from src.core.position_manager_v2 import PositionManager
 
 
 def test_config_loading():
@@ -97,29 +98,28 @@ def test_position_management():
     if os.path.exists(db_path):
         os.remove(db_path)
 
-    pm = ShortExpiryPositionManager(db_path)
+    pm = PositionManager(db_path)
+    now = datetime.now(timezone.utc)
 
     # Test: Add position
-    position = {
-        'market_id': 'test_market_1',
-        'token_id': 'token_123',
-        'outcome': 'YES',
-        'entry_price': 0.65,
-        'size': 50.0,
-        'entry_time': datetime.now(timezone.utc).isoformat(),
-        'bucket': 'ultra_short',
-        'hours_to_expiry': 12.0,
-        'edge': 0.05,
-        'confidence': 0.70,
-        'signal_reason': 'arbitrage',
-        'features_json': '{}'
-    }
-
-    pm.add_position(position)
+    pm.save_position(
+        market_id='test_market_1',
+        token_id='token_123',
+        outcome='YES',
+        entry_time=now,
+        entry_price=0.65,
+        size=50.0,
+        bucket='ultra_short',
+        hours_to_expiry=12.0,
+        edge=0.05,
+        confidence=0.70,
+        signal_reason='arbitrage',
+        metadata={'bucket': 'ultra_short'}
+    )
     print("✓ Position added")
 
     # Test: Check has_position
-    assert pm.has_position('test_market_1'), "has_position check failed"
+    assert pm.has_position('test_market_1', 'YES'), "has_position check failed"
     print("✓ has_position check working")
 
     # Test: Get open positions
@@ -128,12 +128,12 @@ def test_position_management():
     print(f"✓ Retrieved {len(open_positions)} open position(s)")
 
     # Test: Count by bucket
-    count = pm.count_positions_by_bucket('ultra_short')
+    count = pm.count_positions_by_metadata('bucket', 'ultra_short')
     assert count == 1, f"Expected 1 position in ultra_short, got {count}"
     print(f"✓ Bucket count: {count}")
 
     # Test: Update price
-    pm.update_position_price('test_market_1', 'YES', 0.75)
+    pm.update_current_price('test_market_1', 'YES', 0.75)
     print("✓ Position price updated")
 
     # Test: Close position

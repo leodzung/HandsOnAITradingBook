@@ -82,8 +82,14 @@ def test_pre_expiry_exit_reasonable():
     with open(config_path, 'r') as f:
         config = json.load(f)
 
-    pre_expiry_exit = config['risk_management']['pre_expiry_exit_hours']
+    pre_expiry_config = config['risk_management']['pre_expiry_exit_hours']
     ultra_short_min = config['discovery']['ultra_short_hours'][0]
+
+    # Support both per-bucket dict and legacy scalar config
+    if isinstance(pre_expiry_config, dict):
+        pre_expiry_exit = pre_expiry_config.get('ultra_short', 1.0)
+    else:
+        pre_expiry_exit = pre_expiry_config
 
     # Minimum holding time = min_entry - pre_expiry_exit
     min_holding_time = ultra_short_min - pre_expiry_exit

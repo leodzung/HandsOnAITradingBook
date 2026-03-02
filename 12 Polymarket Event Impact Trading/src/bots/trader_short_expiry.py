@@ -38,7 +38,6 @@ from core.position_sizer import PositionSizer
 from core.position_manager_v2 import PositionManager
 from monitoring.telegram_notifier import TelegramNotifier
 from utils.price_tracker import PriceTracker
-from ml.ml_predictor import MLPredictor, MLPredictorFactory
 from ml.snapshot_collector import MarketSnapshotCollector
 
 # Configure logging
@@ -242,7 +241,11 @@ class ShortExpiryRiskManager:
             return 'take_profit'
 
         # Pre-expiry exit (FIX: check current hours remaining, not hours_to_expiry_at_entry)
-        pre_expiry_hours = self.config['risk_management']['pre_expiry_exit_hours']
+        pre_expiry_config = self.config['risk_management']['pre_expiry_exit_hours']
+        if isinstance(pre_expiry_config, dict):
+            pre_expiry_hours = pre_expiry_config.get(bucket, 1.0)
+        else:
+            pre_expiry_hours = pre_expiry_config  # Legacy scalar config
         if hours_remaining < pre_expiry_hours:
             logger.info(f"Pre-expiry exit triggered: {hours_remaining:.1f}h < {pre_expiry_hours}h")
             return 'pre_expiry_exit'
@@ -353,7 +356,7 @@ class ShortExpiryTrader:
             with open(balance_file, 'r') as f:
                 data = json.load(f)
                 return data['balance']
-        except:
+        except (FileNotFoundError, json.JSONDecodeError, KeyError):
             # Initialize with default
             balance = self.config['paper_trading_balance']
             self._save_balance(balance)
@@ -366,53 +369,6 @@ class ShortExpiryTrader:
         os.makedirs(os.path.dirname(balance_file), exist_ok=True)
         with open(balance_file, 'w') as f:
             json.dump({'balance': balance, 'updated': datetime.now(timezone.utc).isoformat()}, f)
-
-    
-    def _ml_should_trade(self, market: dict, additional_context: dict = None) -> tuple[bool, str]:
-        """
-        Check if ML model recommends trading this market.
-        
-        Args:
-            market: Market dictionary
-            additional_context: Optional context (event info, etc.)
-        
-        Returns:
-            Tuple of (should_trade, reason)
-        """
-        if not self.ml_predictor.enabled:
-            return True, "ML disabled - using rules only"
-        
-        should_trade, reason = self.ml_predictor.should_trade(market, additional_context)
-        
-        if should_trade:
-            confidence = self.ml_predictor.get_confidence(market, additional_context)
-            logger.info(f"ML: ✅ TRADE - {reason}")
-            return True, reason
-        else:
-            logger.info(f"ML: ❌ SKIP - {reason}")
-            return False, reason
-    
-    def _ml_get_position_size(self, base_size: float, market: dict) -> float:
-        """
-        Adjust position size based on ML confidence.
-        
-        Args:
-            base_size: Base position size
-            market: Market dictionary
-        
-        Returns:
-            Adjusted position size
-        """
-        if not self.ml_predictor.enabled:
-            return base_size
-        
-        confidence = self.ml_predictor.get_confidence(market)
-        multiplier = self.ml_predictor.get_position_size_multiplier(confidence)
-        adjusted_size = base_size * multiplier
-        
-        logger.debug(f"Position size: ${base_size:.0f} × {multiplier:.2f} = ${adjusted_size:.0f}")
-        
-        return adjusted_size
 
     def run(self):
         """Main loop."""
@@ -590,19 +546,28 @@ class ShortExpiryTrader:
         return {'yes': entry_prices.yes_price, 'no': entry_prices.no_price}
 
     def _get_spread_pct(self, market: Dict) -> float:
-        """Calculate spread percentage."""
-        best_bid = market.get('bestBid', 0.45)
-        best_ask = market.get('bestAsk', 0.55)
+        """Calculate spread percentage using PriceFetcher (ARCH-001 compliant)."""
+        market_id = market.get('conditionId') or market.get('condition_id')
+        if not market_id:
+            return 0.0
 
-        if isinstance(best_bid, str):
-            best_bid = float(best_bid)
-        if isinstance(best_ask, str):
-            best_ask = float(best_ask)
+        # Use PriceFetcher for entry (ASK) and exit (BID) prices
+        entry_prices = self.price_fetcher.get_entry_prices(market_id)
+        exit_prices = self.price_fetcher.get_exit_prices(market_id)
+
+        if entry_prices is None or exit_prices is None:
+            return 0.0
+
+        best_ask = entry_prices.yes_price or 0.0
+        best_bid = exit_prices.yes_price or 0.0
+
+        if best_bid <= 0 or best_ask <= 0:
+            return 0.0
 
         spread = best_ask - best_bid
         mid_price = (best_bid + best_ask) / 2.0
 
-        return (spread / mid_price * 100) if mid_price > 0 else 0
+        return (spread / mid_price * 100) if mid_price > 0 else 0.0
 
     def _filter_tradeable(self, markets: List[Dict], bucket: str) -> List[Dict]:
         """
@@ -685,7 +650,7 @@ class ShortExpiryTrader:
                         expiry_date = datetime.fromisoformat(expiry_str.replace('Z', '+00:00'))
                         if days_to_expiry is None:
                             days_to_expiry = (expiry_date - datetime.now(timezone.utc)).total_seconds() / 86400
-                    except:
+                    except (ValueError, TypeError):
                         pass
 
                 # Convert features DataFrame to dict for storage
@@ -927,8 +892,9 @@ class ShortExpiryTrader:
             return
 
         # RISK-001: Get bucket-specific stop-loss and take-profit from config
-        sl_pct_map = self.config.get('stop_loss_pct', {})
-        tp_pct_map = self.config.get('take_profit_pct', {})
+        risk_config = self.config.get('risk_management', {})
+        sl_pct_map = risk_config.get('stop_loss_pct', {})
+        tp_pct_map = risk_config.get('take_profit_pct', {})
         sl_pct = sl_pct_map.get(bucket, 15)  # Default 15% if bucket not found
         tp_pct = tp_pct_map.get(bucket, 50)  # Default 50% if bucket not found
 
@@ -986,6 +952,41 @@ class ShortExpiryTrader:
             f"💰 Balance: ${self.balance:.2f}"
         )
 
+    def _get_resolved_exit_price_from_market(self, market: Dict, outcome: str, fallback_price: float) -> float:
+        """Get exit price from a resolved market's token data.
+
+        Checks the market's tokens array for resolution info.
+        Returns 1.0 for winning outcome, 0.0 for losing, or fallback if unknown.
+        """
+        tokens = market.get('tokens', [])
+        for token in tokens:
+            token_outcome = token.get('outcome', '').upper()
+            if token_outcome == outcome.upper():
+                winner = token.get('winner', None)
+                if winner is True:
+                    logger.info(f"Market resolved: {outcome} WON -> exit at 1.0")
+                    return 1.0
+                elif winner is False:
+                    logger.info(f"Market resolved: {outcome} LOST -> exit at 0.0")
+                    return 0.0
+        # Unknown resolution — fall back to entry price
+        logger.info(f"Market resolution unknown for {outcome} -> exit at entry price {fallback_price:.4f}")
+        return fallback_price
+
+    def _get_resolved_exit_price(self, market_id: str, outcome: str, fallback_price: float) -> float:
+        """Get exit price for a resolved/expired market by fetching market data.
+
+        Fetches market from API and checks for resolution.
+        Returns 1.0 for winning outcome, 0.0 for losing, or fallback if unknown.
+        """
+        try:
+            market = self.client.get_market(market_id)
+            if market:
+                return self._get_resolved_exit_price_from_market(market, outcome, fallback_price)
+        except Exception as e:
+            logger.warning(f"Could not fetch market for resolution check: {e}")
+        return fallback_price
+
     def _check_positions(self):
         """Check open positions for exit conditions."""
         positions = self.position_manager.get_open_positions()
@@ -1027,17 +1028,27 @@ class ShortExpiryTrader:
                 if now >= expiry_time:
                     logger.info(f"Position expired: {market_id[:16]}... | "
                                f"Expired {(now - expiry_time).total_seconds() / 3600:.1f}h ago")
-                    # Close at entry price (we don't know final outcome)
-                    pnl = 0.0  # No P&L if expired
-                    pnl_pct = 0.0
+
+                    # Try to get actual resolution price from market data
+                    exit_price = self._get_resolved_exit_price(market_id, outcome, entry_price)
                     position_size = pos.get('size', 0)
+
+                    if entry_price > 0:
+                        tokens_held = position_size / entry_price
+                        payout = tokens_held * exit_price
+                        pnl = payout - position_size
+                        pnl_pct = (pnl / position_size) * 100
+                    else:
+                        payout = 0
+                        pnl = -position_size
+                        pnl_pct = -100
 
                     # Close via TradeExecutor (validates slippage for SELL order)
                     close_result = self.trade_executor.execute_close_trade(
                         market_id=market_id,
                         outcome=outcome,
                         token_id=pos.get('token_id', ''),
-                        exit_price=entry_price,
+                        exit_price=exit_price,
                         position_size=position_size,
                         exit_reason='expiry_time',
                         question=pos.get('question', ''),
@@ -1051,9 +1062,9 @@ class ShortExpiryTrader:
                     # Record market cooldown to prevent immediate re-entry
                     self.market_cooldowns[market_id] = datetime.now(timezone.utc)
 
-                    # Update balance (return position size)
+                    # Update balance (add payout from resolved position)
                     if self.paper_trading:
-                        self.balance += position_size
+                        self.balance += payout
                         self._save_balance(self.balance)
 
                     # Send Telegram notification
@@ -1062,12 +1073,12 @@ class ShortExpiryTrader:
                         asset=pos.get('metadata', {}).get('asset', 'CRYPTO') if isinstance(pos.get('metadata'), dict) else 'CRYPTO',
                         outcome=outcome,
                         entry_price=entry_price,
-                        exit_price=entry_price,
+                        exit_price=exit_price,
                         position_size=position_size,
                         pnl=pnl,
                         pnl_pct=pnl_pct,
                         exit_reason='expiry_time',
-                        question=market.get('question') if 'market' in locals() else None,
+                        question=pos.get('question', ''),
                         bot_name="Short-Expiry Trader"
                     )
                     continue
@@ -1082,17 +1093,27 @@ class ShortExpiryTrader:
                 # Check if market is closed
                 if market.get('closed', False) or not market.get('active', True):
                     logger.info(f"Market closed: {market_id[:16]}...")
-                    # Close at entry price (we don't know final outcome)
-                    pnl = 0.0
-                    pnl_pct = 0.0
+
+                    # Try to get actual resolution price from market data
+                    exit_price = self._get_resolved_exit_price_from_market(market, outcome, entry_price)
                     position_size = pos.get('size', 0)
+
+                    if entry_price > 0:
+                        tokens_held = position_size / entry_price
+                        payout = tokens_held * exit_price
+                        pnl = payout - position_size
+                        pnl_pct = (pnl / position_size) * 100
+                    else:
+                        payout = 0
+                        pnl = -position_size
+                        pnl_pct = -100
 
                     # Close via TradeExecutor (validates slippage for SELL order)
                     close_result = self.trade_executor.execute_close_trade(
                         market_id=market_id,
                         outcome=outcome,
                         token_id=pos.get('token_id', ''),
-                        exit_price=entry_price,
+                        exit_price=exit_price,
                         position_size=position_size,
                         exit_reason='market_closed',
                         question=pos.get('question', ''),
@@ -1106,9 +1127,9 @@ class ShortExpiryTrader:
                     # Record market cooldown to prevent immediate re-entry
                     self.market_cooldowns[market_id] = datetime.now(timezone.utc)
 
-                    # Update balance (return position size)
+                    # Update balance (add payout from resolved position)
                     if self.paper_trading:
-                        self.balance += position_size
+                        self.balance += payout
                         self._save_balance(self.balance)
 
                     # Send Telegram notification
@@ -1117,7 +1138,7 @@ class ShortExpiryTrader:
                         asset=pos.get('metadata', {}).get('asset', 'CRYPTO') if isinstance(pos.get('metadata'), dict) else 'CRYPTO',
                         outcome=outcome,
                         entry_price=entry_price,
-                        exit_price=entry_price,
+                        exit_price=exit_price,
                         position_size=position_size,
                         pnl=pnl,
                         pnl_pct=pnl_pct,

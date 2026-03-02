@@ -2,6 +2,7 @@
 Pytest fixtures and shared test utilities
 """
 
+import sys
 import pytest
 import sqlite3
 import tempfile
@@ -11,6 +12,11 @@ from pathlib import Path
 from unittest.mock import Mock, MagicMock
 import numpy as np
 import pandas as pd
+
+# Ensure src/ is on the path for internal imports (e.g., features.common_features)
+_src_path = str(Path(__file__).parent.parent / 'src')
+if _src_path not in sys.path:
+    sys.path.insert(0, _src_path)
 
 
 @pytest.fixture
