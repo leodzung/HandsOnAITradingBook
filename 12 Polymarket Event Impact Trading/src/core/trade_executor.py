@@ -370,6 +370,11 @@ class TradeExecutor:
         # Build metadata for position
         metadata = self._build_metadata(request)
 
+        # Extract hours_to_expiry and bucket from metadata for DB columns
+        req_meta = request.metadata or {}
+        hours_to_expiry = req_meta.get('hours_to_expiry')
+        bucket = req_meta.get('bucket')
+
         # Save position (using V2 API with analytics fields)
         try:
             self.position_manager.save_position(
@@ -382,6 +387,8 @@ class TradeExecutor:
                 edge=request.edge,
                 confidence=request.confidence,
                 signal_reason=request.signal_reason,
+                hours_to_expiry=hours_to_expiry,
+                bucket=bucket,
                 stop_loss_pct=request.stop_loss_pct,
                 take_profit_pct=request.take_profit_pct,
                 metadata=metadata
