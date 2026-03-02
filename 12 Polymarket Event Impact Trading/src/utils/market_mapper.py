@@ -512,7 +512,7 @@ def main():
     args = parser.parse_args()
 
     # Load config - check for db_path in config if it exists
-    config_path = Path(__file__).parent / "config.json"
+    config_path = Path("config/config.json")
     db_path = 'data/alchemy_trades.db'  # Default to alchemy_trades.db for standalone usage
 
     if config_path.exists():

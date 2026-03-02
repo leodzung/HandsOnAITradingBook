@@ -1156,7 +1156,7 @@ def main():
     import argparse
 
     parser = argparse.ArgumentParser(description='Polymarket Arbitrage Bot')
-    parser.add_argument('--config', default='config_arbitrage.json',
+    parser.add_argument('--config', default='config/config_arbitrage.json',
                        help='Path to config file')
     parser.add_argument('--no-websocket', action='store_true',
                        help='Disable WebSocket (use REST only)')

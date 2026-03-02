@@ -822,7 +822,7 @@ def main():
     args = parser.parse_args()
 
     # Load config
-    config_path = Path(__file__).parent.parent.parent / "config" / "config.json"
+    config_path = Path("config/config.json")
     api_key = args.api_key
 
     if not api_key and config_path.exists():
