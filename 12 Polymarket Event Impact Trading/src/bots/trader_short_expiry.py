@@ -995,7 +995,7 @@ class ShortExpiryTrader:
             outcome = pos['outcome']
             entry_price = pos['entry_price']
             entry_time = pos['entry_time']  # Already a datetime in V2
-            hours_to_expiry = pos.get('hours_to_expiry_at_entry', 0)
+            hours_to_expiry = pos.get('hours_to_expiry_at_entry') or 0
 
             # Get bucket from column (V2 stores it as a column, not in metadata)
             bucket = pos.get('bucket')
