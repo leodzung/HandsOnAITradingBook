@@ -69,21 +69,10 @@ class OrderbookFeatures:
         bids = orderbook.get('bids', [])
         asks = orderbook.get('asks', [])
 
-        # Handle empty orderbook
+        # Handle empty orderbook — return None so callers skip illiquid markets
         if not bids or not asks:
-            logger.debug("Empty orderbook, returning default features")
-            default_features = {
-                'spread': 0.0,
-                'spread_pct': 0.0,
-                'mid_price': 0.5,
-                'bid_depth_5': 0.0,
-                'ask_depth_5': 0.0,
-                'depth_imbalance': 0.0
-            }
-            if return_best_bid_ask:
-                default_features['best_bid'] = 0.45
-                default_features['best_ask'] = 0.55
-            return default_features
+            logger.debug("Empty orderbook, returning None (illiquid market)")
+            return None
 
         # Extract best bid/ask (handle both dict and array formats)
         # Dict format: {'price': '0.45', 'size': '1000'}

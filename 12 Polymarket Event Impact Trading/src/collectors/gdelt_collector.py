@@ -17,6 +17,7 @@ For production deployment, use continuous mode with nohup:
 
 import io
 import gzip
+import signal
 import sqlite3
 import logging
 import requests
@@ -103,8 +104,8 @@ class GDELTCollector:
             with sqlite3.connect(self.db_path, timeout=30.0) as conn:
                 cursor = conn.cursor()
 
-                # Use DELETE journal mode (more compatible with macOS than WAL)
-                cursor.execute("PRAGMA journal_mode=DELETE")
+                # Use WAL journal mode for better concurrency and crash safety
+                cursor.execute("PRAGMA journal_mode=WAL")
                 # Set busy timeout to wait up to 30 seconds for locks
                 cursor.execute("PRAGMA busy_timeout=30000")
                 # Set synchronous mode to FULL for maximum safety (prevents corruption)
@@ -212,8 +213,8 @@ class GDELTCollector:
                     with sqlite3.connect(recovered_path, timeout=30.0) as new_conn:
                         new_cursor = new_conn.cursor()
 
-                        # Set up new database (use DELETE mode for macOS compatibility)
-                        new_cursor.execute("PRAGMA journal_mode=DELETE")
+                        # Set up new database with WAL mode for concurrency
+                        new_cursor.execute("PRAGMA journal_mode=WAL")
                         new_cursor.execute("PRAGMA synchronous=FULL")
 
                         # Create tables
@@ -682,13 +683,12 @@ class GDELTCollector:
         return total_stored
 
     def _checkpoint_db(self):
-        """Force database checkpoint to ensure data is persisted."""
+        """Force WAL checkpoint to flush WAL file into main database."""
         try:
             with sqlite3.connect(self.db_path, timeout=30.0) as conn:
                 cursor = conn.cursor()
-                # In DELETE mode, no WAL checkpoint needed, just ensure commit
-                cursor.execute("PRAGMA optimize")
-                logger.debug("Database checkpoint completed")
+                cursor.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+                logger.debug("Database WAL checkpoint completed")
         except Exception as e:
             logger.warning(f"Database checkpoint failed: {e}")
 
@@ -872,6 +872,12 @@ def main():
     args = parser.parse_args()
 
     collector = GDELTCollector()
+
+    def handle_sigterm(signum, frame):
+        logger.info("Received SIGTERM, shutting down gracefully...")
+        collector.stop()
+
+    signal.signal(signal.SIGTERM, handle_sigterm)
 
     if args.stats:
         stats = collector.get_statistics()

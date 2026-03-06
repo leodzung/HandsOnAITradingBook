@@ -38,17 +38,16 @@ class TimeDecayFeatures:
         """
         features = {}
 
-        # Parse expiry
+        # Parse expiry — return None if missing so callers can skip this market (Fix C4)
+        end_date_iso = market.get('endDate', market.get('end_date_iso', ''))
+        if not end_date_iso:
+            logger.warning(f"Market {market.get('conditionId', 'unknown')} missing end_date — cannot compute time features, skipping")
+            return None
         try:
-            end_date_iso = market.get('endDate', market.get('end_date_iso', ''))
-            if not end_date_iso:
-                logger.warning(f"No end_date_iso for market {market.get('conditionId', 'unknown')}")
-                expiry = datetime.now(timezone.utc) + timedelta(hours=24)
-            else:
-                expiry = datetime.fromisoformat(end_date_iso.replace('Z', '+00:00'))
+            expiry = datetime.fromisoformat(end_date_iso.replace('Z', '+00:00'))
         except Exception as e:
-            logger.error(f"Error parsing expiry: {e}")
-            expiry = datetime.now(timezone.utc) + timedelta(hours=24)
+            logger.error(f"Error parsing expiry for market {market.get('conditionId', 'unknown')}: {e}")
+            return None
 
         now = datetime.now(timezone.utc)
         time_to_expiry = expiry - now
@@ -192,32 +191,41 @@ class MicrostructureFeatures:
         # Use centralized orderbook extraction if available
         if orderbook is not None:
             orderbook_features = OrderbookFeatures.extract(orderbook, return_best_bid_ask=False)
-            features.update(orderbook_features)
+            if orderbook_features is not None:
+                features.update(orderbook_features)
 
-            # Add short-expiry specific features: concentration
-            bids = orderbook.get('bids', [])
-            asks = orderbook.get('asks', [])
+                # Add short-expiry specific features: concentration
+                bids = orderbook.get('bids', [])
+                asks = orderbook.get('asks', [])
 
-            bid_volume_top5 = orderbook_features['bid_depth_5']
-            ask_volume_top5 = orderbook_features['ask_depth_5']
+                bid_volume_top5 = orderbook_features['bid_depth_5']
+                ask_volume_top5 = orderbook_features['ask_depth_5']
 
-            # Liquidity concentration (volume at best vs total top 5)
-            if len(bids) > 0 and bid_volume_top5 > 0:
-                best_bid_size = float(bids[0].get('size', 0)) if isinstance(bids[0], dict) else float(bids[0][1])
-                features['bid_concentration'] = best_bid_size / bid_volume_top5
+                # Liquidity concentration (volume at best vs total top 5)
+                if len(bids) > 0 and bid_volume_top5 > 0:
+                    best_bid_size = float(bids[0].get('size', 0)) if isinstance(bids[0], dict) else float(bids[0][1])
+                    features['bid_concentration'] = best_bid_size / bid_volume_top5
+                else:
+                    features['bid_concentration'] = 0.0
+
+                if len(asks) > 0 and ask_volume_top5 > 0:
+                    best_ask_size = float(asks[0].get('size', 0)) if isinstance(asks[0], dict) else float(asks[0][1])
+                    features['ask_concentration'] = best_ask_size / ask_volume_top5
+                else:
+                    features['ask_concentration'] = 0.0
+
+                features['bid_volume_top5'] = bid_volume_top5
+                features['ask_volume_top5'] = ask_volume_top5
+
+                mid_price = orderbook_features['mid_price']
             else:
+                # Fix H4: empty orderbook — skip orderbook-derived features rather than use fake values
+                logger.debug("Empty orderbook returned None, skipping orderbook features")
+                mid_price = float(market.get('lastTradePrice', 0.5))
                 features['bid_concentration'] = 0.0
-
-            if len(asks) > 0 and ask_volume_top5 > 0:
-                best_ask_size = float(asks[0].get('size', 0)) if isinstance(asks[0], dict) else float(asks[0][1])
-                features['ask_concentration'] = best_ask_size / ask_volume_top5
-            else:
                 features['ask_concentration'] = 0.0
-
-            features['bid_volume_top5'] = bid_volume_top5
-            features['ask_volume_top5'] = ask_volume_top5
-
-            mid_price = orderbook_features['mid_price']
+                features['bid_volume_top5'] = 0.0
+                features['ask_volume_top5'] = 0.0
         else:
             # No orderbook - use market data fallback
             best_bid = float(market.get('bestBid', 0.45))
@@ -266,9 +274,29 @@ class EventVelocityFeatures:
             # Count events in different time windows
             now = datetime.now(timezone.utc)
 
-            events_1h = sum(1 for e in event_data if (now - e['timestamp']).total_seconds() < 3600)
-            events_4h = sum(1 for e in event_data if (now - e['timestamp']).total_seconds() < 14400)
-            events_24h = sum(1 for e in event_data if (now - e['timestamp']).total_seconds() < 86400)
+            # Fix H5: handle string timestamps by parsing them
+            events_1h = 0
+            events_4h = 0
+            events_24h = 0
+            for e in event_data:
+                ts = e.get('timestamp')
+                if ts is None:
+                    continue
+                if isinstance(ts, str):
+                    try:
+                        ts = datetime.fromisoformat(ts.replace('Z', '+00:00'))
+                    except ValueError:
+                        continue
+                try:
+                    elapsed = (now - ts).total_seconds()
+                except (TypeError, ValueError):
+                    continue
+                if elapsed < 3600:
+                    events_1h += 1
+                if elapsed < 14400:
+                    events_4h += 1
+                if elapsed < 86400:
+                    events_24h += 1
 
             features['event_count_1h'] = events_1h
             features['event_count_4h'] = events_4h
@@ -402,7 +430,11 @@ class ShortExpiryFeatureExtractor:
 
         # Extract each feature group
         try:
-            all_features.update(self.time_decay.extract(market, bucket))
+            time_decay_features = self.time_decay.extract(market, bucket)
+            if time_decay_features is None:
+                # Market missing end_date — cannot trade without time features
+                return pd.DataFrame()
+            all_features.update(time_decay_features)
         except Exception as e:
             logger.error(f"Error extracting time_decay features: {e}")
 

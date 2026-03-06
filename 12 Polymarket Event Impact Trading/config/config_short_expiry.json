@@ -145,8 +145,8 @@
   },
   "telegram": {
     "enabled": true,
-    "bot_token": "8068515860:AAEiKpTK0RtHo5dURsbu7ey8Xa8r3A2xEHA",
-    "chat_id": "6690408994"
+    "bot_token": "",
+    "chat_id": ""
   },
   "database": {
     "positions_db": "data/positions_short_expiry.db",

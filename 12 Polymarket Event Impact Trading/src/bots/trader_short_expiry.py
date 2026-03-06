@@ -17,6 +17,7 @@ Phase 3: Ensemble with cross-market signals
 
 import json
 import logging
+import signal
 import time
 import sys
 import os
@@ -310,11 +311,13 @@ class ShortExpiryTrader:
             config=self.config.get('slippage_estimation', {})
         )
 
-        # Telegram notifications
+        # Telegram notifications — prefer env vars over config file values (Fix L2)
         telegram_config = self.config.get('telegram', {})
+        bot_token = os.environ.get('TELEGRAM_BOT_TOKEN', telegram_config.get('bot_token', ''))
+        chat_id = os.environ.get('TELEGRAM_CHAT_ID', telegram_config.get('chat_id', ''))
         self.telegram = TelegramNotifier(
-            bot_token=telegram_config.get('bot_token', ''),
-            chat_id=telegram_config.get('chat_id', ''),
+            bot_token=bot_token,
+            chat_id=chat_id,
             enabled=telegram_config.get('enabled', False)
         )
 
@@ -373,8 +376,9 @@ class ShortExpiryTrader:
     def run(self):
         """Main loop."""
         logger.info("Starting main trading loop")
+        self.is_running = True
 
-        while True:
+        while self.is_running:
             try:
                 # Check minimum balance before trading
                 min_balance = self.config['risk_management'].get('min_trading_balance', 50.0)
@@ -404,6 +408,15 @@ class ShortExpiryTrader:
 
                 # Check existing positions for exits
                 self._check_positions()
+
+                # Fix M3: purge expired cooldowns to prevent memory leak
+                max_cooldown_hours = max(
+                    self.config['risk_management']['market_cooldown_hours'].values()
+                )
+                cooldown_cutoff = datetime.now(timezone.utc) - timedelta(hours=max_cooldown_hours)
+                self.market_cooldowns = {
+                    k: v for k, v in self.market_cooldowns.items() if v > cooldown_cutoff
+                }
 
                 # Wait for next cycle
                 time.sleep(self.config['execution']['cycle_interval_seconds'])
@@ -623,6 +636,11 @@ class ShortExpiryTrader:
                 price_history=price_history
             )
 
+            # Skip markets with no features (e.g. missing end_date — Fix C4)
+            if features.empty:
+                logger.debug(f"No features for {market_id[:16]}, skipping market")
+                continue
+
             # Generate signal
             signal = self._generate_signal(features, market, bucket)
 
@@ -718,12 +736,16 @@ class ShortExpiryTrader:
 
         # Rule 1: Arbitrage (YES + NO < 0.98)
         if rules_config['arbitrage']['enabled']:
-            # Fetch independent YES/NO prices from PriceFetcher (ARCH-008)
+            # Fix C5: arbitrage check needs BID prices (what market pays out), not ASK
             market_id = market.get('condition_id', market.get('conditionId', ''))
-            arb_prices = self.price_fetcher.get_entry_prices(market_id) if market_id else None
+            arb_prices = self.price_fetcher.get_exit_prices(market_id) if market_id else None
             if arb_prices:
                 yes_price = arb_prices.yes_price
                 no_price = arb_prices.no_price
+                if yes_price is None or no_price is None:
+                    logger.debug(f"No BID prices for arbitrage check on {market_id[:16]}, skipping")
+                    yes_price = market_price
+                    no_price = market_price
             else:
                 yes_price = market_price
                 no_price = market_price  # Safe fallback: total = 2*price, never < 0.98 for valid prices
@@ -987,6 +1009,60 @@ class ShortExpiryTrader:
             logger.warning(f"Could not fetch market for resolution check: {e}")
         return fallback_price
 
+    def _execute_close(self, pos: Dict, exit_reason: str):
+        """Force close a position at current BID price (fallback to entry price).
+
+        Used for error-recovery closes: missing_expiry_data, invalid_position_size.
+        """
+        market_id = pos.get('market_id', '')
+        outcome = pos.get('outcome', 'YES')
+        entry_price = pos.get('entry_price', 0) or 0
+        position_size = pos.get('size', 0) or 0
+        bucket = pos.get('bucket', 'short') or 'short'
+
+        # Try to get current BID price; fall back to entry price
+        current_price = entry_price
+        try:
+            exit_prices = self.price_fetcher.get_exit_prices(market_id)
+            if exit_prices is not None:
+                price = exit_prices.get_outcome_price(outcome)
+                if price is not None:
+                    current_price = price
+        except Exception as e:
+            logger.warning(f"Could not fetch exit price for forced close {market_id[:16]}: {e}")
+
+        if entry_price > 0 and position_size > 0:
+            tokens = position_size / entry_price
+            payout = tokens * current_price
+            pnl = payout - position_size
+            pnl_pct = (pnl / position_size) * 100
+        else:
+            payout = 0.0
+            pnl = -position_size
+            pnl_pct = -100.0
+
+        close_result = self.trade_executor.execute_close_trade(
+            market_id=market_id,
+            outcome=outcome,
+            token_id=pos.get('token_id', ''),
+            exit_price=current_price,
+            position_size=position_size,
+            exit_reason=exit_reason,
+            question=pos.get('question', ''),
+            bucket=bucket
+        )
+
+        if not close_result.success:
+            logger.warning(f"Force close rejected by TradeExecutor: {close_result.rejection_reason}")
+            return
+
+        self.market_cooldowns[market_id] = datetime.now(timezone.utc)
+        if self.paper_trading and payout > 0:
+            self.balance += payout
+            self._save_balance(self.balance)
+        self.risk_manager.update_consecutive_losses(is_loss=(pnl < 0))
+        logger.info(f"Force closed {market_id[:16]} ({exit_reason}) | P&L: ${pnl:+.2f}")
+
     def _check_positions(self):
         """Check open positions for exit conditions."""
         positions = self.position_manager.get_open_positions()
@@ -995,18 +1071,38 @@ class ShortExpiryTrader:
             market_id = pos['market_id']
             outcome = pos['outcome']
             entry_price = pos['entry_price']
-            entry_time = pos['entry_time']  # Already a datetime in V2
-            hours_to_expiry = pos.get('hours_to_expiry_at_entry') or 0
+
+            # Fix C1: use .get() to avoid KeyError if entry_time is missing
+            entry_time = pos.get('entry_time')
+            if entry_time is None:
+                logger.warning(f"Position {market_id[:16]} missing entry_time, skipping")
+                continue
+
+            # Fix C3: handle missing hours_to_expiry — force close rather than stick open forever
+            hours_to_expiry = pos.get('hours_to_expiry_at_entry')
+            if hours_to_expiry is None:
+                logger.warning(f"Position {market_id[:16]} has no expiry data — forcing close")
+                self._execute_close(pos, 'missing_expiry_data')
+                continue
+            hours_to_expiry = float(hours_to_expiry)
+
+            # Fix H1: validate position_size early — invalid size produces wrong P&L
+            position_size = pos.get('size')
+            if not position_size or position_size <= 0:
+                logger.error(f"Position {market_id[:16]} has invalid size={position_size}, forcing close")
+                self._execute_close(pos, 'invalid_position_size')
+                continue
 
             # Get bucket from column (V2 stores it as a column, not in metadata)
             bucket = pos.get('bucket')
             if not bucket:
-                # Fallback to metadata for old positions
+                # Fallback to metadata for old positions; Fix M1: log warning on fallback
                 metadata = pos.get('metadata', {})
                 if isinstance(metadata, dict):
                     bucket = metadata.get('bucket', 'short')
                 else:
                     bucket = 'short'
+                logger.warning(f"Position {market_id[:16]} missing bucket column, fell back to '{bucket}'")
 
             # Fix pandas DataFrame dict format {'0': 'value'} -> 'value'
             if isinstance(bucket, dict) and '0' in bucket:
@@ -1157,6 +1253,11 @@ class ShortExpiryTrader:
                 # Get price for the specific outcome
                 current_price = exit_prices.get_outcome_price(outcome)
 
+                # Fix C2: guard against None price before calling should_exit()
+                if current_price is None:
+                    logger.warning(f"No current price for {market_id[:16]} outcome={outcome}, skipping exit check")
+                    continue
+
                 # Check exit conditions (stop-loss, take-profit, trailing stop)
                 exit_reason = self.risk_manager.should_exit(pos, current_price, bucket)
 
@@ -1234,7 +1335,7 @@ class ShortExpiryTrader:
                     )
 
             except Exception as e:
-                logger.error(f"Error checking position {market_id[:16]}...: {e}")
+                logger.error(f"Error checking position {market_id[:16]}...: {e}", exc_info=True)
                 self.telegram.notify_error(
                     f"⚠️ Position check error:\nMarket: {market_id[:16]}...\nError: {str(e)[:150]}",
                     bot_name="Short-Expiry Trader"
@@ -1264,6 +1365,12 @@ def main():
 
     # Initialize trader
     trader = ShortExpiryTrader(config_path)
+
+    def handle_sigterm(signum, frame):
+        logger.info("Received SIGTERM, shutting down gracefully...")
+        trader.is_running = False
+
+    signal.signal(signal.SIGTERM, handle_sigterm)
 
     # Run
     trader.run()
