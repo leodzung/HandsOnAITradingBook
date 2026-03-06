@@ -28,12 +28,13 @@
       "medium": 150
     },
     "max_spread_pct": {
-      "ultra_short": 10.0,
-      "short": 8.0,
-      "medium": 6.0
+      "ultra_short": 30.0,
+      "short": 25.0,
+      "medium": 20.0
     },
-    "min_price": 0.05,
-    "max_price": 0.95,
+    "min_price": 0.02,
+    "max_price": 0.98,
+    "require_last_trade_price": false,
     "api_cache_ttl_seconds": 300,
     "crypto_only": true
   },

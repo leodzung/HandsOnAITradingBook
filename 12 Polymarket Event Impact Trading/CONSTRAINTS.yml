@@ -357,26 +357,25 @@ constraints:
       Any None BID price must short-circuit the check (skip, do not trade).
 
       '
-    rationale: 'Bug fixed 2026-03-06 (C5): arbitrage used get_entry_prices() (ASK).
-
-      YES_ask + NO_ask is typically 1.03-1.10 due to spread, so the check
-      "if total < 0.98" could never fire — pure dead code with wrong prices.
-
-      '
+    rationale: "Bug fixed 2026-03-06 (C5): arbitrage used get_entry_prices() (ASK).\n\
+      YES_ask + NO_ask is typically 1.03-1.10 due to spread, so the check \"if total\
+      \ < 0.98\" could never fire \u2014 pure dead code with wrong prices.\n"
     status: enforced
     priority: critical
     implemented_date: '2026-03-06'
     validation:
     - type: structural_test
-      command: PYTHONPATH=src pytest tests/structural/test_arbitrage_bid_prices.py -v
+      command: PYTHONPATH=src pytest tests/structural/test_arbitrage_bid_prices.py
+        -v
       description: Verify arbitrage check calls get_exit_prices(), not get_entry_prices()
     forbidden_patterns:
-    - 'get_entry_prices.*arb'
+    - get_entry_prices.*arb
     - '# arbitrage.*get_entry'
     files_to_check:
     - src/bots/trader_short_expiry.py
   - id: ARCH-016
-    title: Feature extractors must return None for uncomputable markets; callers must skip
+    title: Feature extractors must return None for uncomputable markets; callers must
+      skip
     description: 'Feature extractor methods (TimeDecayFeatures.extract, OrderbookFeatures.extract)
       MUST return None when they cannot compute meaningful features (missing end_date,
       empty orderbook). Defaulting to plausible-looking values (e.g. +24h expiry,
@@ -386,29 +385,27 @@ constraints:
       trading on fabricated features.
 
       '
-    rationale: 'Bugs fixed 2026-03-06 (C4, H4):
-
-      - TimeDecayFeatures defaulted missing end_date to now+24h — wrong expiry bucket.
-
-      - OrderbookFeatures returned mid_price=0.5 for empty books — pollutes ML data.
-
-      Fabricated features look valid and enter the training dataset, degrading models.
-
-      '
+    rationale: "Bugs fixed 2026-03-06 (C4, H4):\n- TimeDecayFeatures defaulted missing\
+      \ end_date to now+24h \u2014 wrong expiry bucket.\n- OrderbookFeatures returned\
+      \ mid_price=0.5 for empty books \u2014 pollutes ML data.\nFabricated features\
+      \ look valid and enter the training dataset, degrading models.\n"
     status: enforced
     priority: critical
     implemented_date: '2026-03-06'
     validation:
     - type: structural_test
-      command: PYTHONPATH=src pytest tests/structural/test_feature_none_returns.py -v
+      command: PYTHONPATH=src pytest tests/structural/test_feature_none_returns.py
+        -v
       description: Verify feature extractors return None for missing/empty inputs
     telemetry:
     - metric: features_skipped_missing_data
       threshold: null
       alert: info
-      description: Count of markets skipped due to uncomputable features (expected non-zero)
+      description: Count of markets skipped due to uncomputable features (expected
+        non-zero)
   - id: ARCH-017
-    title: Position loop must use .get() for all DB-derived fields and validate before use
+    title: Position loop must use .get() for all DB-derived fields and validate before
+      use
     description: 'In _check_positions(), every field read from a position dict MUST
       use .get() (never direct dict access) and MUST validate for None before use:
 
@@ -423,30 +420,25 @@ constraints:
       Direct dict access (pos["field"]) is FORBIDDEN for optional DB columns.
 
       '
-    rationale: 'Bugs fixed 2026-03-06 (C1, C2, C3, H1):
-
-      - C1: pos["entry_time"] crashed for legacy positions missing the field.
-
-      - C2: current_price=None passed to should_exit() caused TypeError.
-
-      - C3: hours_to_expiry=None defaulted to 0, skipping expiry check — position stuck open.
-
-      - H1: size=0 produced wrong P&L (tokens_held = 0/0 = ZeroDivisionError).
-
-      SQLite rows can have NULL for any nullable column; direct access is always unsafe.
-
-      '
+    rationale: "Bugs fixed 2026-03-06 (C1, C2, C3, H1):\n- C1: pos[\"entry_time\"\
+      ] crashed for legacy positions missing the field.\n- C2: current_price=None\
+      \ passed to should_exit() caused TypeError.\n- C3: hours_to_expiry=None defaulted\
+      \ to 0, skipping expiry check \u2014 position stuck open.\n- H1: size=0 produced\
+      \ wrong P&L (tokens_held = 0/0 = ZeroDivisionError).\nSQLite rows can have NULL\
+      \ for any nullable column; direct access is always unsafe.\n"
     status: enforced
     priority: critical
     implemented_date: '2026-03-06'
     validation:
     - type: structural_test
-      command: PYTHONPATH=src pytest tests/structural/test_position_loop_field_access.py -v
-      description: AST scan verifies no direct pos["field"] for optional columns in _check_positions
+      command: PYTHONPATH=src pytest tests/structural/test_position_loop_field_access.py
+        -v
+      description: AST scan verifies no direct pos["field"] for optional columns in
+        _check_positions
     forbidden_patterns:
-    - 'pos\[.entry_time.\]'
-    - 'pos\[.hours_to_expiry_at_entry.\]'
-    - 'pos\[.size.\]'
+    - pos\[.entry_time.\]
+    - pos\[.hours_to_expiry_at_entry.\]
+    - pos\[.size.\]
     files_to_check:
     - src/bots/trader_short_expiry.py
     - src/bots/trader.py
@@ -967,11 +959,12 @@ constraints:
       can never be safely monitored and will remain open indefinitely.
 
       '
-    rationale: 'Bug fixed 2026-03-06 (C3): hours_to_expiry = pos.get("hours_to_expiry_at_entry") or 0
+    rationale: 'Bug fixed 2026-03-06 (C3): hours_to_expiry = pos.get("hours_to_expiry_at_entry")
+      or 0
 
       evaluated to 0 when the column was NULL. The check "if hours_to_expiry > 0"
-      was False, so the expiry branch was skipped entirely. Position stayed open
-      forever, never checked for stop-loss, take-profit, or expiry.
+      was False, so the expiry branch was skipped entirely. Position stayed open forever,
+      never checked for stop-loss, take-profit, or expiry.
 
       '
     status: enforced
@@ -979,25 +972,28 @@ constraints:
     implemented_date: '2026-03-06'
     validation:
     - type: behavioral_test
-      command: PYTHONPATH=src pytest tests/behavioral/test_missing_expiry_force_close.py -v
-      description: Insert position with NULL hours_to_expiry; verify force-close is triggered
+      command: PYTHONPATH=src pytest tests/behavioral/test_missing_expiry_force_close.py
+        -v
+      description: Insert position with NULL hours_to_expiry; verify force-close is
+        triggered
     telemetry:
     - metric: force_closes_missing_expiry
       threshold: null
       alert: warning
-      description: Count of force-closes due to missing expiry data (should be 0 after clean DB)
+      description: Count of force-closes due to missing expiry data (should be 0 after
+        clean DB)
   - id: RISK-016
     title: Current price must be validated non-None before any exit logic
     description: 'After fetching exit prices from PriceFetcher, the specific outcome
-      price MUST be checked for None before being passed to should_exit(), P&L
-      calculations, or any arithmetic. A None price must log a WARNING and skip
-      the exit check for that cycle (not crash the position loop).
+      price MUST be checked for None before being passed to should_exit(), P&L calculations,
+      or any arithmetic. A None price must log a WARNING and skip the exit check for
+      that cycle (not crash the position loop).
 
       '
     rationale: 'Bug fixed 2026-03-06 (C2): get_outcome_price() returns None when the
-      token has no BID in the orderbook (illiquid outcome). Passing None to
-      should_exit() caused TypeError: unsupported operand type(s) for -: float and NoneType,
-      crashing the entire _check_positions() loop and leaving all positions unchecked.
+      token has no BID in the orderbook (illiquid outcome). Passing None to should_exit()
+      caused TypeError: unsupported operand type(s) for -: float and NoneType, crashing
+      the entire _check_positions() loop and leaving all positions unchecked.
 
       '
     status: enforced
@@ -1006,12 +1002,14 @@ constraints:
     validation:
     - type: structural_test
       command: PYTHONPATH=src pytest tests/structural/test_price_none_guard.py -v
-      description: Verify None price guard exists before should_exit() calls in position loops
+      description: Verify None price guard exists before should_exit() calls in position
+        loops
     telemetry:
     - metric: skipped_exit_checks_no_price
       threshold: null
       alert: info
-      description: Count of exit checks skipped due to missing price (expected non-zero in illiquid markets)
+      description: Count of exit checks skipped due to missing price (expected non-zero
+        in illiquid markets)
   - id: RISK-010
     title: Input validation for all external data
     description: 'All data from external sources (API, WebSocket, user input) MUST
@@ -1414,23 +1412,21 @@ operations:
     description: Alert if retraining fails 2+ times consecutively
 - id: OPS-006
   title: SQLite databases must use WAL journal mode
-  description: 'All SQLite databases in this project MUST be initialized with
-    PRAGMA journal_mode=WAL. DELETE journal mode is FORBIDDEN.
+  description: 'All SQLite databases in this project MUST be initialized with PRAGMA
+    journal_mode=WAL. DELETE journal mode is FORBIDDEN.
 
-    WAL provides:
-    - Concurrent readers while writing (no reader-blocks-writer)
-    - Crash-safe partial writes (WAL is atomic)
-    - Better throughput under simultaneous read/write load from multiple services
+    WAL provides: - Concurrent readers while writing (no reader-blocks-writer) - Crash-safe
+    partial writes (WAL is atomic) - Better throughput under simultaneous read/write
+    load from multiple services
 
-    The _checkpoint_db() method MUST use PRAGMA wal_checkpoint(TRUNCATE) rather
-    than PRAGMA optimize.
+    The _checkpoint_db() method MUST use PRAGMA wal_checkpoint(TRUNCATE) rather than
+    PRAGMA optimize.
 
     '
   rationale: 'Bug fixed 2026-03-06 (H2): gdelt_collector.py used DELETE journal mode
-    with a misleading comment "more compatible with macOS than WAL". This caused
-    the GDELT DB corruption incident (backup file still present). WAL mode prevents
-    the partial-write corruption that DELETE mode allows when the process is killed
-    mid-write.
+    with a misleading comment "more compatible with macOS than WAL". This caused the
+    GDELT DB corruption incident (backup file still present). WAL mode prevents the
+    partial-write corruption that DELETE mode allows when the process is killed mid-write.
 
     '
   status: enforced
@@ -1441,9 +1437,9 @@ operations:
     command: PYTHONPATH=src pytest tests/structural/test_wal_journal_mode.py -v
     description: Grep all SQLite init code; verify journal_mode=WAL, no journal_mode=DELETE
   forbidden_patterns:
-  - 'journal_mode=DELETE'
-  - 'journal_mode=TRUNCATE'
-  - 'journal_mode=PERSIST'
+  - journal_mode=DELETE
+  - journal_mode=TRUNCATE
+  - journal_mode=PERSIST
   files_to_check:
   - src/collectors/gdelt_collector.py
   - src/collectors/alchemy_collector.py
@@ -1455,21 +1451,19 @@ operations:
     description: Count of databases not using WAL mode
 - id: OPS-007
   title: In-memory cooldown/cache dicts must be bounded with periodic cleanup
-  description: 'Any in-memory dict used for cooldowns, caches, or rate-limiting
-    (e.g. market_cooldowns, market_cache) MUST be purged of expired entries at least
-    once per main cycle. The purge MUST use a TTL derived from config, not a
-    hardcoded constant.
+  description: 'Any in-memory dict used for cooldowns, caches, or rate-limiting (e.g.
+    market_cooldowns, market_cache) MUST be purged of expired entries at least once
+    per main cycle. The purge MUST use a TTL derived from config, not a hardcoded
+    constant.
 
     Unbounded dicts that grow monotonically are FORBIDDEN in long-running bots.
 
     '
-  rationale: 'Bug fixed 2026-03-06 (M3): market_cooldowns in trader_short_expiry.py
-    accumulated one entry per closed position, never evicted. In a 30-day run
-    at ~10 closures/day this would reach 300 entries — trivial for memory but
-    indicative of a leak pattern. The same dict pattern elsewhere (market_cache)
-    is higher risk because it stores full market data.
-
-    '
+  rationale: "Bug fixed 2026-03-06 (M3): market_cooldowns in trader_short_expiry.py\
+    \ accumulated one entry per closed position, never evicted. In a 30-day run at\
+    \ ~10 closures/day this would reach 300 entries \u2014 trivial for memory but\
+    \ indicative of a leak pattern. The same dict pattern elsewhere (market_cache)\
+    \ is higher risk because it stores full market data.\n"
   status: enforced
   priority: medium
   implemented_date: '2026-03-06'
@@ -1485,9 +1479,9 @@ operations:
 - id: OPS-008
   title: Fallback logic must log WARNING when activated
   description: 'Any silent fallback that substitutes a default value for a missing
-    or unexpected value MUST log at WARNING level (not DEBUG or INFO) including:
-    the field name, the position/market identifier, the fallback value chosen,
-    and ideally the source (DB column, metadata, hardcoded).
+    or unexpected value MUST log at WARNING level (not DEBUG or INFO) including: the
+    field name, the position/market identifier, the fallback value chosen, and ideally
+    the source (DB column, metadata, hardcoded).
 
     Silent fallbacks that apply wrong parameters without logging are FORBIDDEN.
 
@@ -1504,32 +1498,32 @@ operations:
   validation:
   - type: structural_test
     command: PYTHONPATH=src pytest tests/structural/test_fallback_logging.py -v
-    description: Verify fallback branches in _check_positions use logger.warning, not logger.debug
+    description: Verify fallback branches in _check_positions use logger.warning,
+      not logger.debug
   telemetry:
   - metric: bucket_fallback_warnings
     threshold: null
     alert: info
-    description: Count of positions that triggered bucket fallback (should drop to 0 as old positions close)
+    description: Count of positions that triggered bucket fallback (should drop to
+      0 as old positions close)
 - id: OPS-009
   title: No hardcoded credentials in config files or source code
-  description: 'API tokens, bot tokens, private keys, and chat IDs MUST NOT be
-    hardcoded in:
-    - JSON config files (config/*.json)
-    - Python source files
-    - Docker Compose environment sections
+  description: 'API tokens, bot tokens, private keys, and chat IDs MUST NOT be hardcoded
+    in: - JSON config files (config/*.json) - Python source files - Docker Compose
+    environment sections
 
     All credentials MUST be read from environment variables at runtime. The config
     file MAY contain the env var name as documentation, but the actual secret value
     MUST be empty or a placeholder (e.g. "").
 
-    Bots MUST prefer the environment variable over any config-file value:
-      os.environ.get("SECRET_NAME", config.get("field", ""))
+    Bots MUST prefer the environment variable over any config-file value: os.environ.get("SECRET_NAME",
+    config.get("field", ""))
 
     '
   rationale: 'Bug fixed 2026-03-06 (L2): config/config_short_expiry.json contained
-    a live Telegram bot token in plaintext. Any git clone, log grep, or docker
-    inspect would expose the credential. Secrets in config files also cannot be
-    rotated without a code change and commit.
+    a live Telegram bot token in plaintext. Any git clone, log grep, or docker inspect
+    would expose the credential. Secrets in config files also cannot be rotated without
+    a code change and commit.
 
     '
   status: enforced
@@ -1537,13 +1531,15 @@ operations:
   implemented_date: '2026-03-06'
   validation:
   - type: structural_test
-    command: PYTHONPATH=src pytest tests/structural/test_no_hardcoded_credentials.py -v
-    description: Regex scan config/*.json and src/ for patterns matching API keys, bot tokens
+    command: PYTHONPATH=src pytest tests/structural/test_no_hardcoded_credentials.py
+      -v
+    description: Regex scan config/*.json and src/ for patterns matching API keys,
+      bot tokens
   - type: pre_commit_hook
     description: git-secrets or similar pre-commit hook to block credential commits
   forbidden_patterns:
-  - '\d{8,}:[A-Za-z0-9_-]{35}'
-  - 'bot_token.*[A-Za-z0-9]{35}'
+  - \d{8,}:[A-Za-z0-9_-]{35}
+  - bot_token.*[A-Za-z0-9]{35}
   files_to_check:
   - config/config_short_expiry.json
   - config/config.json
@@ -1583,11 +1579,151 @@ operations:
     threshold: 0
     alert: critical
     description: Number of databases that failed integrity check at startup
+  - id: ARCH-018
+    title: Prediction market filter thresholds must match market microstructure
+    description: 'Quality filter thresholds for prediction markets MUST use values
+      calibrated to Polymarket microstructure, not equity market conventions.
+
+      max_spread_pct MUST be >= 20% for all buckets (binary prediction markets have
+      10-30% half-spread at mid, far wider than equity markets).
+
+      min_price/max_price MUST be <= 0.02 / >= 0.98 to include near-certain outcomes
+      (crypto binary markets near 0 or 1 have valid momentum signals).
+
+      Thresholds of < 10% spread or price bounds of 0.05/0.95 are FORBIDDEN.
+
+      '
+    rationale: 'Bug fixed 2026-03-06: max_spread_pct was 6-10% (equity convention),
+      killing 91-97% of discoverable markets before signal generation. min_price/max_price
+      of 0.05/0.95 excluded crypto binary markets that price near certainty — exactly
+      where edge is highest. Result: zero trades despite 160-220 discovered markets.
+
+      '
+    status: enforced
+    priority: critical
+    implemented_date: '2026-03-06'
+    validation:
+    - type: structural_test
+      command: PYTHONPATH=src pytest tests/structural/test_filter_thresholds.py -v
+      description: Verify max_spread_pct >= 20 and min/max price bounds in all bot
+        configs
+    forbidden_patterns:
+    - '"ultra_short": [0-9]\.'
+    - '"short": [0-9]\.'
+    - '"medium": [0-9]\.'
+    files_to_check:
+    - config/config_short_expiry.json
+    telemetry:
+    - metric: quality_filter_survival_rate
+      threshold: 0.3
+      alert: warning
+      description: Alert if < 30% of discovered markets pass quality filter (thresholds
+        likely too tight)
+  - id: ARCH-019
+    title: check_last_trade must be configurable, not hardcoded
+    description: 'The check_last_trade parameter in MarketFilter.filter_by_quality()
+      MUST be driven by a config value (e.g. require_last_trade_price) and NOT hardcoded
+      to True.
+
+      Hardcoding True silently rejects newly-listed markets that lack lastTradePrice
+      history, reducing the candidate pool without any log evidence.
+
+      Default for short-expiry bot MUST be False (prefer inclusion).
+
+      '
+    rationale: 'Bug fixed 2026-03-06: _filter_tradeable() had check_last_trade=True
+      hardcoded. Newly-listed crypto markets have no lastTradePrice, causing silent
+      rejection. Configurable flag allows operators to tune inclusion vs quality trade-off
+      without code changes.
+
+      '
+    status: enforced
+    priority: high
+    implemented_date: '2026-03-06'
+    validation:
+    - type: structural_test
+      command: PYTHONPATH=src pytest tests/structural/test_check_last_trade_configurable.py
+        -v
+      description: Verify _filter_tradeable reads check_last_trade from config, not
+        hardcoded
+    forbidden_patterns:
+    - check_last_trade=True
+    files_to_check:
+    - src/bots/trader_short_expiry.py
+  - id: ARCH-020
+    title: Momentum features must seed from available market data on empty history
+    description: 'When price_history is empty (bot fresh start), MomentumFeatures.extract()
+      MUST compute a proxy price_change_1h using (live_mid - lastTradePrice) / lastTradePrice
+      where live_mid = (bestAsk + bestBid) / 2.
+
+      Returning 0.0 for all momentum features on empty history is FORBIDDEN because
+      it permanently suppresses momentum signals for the first hour of operation, preventing
+      any trades regardless of actual price movement.
+
+      '
+    rationale: 'Bug fixed 2026-03-06: On fresh bot start, PriceTracker has no history
+      so price_change_1h=0.0. The momentum rule "abs(price_change_1h) > 0.02" always
+      evaluates to False, blocking all momentum signals for the first 12 cycles (~1h).
+      Markets with real price movement were ignored. Seeding from lastTradePrice vs
+      live mid provides a reasonable proxy for recent movement.
+
+      '
+    status: enforced
+    priority: high
+    implemented_date: '2026-03-06'
+    validation:
+    - type: structural_test
+      command: PYTHONPATH=src pytest tests/structural/test_momentum_seed_empty_history.py
+        -v
+      description: Verify MomentumFeatures.extract returns non-zero price_change_1h
+        when history empty but lastTradePrice and bestAsk/bestBid present
+  - id: RISK-017
+    title: can_execute balance check must use min_position_size, not max_position_size
+    description: 'The balance sufficiency check in can_execute() MUST compare balance
+      against min_position_size (not max_position_size).
+
+      The check MUST be: if balance < min_position_size: return False
+
+      Using max_position_size in the comparison is FORBIDDEN — it blocks valid small
+      positions when balance is between min and max, producing zero trades even with
+      ample capital.
+
+      '
+    rationale: 'Bug fixed 2026-03-06: can_execute had "if max_position_size > balance:
+      return False". With ultra_short max=$50 and balance=$49, this blocked all positions
+      even though a $10 minimum position was feasible. Logic was inverted: it rejected
+      trades when max > balance instead of when balance < min. Result: zero trades
+      when balance dropped even slightly below any bucket max.
+
+      '
+    status: enforced
+    priority: critical
+    implemented_date: '2026-03-06'
+    validation:
+    - type: structural_test
+      command: PYTHONPATH=src pytest tests/structural/test_can_execute_balance_check.py
+        -v
+      description: Verify can_execute uses min_position_size in balance guard
+    - type: behavioral_test
+      command: PYTHONPATH=src pytest tests/behavioral/test_can_execute_with_partial_balance.py
+        -v
+      description: Verify can_execute returns True when balance >= min but < max
+    forbidden_patterns:
+    - max_position_size.*balance
+    - max_size > balance
+    files_to_check:
+    - src/bots/trader_short_expiry.py
+    telemetry:
+    - metric: trades_blocked_balance_check
+      threshold: null
+      alert: info
+      description: Count of trades blocked by balance check (should reflect true
+        insufficient funds, not max_size misfire)
 metadata:
-  last_validated: '2026-03-06T11:00:11.147163'
+  last_validated: '2026-03-06T12:00:10.874840'
   validation_status: FAIL
-  total_constraints: 44
-  enforced_constraints: 44
+  total_constraints: 48
+  enforced_constraints: 48
   proposed_constraints: 0
   contact:
     maintainer: Trading System Team

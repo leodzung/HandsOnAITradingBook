@@ -180,8 +180,8 @@ class ShortExpiryRiskManager:
             return False
 
         # Check balance
-        max_size = self.config['position_limits']['max_position_size'][bucket]
-        if max_size > balance:
+        min_size = self.config['position_limits']['min_position_size']
+        if balance < min_size:
             return False
 
         return True
@@ -599,7 +599,7 @@ class ShortExpiryTrader:
             min_price=config['min_price'],
             max_price=config['max_price'],
             max_spread_pct=config['max_spread_pct'][bucket],
-            check_last_trade=True,
+            check_last_trade=config.get('require_last_trade_price', False),
             logger=logger
         )
 

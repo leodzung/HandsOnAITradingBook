@@ -142,8 +142,19 @@ class MomentumFeatures:
                 features['acceleration'] = 0.0
 
         else:
-            # No history - use zeros
-            features['price_change_1h'] = 0.0
+            # No history - seed price_change_1h from lastTradePrice vs bestAsk/bestBid if available
+            best_ask = market.get('bestAsk') or market.get('best_ask')
+            best_bid = market.get('bestBid') or market.get('best_bid')
+            last_trade = market.get('lastTradePrice')
+            if last_trade and best_ask and best_bid:
+                live_mid = (float(best_ask) + float(best_bid)) / 2.0
+                lt = float(last_trade)
+                if lt > 0:
+                    features['price_change_1h'] = (live_mid - lt) / lt
+                else:
+                    features['price_change_1h'] = 0.0
+            else:
+                features['price_change_1h'] = 0.0
             features['price_change_4h'] = 0.0
             features['price_change_12h'] = 0.0
             features['velocity'] = 0.0
