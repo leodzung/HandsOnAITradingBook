@@ -7,6 +7,7 @@ Trades long-term BTC/ETH/Gold price-level markets using volatility + technical a
 import json
 import pickle
 import logging
+import signal
 import time
 import threading
 from datetime import datetime, timedelta
@@ -649,7 +650,7 @@ class PriceLevelTrader:
         self._start_position_monitor()
 
         try:
-            while True:
+            while self.is_running:
                 try:
                     self.trading_cycle()
                     time.sleep(self.config.get('cycle_interval_seconds', 3600))
@@ -770,6 +771,9 @@ class PriceLevelTrader:
                    f"(volume>=${min_volume}, liquidity>=${min_liquidity}, "
                    f"expiry: {min_days}-{max_days} days)")
 
+        from monitoring.telemetry_helpers import record_market_discovery_funnel
+        record_market_discovery_funnel('price_level_trader', 'api_fetched', len(all_markets))
+
         # Also fetch markets from specific event slugs (includes restricted markets)
         # Note: get_markets_from_event() automatically filters out closed markets
         event_slugs = self.config.get('event_slugs', {})
@@ -790,6 +794,8 @@ class PriceLevelTrader:
         if event_markets_added > 0:
             logger.info(f"Added {event_markets_added} active markets from event slugs (closed markets filtered out)")
 
+        record_market_discovery_funnel('price_level_trader', 'event_fetched', event_markets_added)
+        record_market_discovery_funnel('price_level_trader', 'combined', len(all_markets))
         logger.info(f"Total markets to scan: {len(all_markets)}")
 
         # Filter for price-level markets
@@ -829,6 +835,7 @@ class PriceLevelTrader:
             filtered_markets.append(market)
 
         logger.info(f"After expiry filter: {len(filtered_markets)} price-level markets")
+        record_market_discovery_funnel('price_level_trader', 'after_expiry', len(filtered_markets))
 
         # Apply quality filters (spread, price range, trade activity)
         from core.polymarket_client import MarketFilter
@@ -847,7 +854,8 @@ class PriceLevelTrader:
                 max_price=quality_config.get('max_price', 0.95),
                 max_spread_pct=quality_config.get('max_spread_pct', 15.0),
                 check_last_trade=quality_config.get('check_last_trade', True),
-                logger=logger
+                logger=logger,
+                source='price_level_trader'
             )
 
             # Keep only markets that passed quality filter
@@ -856,6 +864,7 @@ class PriceLevelTrader:
                               if (m.get('original_market', m)).get('conditionId') in quality_ids]
 
             logger.info(f"After quality filter: {len(filtered_markets)} tradeable price-level markets")
+            record_market_discovery_funnel('price_level_trader', 'after_quality', len(filtered_markets))
         else:
             logger.info(f"Filtered to {len(filtered_markets)} tradeable price-level markets")
 
@@ -1689,6 +1698,13 @@ class PriceLevelTrader:
 def main():
     """Main entry point."""
     trader = PriceLevelTrader()
+
+    def handle_sigterm(signum, frame):
+        logger.info("Received SIGTERM, shutting down gracefully...")
+        trader.is_running = False
+
+    signal.signal(signal.SIGTERM, handle_sigterm)
+
     trader.run()
 
 

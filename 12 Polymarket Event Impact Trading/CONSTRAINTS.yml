@@ -1719,11 +1719,55 @@ operations:
       alert: info
       description: Count of trades blocked by balance check (should reflect true
         insufficient funds, not max_size misfire)
+  - id: OBS-001
+    title: Market discovery funnel stages must be recorded to telemetry
+    description: 'All three bots (event_trader, short_expiry_*, price_level_trader)
+      MUST record market counts at each discovery funnel stage to telemetry.db using
+      record_market_discovery_funnel() from monitoring.telemetry_helpers.
+
+      Required stages: api_fetched, event_fetched, combined, after_quality (plus
+      after_category for event_trader, after_expiry for price_level_trader).
+
+      filter_by_quality() MUST be called with source= so rejection breakdowns are
+      also recorded via record_quality_rejections().
+
+      Removing or skipping funnel recording is FORBIDDEN.
+
+      '
+    rationale: 'Implemented 2026-03-06: Bots previously logged funnel counts to stdout
+      only — ephemeral and unqueryable. Without persistent time-series metrics it is
+      impossible to detect when a config change silently kills 90%+ of candidates.
+
+      '
+    status: enforced
+    priority: high
+    implemented_date: '2026-03-06'
+    validation:
+    - type: grep
+      pattern: record_market_discovery_funnel
+      files_to_check:
+      - src/bots/trader.py
+      - src/bots/trader_short_expiry.py
+      - src/bots/trader_price_levels.py
+      description: Verify funnel recording calls exist in all three bots
+    telemetry:
+    - metric: funnel_event_trader_after_quality
+      threshold: null
+      alert: info
+      description: Final tradeable market count for event trader after all filters
+    - metric: funnel_short_expiry_ultra_short_after_quality
+      threshold: null
+      alert: info
+      description: Final tradeable market count for ultra_short bucket
+    - metric: funnel_price_level_trader_after_quality
+      threshold: null
+      alert: info
+      description: Final tradeable market count for price-level trader
 metadata:
   last_validated: '2026-03-06T12:00:10.874840'
   validation_status: FAIL
-  total_constraints: 48
-  enforced_constraints: 48
+  total_constraints: 49
+  enforced_constraints: 49
   proposed_constraints: 0
   contact:
     maintainer: Trading System Team

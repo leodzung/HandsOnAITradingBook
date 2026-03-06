@@ -5,6 +5,7 @@ Executes trades on Polymarket based on model predictions.
 
 import time
 import logging
+import signal
 import sys
 import os
 from typing import Dict, List, Optional
@@ -660,6 +661,9 @@ class PolymarketTrader:
                    f"({len(markets)/pagination_duration:.1f} markets/sec) "
                    f"(volume>=${min_volume}, expiry: {min_hours}h-{max_hours}h)")
 
+        from monitoring.telemetry_helpers import record_market_discovery_funnel
+        record_market_discovery_funnel('event_trader', 'api_fetched', len(markets))
+
         # IMPORTANT: Also fetch markets from known crypto events (these don't appear in /markets)
         # Use consolidated discovery logic from MarketFilter
         if self.config.get('market_category_filter') == 'crypto':
@@ -687,7 +691,9 @@ class PolymarketTrader:
             new_markets = [m for m in event_markets if m.get('conditionId') not in seen_ids]
             markets.extend(new_markets)
             logger.info(f"Added {len(new_markets)} unique active event markets in {event_duration:.2f}s (closed filtered)")
+            record_market_discovery_funnel('event_trader', 'event_fetched', len(new_markets))
 
+        record_market_discovery_funnel('event_trader', 'combined', len(markets))
         logger.info(f"Total markets after API filtering: {len(markets)}")
 
         # Apply remaining client-side filters
@@ -699,6 +705,7 @@ class PolymarketTrader:
         if category_filter == 'crypto':
             markets = MarketFilter.filter_crypto_markets(markets)
             logger.info(f"Filtered to {len(markets)} crypto markets after category filter")
+            record_market_discovery_funnel('event_trader', 'after_category', len(markets))
 
         # Apply quality filters (spread, price range, trade activity)
         quality_config = self.config.get('quality_filters', {})
@@ -710,9 +717,11 @@ class PolymarketTrader:
                 max_price=quality_config.get('max_price', 0.95),
                 max_spread_pct=quality_config.get('max_spread_pct', 10.0),
                 check_last_trade=quality_config.get('check_last_trade', True),
-                logger=logger
+                logger=logger,
+                source='event_trader'
             )
             logger.info(f"Filtered to {len(markets)} markets after quality filter")
+            record_market_discovery_funnel('event_trader', 'after_quality', len(markets))
 
         logger.info(f"Final market count: {len(markets)}")
 
@@ -1400,6 +1409,12 @@ def main():
 
     # Create and start trader
     trader = PolymarketTrader(config)
+
+    def handle_sigterm(signum, frame):
+        logger.info("Received SIGTERM, shutting down gracefully...")
+        trader.stop()
+
+    signal.signal(signal.SIGTERM, handle_sigterm)
 
     try:
         trader.start()

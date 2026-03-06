@@ -3,6 +3,7 @@ Polymarket API Client
 Handles authentication, market data retrieval, and order execution.
 """
 
+import os
 import requests
 import time
 import hmac
@@ -44,8 +45,12 @@ class PolymarketClient:
         self.config = config or {}
 
         # Orderbook service client (microservice)
+        # Priority: env var > config > default (for Docker compatibility)
         self._use_orderbook_service = self.config.get('use_orderbook_service', True)
-        self._orderbook_service_url = self.config.get('orderbook_service_url', 'http://localhost:8765')
+        self._orderbook_service_url = os.environ.get(
+            'ORDERBOOK_SERVICE_URL',
+            self.config.get('orderbook_service_url', 'http://localhost:8765')
+        )
         self._orderbook_client = None
 
         # Legacy: Orderbook manager for direct WebSocket/REST (deprecated)
@@ -649,7 +654,7 @@ class PolymarketClient:
         # Priority 1: Use orderbook microservice (recommended)
         if self._use_orderbook_service:
             if self._orderbook_client is None:
-                from services.orderbook_client import OrderbookServiceClient
+                from src.services.orderbook_client import OrderbookServiceClient
                 self._orderbook_client = OrderbookServiceClient(
                     service_url=self._orderbook_service_url,
                     cache_ttl_seconds=self.config.get('orderbook', {}).get('cache_ttl_seconds', 5)
@@ -725,7 +730,7 @@ class PolymarketClient:
         # If using microservice, send subscription request
         if self._use_orderbook_service:
             if self._orderbook_client is None:
-                from services.orderbook_client import OrderbookServiceClient
+                from src.services.orderbook_client import OrderbookServiceClient
                 self._orderbook_client = OrderbookServiceClient(
                     service_url=self._orderbook_service_url
                 )
@@ -1269,7 +1274,8 @@ class MarketFilter:
                          max_price: float = 0.95,
                          max_spread_pct: float = 10.0,
                          check_last_trade: bool = True,
-                         logger=None) -> List[Dict]:
+                         logger=None,
+                         source: Optional[str] = None) -> List[Dict]:
         """
         Filter markets by quality metrics: price range, spread, and trade activity.
 
@@ -1365,6 +1371,10 @@ class MarketFilter:
                            f"Both None: {rejection_counts['both_prices_none']} | "
                            f"Out of range: {rejection_counts['price_out_of_range']} | "
                            f"No trades: {rejection_counts['no_last_trade']}")
+
+        if source:
+            from monitoring.telemetry_helpers import record_quality_rejections
+            record_quality_rejections(source, rejection_counts)
 
         return filtered
 
@@ -1556,7 +1566,8 @@ class MarketFilter:
                         max_pages: int = 10,
                         include_crypto_events: bool = True,
                         crypto_event_days_ahead: int = 7,
-                        logger=None) -> List[Dict]:
+                        logger=None,
+                        source: Optional[str] = None) -> List[Dict]:
         """
         Unified market discovery for all bots.
 
@@ -1619,6 +1630,10 @@ class MarketFilter:
             logger.info(f"Retrieved {len(markets)} markets from API in {pagination_duration:.2f}s "
                        f"({len(markets)/pagination_duration:.1f} markets/sec)")
 
+        if source:
+            from monitoring.telemetry_helpers import record_market_discovery_funnel
+            record_market_discovery_funnel(source, 'api_fetched', len(markets))
+
         # Step 2: Fetch from crypto events (these don't appear in /markets)
         if category == 'crypto' and include_crypto_events:
             event_markets = []
@@ -1652,6 +1667,15 @@ class MarketFilter:
             if logger:
                 logger.info(f"Added {len(new_markets)} unique event-based crypto markets "
                            f"in {event_duration:.2f}s")
+
+            if source:
+                from monitoring.telemetry_helpers import record_market_discovery_funnel
+                record_market_discovery_funnel(source, 'event_fetched', len(new_markets))
+                record_market_discovery_funnel(source, 'combined', len(markets))
+
+        elif source:
+            from monitoring.telemetry_helpers import record_market_discovery_funnel
+            record_market_discovery_funnel(source, 'combined', len(markets))
 
         # Step 3: Apply client-side filters
         # Filter by active status and expiry

@@ -457,7 +457,8 @@ class ShortExpiryTrader:
                 max_pages=3,
                 include_crypto_events=True,
                 crypto_event_days_ahead=1,
-                logger=logger
+                logger=logger,
+                source='short_expiry_ultra_short'
             )
             markets['ultra_short'] = self._filter_tradeable(ultra_short_markets, 'ultra_short')
 
@@ -489,7 +490,8 @@ class ShortExpiryTrader:
                 max_pages=3,
                 include_crypto_events=True,
                 crypto_event_days_ahead=3,
-                logger=logger
+                logger=logger,
+                source='short_expiry_short'
             )
             markets['short'] = self._filter_tradeable(short_markets, 'short')
 
@@ -521,7 +523,8 @@ class ShortExpiryTrader:
                 max_pages=3,
                 include_crypto_events=True,
                 crypto_event_days_ahead=7,
-                logger=logger
+                logger=logger,
+                source='short_expiry_medium'
             )
             markets['medium'] = self._filter_tradeable(medium_markets, 'medium')
 
@@ -590,18 +593,23 @@ class ShortExpiryTrader:
         This method delegates to the centralized quality filter.
         """
         from core.polymarket_client import MarketFilter
+        from monitoring.telemetry_helpers import record_market_discovery_funnel
 
         config = self.config['discovery']
+        source = f'short_expiry_{bucket}'
 
-        return MarketFilter.filter_by_quality(
+        filtered = MarketFilter.filter_by_quality(
             markets=markets,
             price_fetcher=self.price_fetcher,
             min_price=config['min_price'],
             max_price=config['max_price'],
             max_spread_pct=config['max_spread_pct'][bucket],
             check_last_trade=config.get('require_last_trade_price', False),
-            logger=logger
+            logger=logger,
+            source=source
         )
+        record_market_discovery_funnel(source, 'after_quality', len(filtered))
+        return filtered
 
     def _process_bucket(self, bucket: str, markets: List[Dict]):
         """Process markets in a bucket."""

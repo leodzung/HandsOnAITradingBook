@@ -299,6 +299,41 @@ def update_balance(bot_name: str, balance: float):
     telemetry.record_metric(f'balance_{bot_name}', balance, source=bot_name)
 
 
+def record_market_discovery_funnel(source: str, stage: str, count: int, metadata: dict = None):
+    """Record a market count at a specific discovery funnel stage."""
+    telemetry = get_telemetry()
+    if not telemetry:
+        return
+    telemetry.record_metric(
+        f"funnel_{source}_{stage}",
+        float(count),
+        metadata=metadata,
+        source=source
+    )
+
+
+def record_quality_rejections(source: str, rejection_counts: dict):
+    """Record quality filter rejection breakdown to telemetry."""
+    telemetry = get_telemetry()
+    if not telemetry:
+        return
+    mapping = {
+        'spread_too_wide': 'rejected_spread',
+        'no_market_id': 'rejected_no_id',
+        'no_entry_prices': 'rejected_no_prices',
+        'both_prices_none': 'rejected_both_none',
+        'price_out_of_range': 'rejected_out_of_range',
+        'no_last_trade': 'rejected_no_trade',
+    }
+    for key, metric_suffix in mapping.items():
+        count = rejection_counts.get(key, 0)
+        telemetry.record_metric(
+            f"funnel_{source}_{metric_suffix}",
+            float(count),
+            source=source
+        )
+
+
 # Example usage in a trading bot:
 """
 from monitoring.telemetry_helpers import (
