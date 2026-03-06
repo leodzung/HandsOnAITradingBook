@@ -271,7 +271,8 @@ constraints:
       description: Regex scan ensures no synthetic NO price patterns in bot files
   - id: ARCH-009
     title: Thread-safe shared state in orderbook modules
-    description: 'All mutable shared state in orderbook modules MUST be protected by locks.
+    description: 'All mutable shared state in orderbook modules MUST be protected
+      by locks.
 
       Stats MUST use _inc_stat() (not direct self.stats[key] += 1).
 
@@ -345,6 +346,111 @@ constraints:
       command: PYTHONPATH=src pytest tests/structural/test_orderbook_bounded_collections.py
         -v
       description: Verify all orderbook collections have size bounds
+  - id: ARCH-015
+    title: Arbitrage checks must use BID prices, not ASK
+    description: 'The short-expiry arbitrage rule (YES + NO < threshold) MUST use
+      BID prices from get_exit_prices(), NOT ASK prices from get_entry_prices().
+
+      Rationale: arbitrage profit is realised by selling into the BID. Checking ASK
+      prices inflates the total above 1.0 and can never produce a valid arb signal.
+
+      Any None BID price must short-circuit the check (skip, do not trade).
+
+      '
+    rationale: 'Bug fixed 2026-03-06 (C5): arbitrage used get_entry_prices() (ASK).
+
+      YES_ask + NO_ask is typically 1.03-1.10 due to spread, so the check
+      "if total < 0.98" could never fire — pure dead code with wrong prices.
+
+      '
+    status: enforced
+    priority: critical
+    implemented_date: '2026-03-06'
+    validation:
+    - type: structural_test
+      command: PYTHONPATH=src pytest tests/structural/test_arbitrage_bid_prices.py -v
+      description: Verify arbitrage check calls get_exit_prices(), not get_entry_prices()
+    forbidden_patterns:
+    - 'get_entry_prices.*arb'
+    - '# arbitrage.*get_entry'
+    files_to_check:
+    - src/bots/trader_short_expiry.py
+  - id: ARCH-016
+    title: Feature extractors must return None for uncomputable markets; callers must skip
+    description: 'Feature extractor methods (TimeDecayFeatures.extract, OrderbookFeatures.extract)
+      MUST return None when they cannot compute meaningful features (missing end_date,
+      empty orderbook). Defaulting to plausible-looking values (e.g. +24h expiry,
+      mid_price=0.5) is FORBIDDEN because it silently poisons ML training data.
+
+      Callers MUST check for None/empty DataFrame and skip the market rather than
+      trading on fabricated features.
+
+      '
+    rationale: 'Bugs fixed 2026-03-06 (C4, H4):
+
+      - TimeDecayFeatures defaulted missing end_date to now+24h — wrong expiry bucket.
+
+      - OrderbookFeatures returned mid_price=0.5 for empty books — pollutes ML data.
+
+      Fabricated features look valid and enter the training dataset, degrading models.
+
+      '
+    status: enforced
+    priority: critical
+    implemented_date: '2026-03-06'
+    validation:
+    - type: structural_test
+      command: PYTHONPATH=src pytest tests/structural/test_feature_none_returns.py -v
+      description: Verify feature extractors return None for missing/empty inputs
+    telemetry:
+    - metric: features_skipped_missing_data
+      threshold: null
+      alert: info
+      description: Count of markets skipped due to uncomputable features (expected non-zero)
+  - id: ARCH-017
+    title: Position loop must use .get() for all DB-derived fields and validate before use
+    description: 'In _check_positions(), every field read from a position dict MUST
+      use .get() (never direct dict access) and MUST validate for None before use:
+
+      - entry_time: skip with WARNING if None
+
+      - hours_to_expiry_at_entry: force-close with _execute_close() if None
+
+      - size: force-close with _execute_close() if <= 0 or None
+
+      - current_price: skip exit check with WARNING if None
+
+      Direct dict access (pos["field"]) is FORBIDDEN for optional DB columns.
+
+      '
+    rationale: 'Bugs fixed 2026-03-06 (C1, C2, C3, H1):
+
+      - C1: pos["entry_time"] crashed for legacy positions missing the field.
+
+      - C2: current_price=None passed to should_exit() caused TypeError.
+
+      - C3: hours_to_expiry=None defaulted to 0, skipping expiry check — position stuck open.
+
+      - H1: size=0 produced wrong P&L (tokens_held = 0/0 = ZeroDivisionError).
+
+      SQLite rows can have NULL for any nullable column; direct access is always unsafe.
+
+      '
+    status: enforced
+    priority: critical
+    implemented_date: '2026-03-06'
+    validation:
+    - type: structural_test
+      command: PYTHONPATH=src pytest tests/structural/test_position_loop_field_access.py -v
+      description: AST scan verifies no direct pos["field"] for optional columns in _check_positions
+    forbidden_patterns:
+    - 'pos\[.entry_time.\]'
+    - 'pos\[.hours_to_expiry_at_entry.\]'
+    - 'pos\[.size.\]'
+    files_to_check:
+    - src/bots/trader_short_expiry.py
+    - src/bots/trader.py
+    - src/bots/trader_price_levels.py
   - id: ARCH-014
     title: Code quality standards in orderbook modules
     description: 'Orderbook modules MUST NOT contain bare except clauses, print()
@@ -853,6 +959,59 @@ constraints:
       command: PYTHONPATH=src pytest tests/structural/test_api_error_distinction.py
         -v
       description: Verify API failures use 'api_error' rejection_stage
+  - id: RISK-015
+    title: Positions with missing expiry data must be force-closed immediately
+    description: 'If hours_to_expiry_at_entry is NULL/None in the database for an
+      open position, the bot MUST force-close that position (via _execute_close or
+      equivalent) rather than skip it or default to 0. A position with unknown expiry
+      can never be safely monitored and will remain open indefinitely.
+
+      '
+    rationale: 'Bug fixed 2026-03-06 (C3): hours_to_expiry = pos.get("hours_to_expiry_at_entry") or 0
+
+      evaluated to 0 when the column was NULL. The check "if hours_to_expiry > 0"
+      was False, so the expiry branch was skipped entirely. Position stayed open
+      forever, never checked for stop-loss, take-profit, or expiry.
+
+      '
+    status: enforced
+    priority: critical
+    implemented_date: '2026-03-06'
+    validation:
+    - type: behavioral_test
+      command: PYTHONPATH=src pytest tests/behavioral/test_missing_expiry_force_close.py -v
+      description: Insert position with NULL hours_to_expiry; verify force-close is triggered
+    telemetry:
+    - metric: force_closes_missing_expiry
+      threshold: null
+      alert: warning
+      description: Count of force-closes due to missing expiry data (should be 0 after clean DB)
+  - id: RISK-016
+    title: Current price must be validated non-None before any exit logic
+    description: 'After fetching exit prices from PriceFetcher, the specific outcome
+      price MUST be checked for None before being passed to should_exit(), P&L
+      calculations, or any arithmetic. A None price must log a WARNING and skip
+      the exit check for that cycle (not crash the position loop).
+
+      '
+    rationale: 'Bug fixed 2026-03-06 (C2): get_outcome_price() returns None when the
+      token has no BID in the orderbook (illiquid outcome). Passing None to
+      should_exit() caused TypeError: unsupported operand type(s) for -: float and NoneType,
+      crashing the entire _check_positions() loop and leaving all positions unchecked.
+
+      '
+    status: enforced
+    priority: critical
+    implemented_date: '2026-03-06'
+    validation:
+    - type: structural_test
+      command: PYTHONPATH=src pytest tests/structural/test_price_none_guard.py -v
+      description: Verify None price guard exists before should_exit() calls in position loops
+    telemetry:
+    - metric: skipped_exit_checks_no_price
+      threshold: null
+      alert: info
+      description: Count of exit checks skipped due to missing price (expected non-zero in illiquid markets)
   - id: RISK-010
     title: Input validation for all external data
     description: 'All data from external sources (API, WebSocket, user input) MUST
@@ -1253,6 +1412,149 @@ operations:
     threshold: 2
     alert: critical
     description: Alert if retraining fails 2+ times consecutively
+- id: OPS-006
+  title: SQLite databases must use WAL journal mode
+  description: 'All SQLite databases in this project MUST be initialized with
+    PRAGMA journal_mode=WAL. DELETE journal mode is FORBIDDEN.
+
+    WAL provides:
+    - Concurrent readers while writing (no reader-blocks-writer)
+    - Crash-safe partial writes (WAL is atomic)
+    - Better throughput under simultaneous read/write load from multiple services
+
+    The _checkpoint_db() method MUST use PRAGMA wal_checkpoint(TRUNCATE) rather
+    than PRAGMA optimize.
+
+    '
+  rationale: 'Bug fixed 2026-03-06 (H2): gdelt_collector.py used DELETE journal mode
+    with a misleading comment "more compatible with macOS than WAL". This caused
+    the GDELT DB corruption incident (backup file still present). WAL mode prevents
+    the partial-write corruption that DELETE mode allows when the process is killed
+    mid-write.
+
+    '
+  status: enforced
+  priority: high
+  implemented_date: '2026-03-06'
+  validation:
+  - type: structural_test
+    command: PYTHONPATH=src pytest tests/structural/test_wal_journal_mode.py -v
+    description: Grep all SQLite init code; verify journal_mode=WAL, no journal_mode=DELETE
+  forbidden_patterns:
+  - 'journal_mode=DELETE'
+  - 'journal_mode=TRUNCATE'
+  - 'journal_mode=PERSIST'
+  files_to_check:
+  - src/collectors/gdelt_collector.py
+  - src/collectors/alchemy_collector.py
+  - src/core/position_manager_v2.py
+  telemetry:
+  - metric: db_journal_mode_violations
+    threshold: 0
+    alert: critical
+    description: Count of databases not using WAL mode
+- id: OPS-007
+  title: In-memory cooldown/cache dicts must be bounded with periodic cleanup
+  description: 'Any in-memory dict used for cooldowns, caches, or rate-limiting
+    (e.g. market_cooldowns, market_cache) MUST be purged of expired entries at least
+    once per main cycle. The purge MUST use a TTL derived from config, not a
+    hardcoded constant.
+
+    Unbounded dicts that grow monotonically are FORBIDDEN in long-running bots.
+
+    '
+  rationale: 'Bug fixed 2026-03-06 (M3): market_cooldowns in trader_short_expiry.py
+    accumulated one entry per closed position, never evicted. In a 30-day run
+    at ~10 closures/day this would reach 300 entries — trivial for memory but
+    indicative of a leak pattern. The same dict pattern elsewhere (market_cache)
+    is higher risk because it stores full market data.
+
+    '
+  status: enforced
+  priority: medium
+  implemented_date: '2026-03-06'
+  validation:
+  - type: structural_test
+    command: PYTHONPATH=src pytest tests/structural/test_bounded_dicts.py -v
+    description: Verify cooldown/cache dicts have cleanup code in the main loop
+  telemetry:
+  - metric: market_cooldowns_size
+    threshold: 500
+    alert: warning
+    description: Alert if cooldowns dict exceeds 500 entries (likely cleanup not working)
+- id: OPS-008
+  title: Fallback logic must log WARNING when activated
+  description: 'Any silent fallback that substitutes a default value for a missing
+    or unexpected value MUST log at WARNING level (not DEBUG or INFO) including:
+    the field name, the position/market identifier, the fallback value chosen,
+    and ideally the source (DB column, metadata, hardcoded).
+
+    Silent fallbacks that apply wrong parameters without logging are FORBIDDEN.
+
+    '
+  rationale: 'Bug found 2026-03-06 (M1): bucket column missing from old positions
+    silently fell back to "short" without any log entry. This applied short-bucket
+    TP/SL thresholds to ultra_short and medium positions, producing systematically
+    wrong exit behaviour that was invisible in logs.
+
+    '
+  status: enforced
+  priority: medium
+  implemented_date: '2026-03-06'
+  validation:
+  - type: structural_test
+    command: PYTHONPATH=src pytest tests/structural/test_fallback_logging.py -v
+    description: Verify fallback branches in _check_positions use logger.warning, not logger.debug
+  telemetry:
+  - metric: bucket_fallback_warnings
+    threshold: null
+    alert: info
+    description: Count of positions that triggered bucket fallback (should drop to 0 as old positions close)
+- id: OPS-009
+  title: No hardcoded credentials in config files or source code
+  description: 'API tokens, bot tokens, private keys, and chat IDs MUST NOT be
+    hardcoded in:
+    - JSON config files (config/*.json)
+    - Python source files
+    - Docker Compose environment sections
+
+    All credentials MUST be read from environment variables at runtime. The config
+    file MAY contain the env var name as documentation, but the actual secret value
+    MUST be empty or a placeholder (e.g. "").
+
+    Bots MUST prefer the environment variable over any config-file value:
+      os.environ.get("SECRET_NAME", config.get("field", ""))
+
+    '
+  rationale: 'Bug fixed 2026-03-06 (L2): config/config_short_expiry.json contained
+    a live Telegram bot token in plaintext. Any git clone, log grep, or docker
+    inspect would expose the credential. Secrets in config files also cannot be
+    rotated without a code change and commit.
+
+    '
+  status: enforced
+  priority: critical
+  implemented_date: '2026-03-06'
+  validation:
+  - type: structural_test
+    command: PYTHONPATH=src pytest tests/structural/test_no_hardcoded_credentials.py -v
+    description: Regex scan config/*.json and src/ for patterns matching API keys, bot tokens
+  - type: pre_commit_hook
+    description: git-secrets or similar pre-commit hook to block credential commits
+  forbidden_patterns:
+  - '\d{8,}:[A-Za-z0-9_-]{35}'
+  - 'bot_token.*[A-Za-z0-9]{35}'
+  files_to_check:
+  - config/config_short_expiry.json
+  - config/config.json
+  - config/config_price_levels.json
+  - config/config_arbitrage.json
+  - docker-compose.yml
+  telemetry:
+  - metric: credential_scan_violations
+    threshold: 0
+    alert: critical
+    description: Count of detected hardcoded credentials (must be zero at all times)
 - id: OPS-005
   title: Database integrity check at startup
   description: 'All SQLite databases used in critical-path operations MUST run
@@ -1282,10 +1584,10 @@ operations:
     alert: critical
     description: Number of databases that failed integrity check at startup
 metadata:
-  last_validated: '2026-03-01T12:00:11.288498'
+  last_validated: '2026-03-06T11:00:11.147163'
   validation_status: FAIL
-  total_constraints: 35
-  enforced_constraints: 35
+  total_constraints: 44
+  enforced_constraints: 44
   proposed_constraints: 0
   contact:
     maintainer: Trading System Team
