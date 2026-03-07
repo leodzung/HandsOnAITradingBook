@@ -353,6 +353,11 @@ def load_positions(db_path: Path) -> pd.DataFrame:
         df = pd.read_sql_query("SELECT * FROM positions", conn)
         conn.close()
 
+        # Normalize status to lowercase so filters like status == 'open' work
+        # regardless of whether the DB stores 'OPEN' or 'open'
+        if 'status' in df.columns:
+            df['status'] = df['status'].str.lower()
+
         # Parse metadata
         if 'metadata' in df.columns:
             df['meta'] = df['metadata'].apply(lambda x: json.loads(x) if x else {})
