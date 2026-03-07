@@ -212,7 +212,9 @@ class OrderBookWebSocket:
 
     # Data staleness monitoring (workaround for Polymarket server-side freeze bug)
     # See: https://github.com/Polymarket/real-time-data-client/issues/26
-    DATA_STALENESS_TIMEOUT = 300  # seconds (5 minutes) - reconnect if no data messages
+    DATA_STALENESS_TIMEOUT = 120  # seconds — per Polymarket issue #292 recommendation (was 300)
+    DATA_STALENESS_CHECK_INTERVAL = 15  # seconds — check twice as often as before (was 30)
+    MAX_INSTRUMENTS_PER_CONNECTION = 500  # Polymarket server-side hard limit
 
     def __init__(self, on_book_update: Optional[Callable[[OrderBook], None]] = None,
                  on_arb_signal: Optional[Callable[[ArbitrageSignal], None]] = None):
@@ -317,8 +319,9 @@ class OrderBookWebSocket:
         # If already connected, send subscription message
         if self._connected and self._ws:
             msg = json.dumps({
+                "type": "market",
                 "assets_ids": asset_ids,
-                "operation": "subscribe"
+                "custom_feature_enabled": True
             })
             try:
                 self._ws.send(msg)
@@ -514,7 +517,7 @@ class OrderBookWebSocket:
         while connection remains open. See: https://github.com/Polymarket/real-time-data-client/issues/26
         """
         while self._running:
-            time.sleep(30)  # Check every 30 seconds
+            time.sleep(self.DATA_STALENESS_CHECK_INTERVAL)
 
             if self._connected:
                 time_since_last_data = time.time() - self._last_data_message_time
@@ -546,14 +549,24 @@ class OrderBookWebSocket:
 
         logger.info("WebSocket connected successfully (backoff reset)")
 
-        # Send initial subscription (same format as dynamic subscribe())
-        if self._subscribed_assets:
+        # Send initial subscription with thread-safe snapshot
+        with self._lock:
+            assets_snapshot = list(self._subscribed_assets)
+
+        if assets_snapshot:
+            if len(assets_snapshot) > self.MAX_INSTRUMENTS_PER_CONNECTION:
+                logger.warning(
+                    f"Subscribing to {len(assets_snapshot)} instruments, "
+                    f"which exceeds Polymarket's {self.MAX_INSTRUMENTS_PER_CONNECTION} "
+                    f"per-connection limit. Initial book snapshots may not arrive."
+                )
             msg = json.dumps({
-                "assets_ids": list(self._subscribed_assets),
-                "type": "market"
+                "type": "market",
+                "assets_ids": assets_snapshot,
+                "custom_feature_enabled": True
             })
             ws.send(msg)
-            logger.info(f"Subscribed to {len(self._subscribed_assets)} assets via initial handshake")
+            logger.info(f"Subscribed to {len(assets_snapshot)} assets via initial handshake")
 
     def _on_message(self, ws, message: str) -> None:
         """Handle incoming WebSocket message."""
@@ -590,6 +603,7 @@ class OrderBookWebSocket:
             self._handle_price_changes(data)
             self._inc_stat('price_changes')
         elif event_type == 'price_change':
+            self._handle_book_update(data)  # same schema as book event
             self._inc_stat('price_changes')
         # Ignore other event types for now
 
