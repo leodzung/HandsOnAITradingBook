@@ -438,8 +438,10 @@ class TradeExecutor:
         return metadata
 
     # Exit reasons where closing is mandatory (no slippage check)
+    # stop_loss/take_profit use market orders in real trading — fill regardless of orderbook depth
     FORCED_EXIT_REASONS = frozenset({
-        'expiry_time', 'market_closed', 'pre_expiry_exit', 'expiry', 'time_exit'
+        'expiry_time', 'market_closed', 'pre_expiry_exit', 'expiry', 'time_exit',
+        'stop_loss', 'take_profit'
     })
 
     def execute_close_trade(

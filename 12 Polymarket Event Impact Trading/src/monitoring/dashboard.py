@@ -75,6 +75,18 @@ ALCHEMY_DB = DATA_DIR / "alchemy_trades.db"
 TRAINING_DB = DATA_DIR / "training_history.db"
 
 
+def get_circuit_breaker_status() -> dict:
+    """Read persisted circuit breaker state for the short-expiry bot."""
+    path = DATA_DIR / "circuit_breaker_short_expiry.json"
+    try:
+        if path.exists():
+            with open(path, 'r') as f:
+                return json.load(f)
+    except Exception:
+        pass
+    return {"active": False}
+
+
 def get_data_collection_stats() -> dict:
     """Get data collection progress stats from separate collector databases."""
     stats = {
@@ -883,6 +895,31 @@ with tab2:
         st.success("✅ Short Expiry Bot: RUNNING")
     else:
         st.warning("⚠️ Short Expiry Bot: STOPPED")
+
+    # Circuit breaker status
+    cb = get_circuit_breaker_status()
+    if cb.get("active"):
+        triggered_at = cb.get("triggered_at", "")
+        resume_at = cb.get("resume_at", "")
+        losses = cb.get("consecutive_losses", "?")
+        cooldown = cb.get("cooldown_hours", 4.0)
+        # Calculate remaining time
+        remaining_str = ""
+        if resume_at:
+            try:
+                resume_dt = datetime.fromisoformat(resume_at)
+                now_utc = datetime.now(resume_dt.tzinfo)
+                remaining = max(0, (resume_dt - now_utc).total_seconds() / 3600)
+                remaining_str = f" — **{remaining:.1f}h remaining**"
+            except Exception:
+                pass
+        st.error(
+            f"🚨 **CIRCUIT BREAKER ACTIVE** | {losses} consecutive losses | "
+            f"{cooldown:.0f}h cooldown{remaining_str} | "
+            f"Resumes: {resume_at[:16].replace('T', ' ')} UTC"
+        )
+    elif cb.get("updated_at"):
+        st.info("✅ Circuit breaker: inactive")
 
     # Balance
     col1, col2, col3 = st.columns(3)

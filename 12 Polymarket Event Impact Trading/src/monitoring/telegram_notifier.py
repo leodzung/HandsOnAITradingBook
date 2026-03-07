@@ -6,7 +6,7 @@ Sends trade alerts to Telegram chat.
 import requests
 import logging
 from typing import Dict, Optional
-from datetime import datetime
+from datetime import datetime, timedelta
 
 logger = logging.getLogger(__name__)
 
@@ -167,23 +167,26 @@ class TelegramNotifier:
             cooldown_hours: Hours until trading resumes
             bot_name: Name of the trading bot
         """
+        now = datetime.now()
+        resume_time = now + timedelta(hours=cooldown_hours)
         message = f"<b>CIRCUIT BREAKER ACTIVATED</b> - {bot_name}\n\n"
-        message += f"Trading paused after {consecutive_losses} consecutive losses.\n"
-        message += f"Will resume in {cooldown_hours:.1f} hours.\n"
-        message += f"\n<i>Time: {datetime.now().strftime('%Y-%m-%d %H:%M')}</i>"
+        message += f"<b>Consecutive losses:</b> {consecutive_losses}\n"
+        message += f"<b>Cooldown:</b> {cooldown_hours:.1f} hours\n"
+        message += f"<b>Trading resumes at:</b> {resume_time.strftime('%Y-%m-%d %H:%M')} UTC\n"
+        message += f"\n<i>Triggered: {now.strftime('%Y-%m-%d %H:%M')} UTC</i>"
 
         self.send_message(message)
 
     def notify_circuit_breaker_reset(self, bot_name: str = "Trading Bot"):
         """
-        Send notification when circuit breaker is reset.
+        Send notification when circuit breaker cooldown expires and trading resumes.
 
         Args:
             bot_name: Name of the trading bot
         """
         message = f"<b>CIRCUIT BREAKER RESET</b> - {bot_name}\n\n"
-        message += "Trading has resumed.\n"
-        message += f"\n<i>Time: {datetime.now().strftime('%Y-%m-%d %H:%M')}</i>"
+        message += "Cooldown period elapsed. Trading has resumed.\n"
+        message += f"\n<i>Reset: {datetime.now().strftime('%Y-%m-%d %H:%M')} UTC</i>"
 
         self.send_message(message)
 

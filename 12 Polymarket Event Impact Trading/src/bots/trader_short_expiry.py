@@ -373,6 +373,25 @@ class ShortExpiryTrader:
         with open(balance_file, 'w') as f:
             json.dump({'balance': balance, 'updated': datetime.now(timezone.utc).isoformat()}, f)
 
+    def _save_circuit_breaker_status(self):
+        """Persist circuit breaker state so the dashboard can display it."""
+        cb = self.risk_manager
+        cooldown_hours = cb.config['risk_management'].get('circuit_breaker_cooldown_hours', 4.0)
+        triggered_at = cb.circuit_breaker_triggered_at
+        resume_at = (triggered_at + timedelta(hours=cooldown_hours)) if triggered_at else None
+        status = {
+            'active': triggered_at is not None,
+            'consecutive_losses': cb.consecutive_losses,
+            'triggered_at': triggered_at.isoformat() if triggered_at else None,
+            'cooldown_hours': cooldown_hours,
+            'resume_at': resume_at.isoformat() if resume_at else None,
+            'updated_at': datetime.now(timezone.utc).isoformat(),
+        }
+        path = 'data/circuit_breaker_short_expiry.json'
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, 'w') as f:
+            json.dump(status, f, indent=2)
+
     def run(self):
         """Main loop."""
         logger.info("Starting main trading loop")
@@ -613,8 +632,17 @@ class ShortExpiryTrader:
 
     def _process_bucket(self, bucket: str, markets: List[Dict]):
         """Process markets in a bucket."""
-        # Check position limits
-        if not self.risk_manager.can_open_position(bucket, self.position_manager):
+        # Check position limits (also detects circuit breaker reset)
+        prev_active = self.risk_manager.circuit_breaker_triggered_at is not None
+        can_open = self.risk_manager.can_open_position(bucket, self.position_manager)
+        now_active = self.risk_manager.circuit_breaker_triggered_at is not None
+
+        if prev_active and not now_active:
+            # Cooldown just expired — save state and notify
+            self._save_circuit_breaker_status()
+            self.telegram.notify_circuit_breaker_reset(bot_name="Short-Expiry Trader")
+
+        if not can_open:
             return
 
         for market in markets:
@@ -1316,11 +1344,13 @@ class ShortExpiryTrader:
 
                     # Check if circuit breaker was just triggered
                     if not was_active and is_now_active:
+                        cooldown_hours = self.risk_manager.config['risk_management'].get('circuit_breaker_cooldown_hours', 4.0)
                         self.telegram.notify_circuit_breaker(
                             consecutive_losses=self.risk_manager.consecutive_losses,
-                            cooldown_hours=4.0,  # Default cooldown
+                            cooldown_hours=cooldown_hours,
                             bot_name="Short-Expiry Trader"
                         )
+                        self._save_circuit_breaker_status()
 
                     # Send Telegram notification
                     self.telegram.notify_position_closed(
