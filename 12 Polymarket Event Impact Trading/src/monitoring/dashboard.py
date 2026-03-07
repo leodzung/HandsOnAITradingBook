@@ -638,7 +638,7 @@ with col4:
 st.divider()
 
 # Tabs for different views
-tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs(["📊 Positions", "⚡ Short Expiry", "📈 Performance", "🔄 Arbitrage", "📦 Data Collection", "⚙️ Settings", "🔍 Feature Drift"])
+tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8 = st.tabs(["📊 Positions", "⚡ Short Expiry", "📈 Performance", "🔄 Arbitrage", "📦 Data Collection", "⚙️ Settings", "🔍 Feature Drift", "🔭 Market Funnel"])
 
 with tab1:
     st.subheader("Open Positions")
@@ -1812,6 +1812,140 @@ with tab7:
         st.info("Install required dependencies or train ML models to enable drift detection.")
     except Exception as e:
         st.error(f"Error loading drift detection: {e}")
+
+with tab8:
+    st.subheader("Market Discovery Funnel")
+    st.caption("Tracks how many markets survive each filter stage per bot per discovery cycle.")
+
+    TELEMETRY_DB = DATA_DIR / "telemetry.db"
+
+    FUNNEL_STAGES = {
+        'event_trader': ['api_fetched', 'event_fetched', 'combined', 'after_category', 'after_quality'],
+        'short_expiry_ultra_short': ['api_fetched', 'event_fetched', 'combined', 'after_quality'],
+        'short_expiry_short': ['api_fetched', 'event_fetched', 'combined', 'after_quality'],
+        'short_expiry_medium': ['api_fetched', 'event_fetched', 'combined', 'after_quality'],
+        'price_level_trader': ['api_fetched', 'event_fetched', 'combined', 'after_expiry', 'after_quality'],
+    }
+
+    REJECTION_SUFFIXES = [
+        'rejected_spread', 'rejected_no_id', 'rejected_no_prices',
+        'rejected_both_none', 'rejected_out_of_range', 'rejected_no_trade',
+    ]
+
+    def load_funnel_metrics(hours_back: int = 24) -> pd.DataFrame:
+        if not TELEMETRY_DB.exists():
+            return pd.DataFrame()
+        try:
+            conn = sqlite3.connect(str(TELEMETRY_DB))
+            since = (datetime.utcnow() - timedelta(hours=hours_back)).isoformat()
+            df = pd.read_sql_query(
+                "SELECT metric_name, metric_value, timestamp FROM metrics "
+                "WHERE metric_name LIKE 'funnel_%' AND timestamp >= ? "
+                "ORDER BY timestamp DESC",
+                conn, params=(since,)
+            )
+            conn.close()
+            return df
+        except Exception as e:
+            st.error(f"Could not load telemetry: {e}")
+            return pd.DataFrame()
+
+    hours_back = st.slider("Look-back window (hours)", 1, 168, 24, key="funnel_hours")
+    df_funnel = load_funnel_metrics(hours_back)
+
+    if df_funnel.empty:
+        st.info("No funnel metrics yet — wait for the next discovery cycle (a few minutes after bot start).")
+    else:
+        df_funnel['timestamp'] = pd.to_datetime(df_funnel['timestamp'])
+        df_funnel['source'] = df_funnel['metric_name'].str.extract(r'^funnel_([^_]+(?:_[^_]+)*)_(?:api_fetched|event_fetched|combined|after_\w+|rejected_\w+)$')[0]
+        df_funnel['stage'] = df_funnel['metric_name'].str.split('_').str[-1]
+
+        # ── Latest snapshot per stage ──────────────────────────────────────
+        st.markdown("### Latest Funnel Snapshot")
+        latest = df_funnel.groupby('metric_name').first().reset_index()
+
+        for source, stages in FUNNEL_STAGES.items():
+            stage_metrics = [f"funnel_{source}_{s}" for s in stages]
+            rows = latest[latest['metric_name'].isin(stage_metrics)].set_index('metric_name')
+            if rows.empty:
+                continue
+
+            counts = [int(rows.loc[m, 'metric_value']) if m in rows.index else None for m in stage_metrics]
+            labels = stages
+
+            # Build funnel chart
+            fig = go.Figure(go.Funnel(
+                y=labels,
+                x=counts,
+                textinfo="value+percent initial",
+                marker_color=['#1f77b4', '#2ca02c', '#ff7f0e', '#9467bd', '#d62728'][:len(labels)]
+            ))
+            fig.update_layout(
+                title=source.replace('_', ' ').title(),
+                height=300,
+                margin=dict(l=10, r=10, t=40, b=10)
+            )
+            st.plotly_chart(fig, use_container_width=True)
+
+        # ── Rejection breakdown ────────────────────────────────────────────
+        st.markdown("### Quality Filter Rejection Breakdown")
+        rejection_names = {
+            'rejected_spread': 'Spread too wide',
+            'rejected_no_id': 'No market ID',
+            'rejected_no_prices': 'No entry prices',
+            'rejected_both_none': 'Both prices None',
+            'rejected_out_of_range': 'Price out of range',
+            'rejected_no_trade': 'No last trade',
+        }
+        rej_rows = []
+        for source in FUNNEL_STAGES:
+            for suffix, label in rejection_names.items():
+                metric = f"funnel_{source}_{suffix}"
+                row = latest[latest['metric_name'] == metric]
+                if not row.empty:
+                    rej_rows.append({
+                        'source': source.replace('_', ' ').title(),
+                        'reason': label,
+                        'count': int(row.iloc[0]['metric_value']),
+                        'last_seen': row.iloc[0]['timestamp'],
+                    })
+        if rej_rows:
+            rej_df = pd.DataFrame(rej_rows)
+            fig_rej = px.bar(
+                rej_df[rej_df['count'] > 0],
+                x='source', y='count', color='reason', barmode='stack',
+                labels={'source': 'Bot', 'count': 'Rejections', 'reason': 'Reason'},
+                title='Quality filter rejections by bot (latest cycle)',
+                height=350
+            )
+            st.plotly_chart(fig_rej, use_container_width=True)
+        else:
+            st.info("No rejection data yet.")
+
+        # ── Time-series: after_quality over time ──────────────────────────
+        st.markdown("### Tradeable Market Count Over Time")
+        aq_metrics = [f"funnel_{s}_after_quality" for s in FUNNEL_STAGES]
+        ts_df = df_funnel[df_funnel['metric_name'].isin(aq_metrics)].copy()
+        if not ts_df.empty:
+            ts_df['bot'] = ts_df['metric_name'].str.replace('funnel_', '').str.replace('_after_quality', '').str.replace('_', ' ').str.title()
+            fig_ts = px.line(
+                ts_df, x='timestamp', y='metric_value', color='bot',
+                labels={'metric_value': 'Markets passing all filters', 'timestamp': 'Time', 'bot': 'Bot'},
+                title='Markets reaching after_quality over time',
+                height=350
+            )
+            st.plotly_chart(fig_ts, use_container_width=True)
+        else:
+            st.info("Not enough history for time-series yet.")
+
+        # ── Raw data ──────────────────────────────────────────────────────
+        with st.expander("Raw funnel data"):
+            st.dataframe(
+                df_funnel[['metric_name', 'metric_value', 'timestamp']].rename(columns={
+                    'metric_name': 'Metric', 'metric_value': 'Value', 'timestamp': 'Time'
+                }),
+                use_container_width=True
+            )
 
 # Footer
 st.divider()
