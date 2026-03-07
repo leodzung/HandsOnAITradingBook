@@ -18,6 +18,9 @@ from features.common_features import OrderbookFeatures, VolumeFeatures
 class SentimentAnalyzer:
     """Analyze sentiment of text using various methods."""
 
+    # Cached transformer pipelines (loaded once per process)
+    _pipeline_cache: Dict[str, object] = {}
+
     # Simple sentiment lexicons (can be replaced with transformers)
     POSITIVE_WORDS = {
         'good', 'great', 'excellent', 'amazing', 'wonderful', 'fantastic',
@@ -66,8 +69,8 @@ class SentimentAnalyzer:
             'negative_ratio': negative_count / max(total, 1)
         }
 
-    @staticmethod
-    def analyze_sentiment_transformers(text: str, model_name: str = 'finbert') -> Dict[str, float]:
+    @classmethod
+    def analyze_sentiment_transformers(cls, text: str, model_name: str = 'finbert') -> Dict[str, float]:
         """
         Transformer-based sentiment analysis (requires transformers library).
 
@@ -81,16 +84,18 @@ class SentimentAnalyzer:
         try:
             from transformers import pipeline
 
-            if model_name == 'finbert':
-                # Use FinBERT for financial sentiment
-                sentiment_pipeline = pipeline(
-                    "sentiment-analysis",
-                    model="ProsusAI/finbert",
-                    tokenizer="ProsusAI/finbert"
-                )
-            else:
-                sentiment_pipeline = pipeline("sentiment-analysis")
+            if model_name not in cls._pipeline_cache:
+                if model_name == 'finbert':
+                    # Use FinBERT for financial sentiment; load once and cache
+                    cls._pipeline_cache[model_name] = pipeline(
+                        "sentiment-analysis",
+                        model="ProsusAI/finbert",
+                        tokenizer="ProsusAI/finbert"
+                    )
+                else:
+                    cls._pipeline_cache[model_name] = pipeline("sentiment-analysis")
 
+            sentiment_pipeline = cls._pipeline_cache[model_name]
             result = sentiment_pipeline(text[:512])[0]  # Truncate to model limit
 
             # Map label to score
