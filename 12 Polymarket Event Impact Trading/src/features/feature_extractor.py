@@ -196,10 +196,12 @@ class MarketFeatureExtractor:
         """
         # Use centralized implementation
         features = OrderbookFeatures.extract(orderbook, return_best_bid_ask=True)
+        if features is None:
+            features = {}
 
         # Calculate bid_ask_imbalance (event trader specific)
-        bids = orderbook.get('bids', [])
-        asks = orderbook.get('asks', [])
+        bids = orderbook.get('bids', []) if orderbook else []
+        asks = orderbook.get('asks', []) if orderbook else []
 
         if bids and asks:
             best_bid_size = float(bids[0]['size']) if isinstance(bids[0], dict) else float(bids[0][1])
