@@ -69,10 +69,17 @@ class OrderbookFeatures:
         bids = orderbook.get('bids', [])
         asks = orderbook.get('asks', [])
 
-        # Handle empty orderbook — return None so callers skip illiquid markets
+        # Handle empty orderbook — return zero-filled dict so callers never crash on None
         if not bids or not asks:
-            logger.debug("Empty orderbook, returning None (illiquid market)")
-            return None
+            logger.debug("Empty orderbook — returning zero-filled features (illiquid market)")
+            zero_features = {
+                'spread': 0.0, 'spread_pct': 0.0, 'mid_price': 0.5,
+                'bid_depth_5': 0.0, 'ask_depth_5': 0.0, 'depth_imbalance': 0.0
+            }
+            if return_best_bid_ask:
+                zero_features['best_bid'] = 0.0
+                zero_features['best_ask'] = 0.0
+            return zero_features
 
         # Extract best bid/ask (handle both dict and array formats)
         # Dict format: {'price': '0.45', 'size': '1000'}
@@ -305,8 +312,10 @@ def extract_all_common_features(
     """
     features = {}
 
-    # Orderbook features
-    features.update(OrderbookFeatures.extract(orderbook, return_best_bid_ask))
+    # Orderbook features (extract() now returns zero-filled dict on empty orderbook)
+    ob_features = OrderbookFeatures.extract(orderbook, return_best_bid_ask)
+    if ob_features is not None:
+        features.update(ob_features)
 
     # Volume features
     features.update(VolumeFeatures.extract(market))

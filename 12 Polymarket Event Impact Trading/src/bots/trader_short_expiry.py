@@ -17,6 +17,7 @@ Phase 3: Ensemble with cross-market signals
 
 import json
 import logging
+import pickle
 import signal
 import time
 import sys
@@ -24,6 +25,7 @@ import os
 import traceback
 from datetime import datetime, timezone, timedelta
 from typing import Dict, List, Optional, Tuple
+import numpy as np
 import pandas as pd
 
 # Add parent directory to path
@@ -56,10 +58,13 @@ logger = logging.getLogger(__name__)
 class ShortExpiryRiskManager:
     """Risk management for short-expiry trading."""
 
+    BUCKETS = ('ultra_short', 'short', 'medium')
+
     def __init__(self, config: Dict):
         self.config = config
-        self.consecutive_losses = 0
-        self.circuit_breaker_triggered_at: Optional[datetime] = None
+        # Per-bucket circuit breaker state (independent cooldowns per bucket)
+        self.consecutive_losses: Dict[str, int] = {b: 0 for b in self.BUCKETS}
+        self.circuit_breaker_triggered_at: Dict[str, Optional[datetime]] = {b: None for b in self.BUCKETS}
 
     @staticmethod
     def calculate_hours_remaining(entry_time: datetime, hours_to_expiry_at_entry: float) -> float:
@@ -136,34 +141,35 @@ class ShortExpiryRiskManager:
         if bucket_count >= self.config['position_limits']['max_positions_per_bucket'][bucket]:
             return False
 
-        # Check circuit breaker with cooldown
+        # Check per-bucket circuit breaker with independent cooldowns
         cb_losses = self.config['risk_management']['circuit_breaker_losses']
-        if self.consecutive_losses >= cb_losses:
+        bucket_losses = self.consecutive_losses.get(bucket, 0)
+        if bucket_losses >= cb_losses:
             cooldown_hours = self.config['risk_management'].get('circuit_breaker_cooldown_hours', 4.0)
 
-            # Record when it first triggered
-            if self.circuit_breaker_triggered_at is None:
-                self.circuit_breaker_triggered_at = datetime.now(timezone.utc)
+            # Record when it first triggered for this bucket
+            if self.circuit_breaker_triggered_at.get(bucket) is None:
+                self.circuit_breaker_triggered_at[bucket] = datetime.now(timezone.utc)
                 logger.warning(
-                    f"Circuit breaker triggered: {self.consecutive_losses} consecutive losses. "
-                    f"Pausing for {cooldown_hours}h."
+                    f"Circuit breaker triggered [{bucket}]: {bucket_losses} consecutive losses. "
+                    f"Pausing {bucket} bucket for {cooldown_hours}h."
                 )
 
             # Check if cooldown has elapsed
-            elapsed_hours = (datetime.now(timezone.utc) - self.circuit_breaker_triggered_at).total_seconds() / 3600
+            triggered_at = self.circuit_breaker_triggered_at[bucket]
+            elapsed_hours = (datetime.now(timezone.utc) - triggered_at).total_seconds() / 3600
             if elapsed_hours >= cooldown_hours:
                 logger.info(
-                    f"Circuit breaker cooldown elapsed ({elapsed_hours:.1f}h >= {cooldown_hours}h). "
-                    f"Resetting consecutive losses and resuming trading."
+                    f"Circuit breaker cooldown elapsed [{bucket}] "
+                    f"({elapsed_hours:.1f}h >= {cooldown_hours}h). Resuming."
                 )
-                self.consecutive_losses = 0
-                self.circuit_breaker_triggered_at = None
+                self.consecutive_losses[bucket] = 0
+                self.circuit_breaker_triggered_at[bucket] = None
             else:
                 remaining = cooldown_hours - elapsed_hours
                 logger.warning(
-                    f"Circuit breaker active: {self.consecutive_losses} losses. "
-                    f"Cooldown: {elapsed_hours:.1f}h / {cooldown_hours}h elapsed "
-                    f"({remaining:.1f}h remaining)."
+                    f"Circuit breaker active [{bucket}]: {bucket_losses} losses. "
+                    f"Cooldown: {elapsed_hours:.1f}h / {cooldown_hours}h ({remaining:.1f}h remaining)."
                 )
                 return False
 
@@ -253,13 +259,15 @@ class ShortExpiryRiskManager:
 
         return None
 
-    def update_consecutive_losses(self, is_loss: bool):
-        """Update consecutive loss counter."""
+    def update_consecutive_losses(self, is_loss: bool, bucket: str = 'short'):
+        """Update per-bucket consecutive loss counter."""
+        if bucket not in self.consecutive_losses:
+            bucket = 'short'  # Fallback for unrecognized buckets
         if is_loss:
-            self.consecutive_losses += 1
+            self.consecutive_losses[bucket] = self.consecutive_losses.get(bucket, 0) + 1
         else:
-            self.consecutive_losses = 0
-            self.circuit_breaker_triggered_at = None  # Reset cooldown timer on a win
+            self.consecutive_losses[bucket] = 0
+            self.circuit_breaker_triggered_at[bucket] = None  # Reset cooldown on a win
 
 
 class ShortExpiryTrader:
@@ -296,6 +304,9 @@ class ShortExpiryTrader:
         # Initialize price tracker for historical price data (enables momentum signals)
         self.price_tracker = PriceTracker(self.config['database']['tracking_db'])
         logger.info("PriceTracker initialized for momentum feature extraction")
+
+        # Load bucket-specific ML models trained from live positions
+        self.ml_models = self._load_ml_models()
 
         # Initialize trade executor (centralized validation pipeline)
         self.trade_executor = TradeExecutor(
@@ -374,17 +385,29 @@ class ShortExpiryTrader:
             json.dump({'balance': balance, 'updated': datetime.now(timezone.utc).isoformat()}, f)
 
     def _save_circuit_breaker_status(self):
-        """Persist circuit breaker state so the dashboard can display it."""
+        """Persist per-bucket circuit breaker state so the dashboard can display it."""
         cb = self.risk_manager
         cooldown_hours = cb.config['risk_management'].get('circuit_breaker_cooldown_hours', 4.0)
-        triggered_at = cb.circuit_breaker_triggered_at
-        resume_at = (triggered_at + timedelta(hours=cooldown_hours)) if triggered_at else None
+        buckets_status = {}
+        any_active = False
+        for bucket in ShortExpiryRiskManager.BUCKETS:
+            triggered_at = cb.circuit_breaker_triggered_at.get(bucket)
+            resume_at = (triggered_at + timedelta(hours=cooldown_hours)) if triggered_at else None
+            buckets_status[bucket] = {
+                'active': triggered_at is not None,
+                'consecutive_losses': cb.consecutive_losses.get(bucket, 0),
+                'triggered_at': triggered_at.isoformat() if triggered_at else None,
+                'resume_at': resume_at.isoformat() if resume_at else None,
+            }
+            if triggered_at is not None:
+                any_active = True
+        # Top-level summary for backwards-compatible dashboard display
+        total_losses = sum(cb.consecutive_losses.values())
         status = {
-            'active': triggered_at is not None,
-            'consecutive_losses': cb.consecutive_losses,
-            'triggered_at': triggered_at.isoformat() if triggered_at else None,
+            'active': any_active,
+            'consecutive_losses': total_losses,
             'cooldown_hours': cooldown_hours,
-            'resume_at': resume_at.isoformat() if resume_at else None,
+            'per_bucket': buckets_status,
             'updated_at': datetime.now(timezone.utc).isoformat(),
         }
         path = 'data/circuit_breaker_short_expiry.json'
@@ -632,15 +655,15 @@ class ShortExpiryTrader:
 
     def _process_bucket(self, bucket: str, markets: List[Dict]):
         """Process markets in a bucket."""
-        # Check position limits (also detects circuit breaker reset)
-        prev_active = self.risk_manager.circuit_breaker_triggered_at is not None
+        # Check position limits (also detects per-bucket circuit breaker reset)
+        prev_active = self.risk_manager.circuit_breaker_triggered_at.get(bucket) is not None
         can_open = self.risk_manager.can_open_position(bucket, self.position_manager)
-        now_active = self.risk_manager.circuit_breaker_triggered_at is not None
+        now_active = self.risk_manager.circuit_breaker_triggered_at.get(bucket) is not None
 
         if prev_active and not now_active:
-            # Cooldown just expired — save state and notify
+            # Cooldown just expired for this bucket — save state and notify
             self._save_circuit_breaker_status()
-            self.telegram.notify_circuit_breaker_reset(bot_name="Short-Expiry Trader")
+            self.telegram.notify_circuit_breaker_reset(bot_name=f"Short-Expiry Trader [{bucket}]")
 
         if not can_open:
             return
@@ -764,11 +787,80 @@ class ShortExpiryTrader:
             # Execute trade (paper trading)
             self._execute_trade(market, signal, bucket, features)
 
+    def _load_ml_models(self) -> Dict:
+        """Load bucket-specific ML models trained from live positions."""
+        models = {}
+        models_dir = 'data/models'
+        for bucket in ('ultra_short', 'short', 'medium'):
+            path = os.path.join(models_dir, f'short_expiry_{bucket}.pkl')
+            if os.path.exists(path):
+                with open(path, 'rb') as f:
+                    models[bucket] = pickle.load(f)
+                trained_at = models[bucket].get('trained_at', 'unknown')
+                acc = models[bucket].get('metrics', {}).get('accuracy', 0)
+                logger.info(f"ML model loaded: {bucket} (acc={acc:.3f}, trained={trained_at[:10]})")
+            else:
+                logger.info(f"No ML model found for bucket: {bucket}")
+        return models
+
+    def _ml_predict(self, features: pd.DataFrame, bucket: str) -> Optional[Dict]:
+        """Run ML prediction for the given bucket. Returns signal dict or None."""
+        model_data = self.ml_models.get(bucket)
+        if model_data is None:
+            return None
+
+        try:
+            model = model_data['model']
+            feature_cols = model_data['feature_cols']
+
+            # Build feature vector aligned to training columns
+            feat_dict = features.iloc[0].to_dict()
+            missing_cols = [col for col in feature_cols if col not in feat_dict]
+            if missing_cols:
+                logger.warning(
+                    f"ML predict [{bucket}]: {len(missing_cols)} features missing from extractor "
+                    f"(filling 0.0): {missing_cols[:10]}"
+                )
+            X = pd.DataFrame([{col: feat_dict.get(col, 0.0) for col in feature_cols}])
+            X = X.fillna(0.0)
+
+            prob = model.predict_proba(X)[0]  # [prob_class_0, prob_class_1]
+            prob_win = float(prob[1])
+
+            market_price = float(features['market_probability'].iloc[0])
+
+            if prob_win >= 0.6:
+                outcome = 'YES' if market_price >= 0.5 else 'NO'
+                edge = prob_win - 0.5
+                confidence = prob_win
+            elif prob_win <= 0.4:
+                outcome = 'NO' if market_price >= 0.5 else 'YES'
+                edge = (1 - prob_win) - 0.5
+                confidence = 1 - prob_win
+            else:
+                return None  # No strong signal
+
+            return {
+                'action': 'BUY',
+                'outcome': outcome,
+                'edge': round(edge, 4),
+                'confidence': round(confidence, 4),
+                'reason': f'ml_{bucket}',
+            }
+        except Exception as e:
+            logger.warning(f"ML prediction failed for {bucket}: {e}")
+            return None
+
     def _generate_signal(self, features: pd.DataFrame, market: Dict,
                          bucket: str) -> Dict:
-        """Generate trading signal using rule-based strategies."""
+        """Generate trading signal using ML model (if available) then rule-based fallback."""
         market_price = features['market_probability'].iloc[0]
         rules_config = self.config['rules']
+
+        # ML model signal (takes priority over rules if confident)
+        ml_signal = self._ml_predict(features, bucket)
+        if ml_signal is not None:
+            return ml_signal
 
         # Rule 1: Arbitrage (YES + NO < 0.98)
         if rules_config['arbitrage']['enabled']:
@@ -1096,7 +1188,20 @@ class ShortExpiryTrader:
         if self.paper_trading and payout > 0:
             self.balance += payout
             self._save_balance(self.balance)
-        self.risk_manager.update_consecutive_losses(is_loss=(pnl < 0))
+        self.risk_manager.update_consecutive_losses(is_loss=(pnl < 0), bucket=bucket)
+
+        # Record outcome in snapshot collector (closes ML feedback loop)
+        try:
+            actual_outcome = outcome if pnl >= 0 else ('NO' if outcome == 'YES' else 'YES')
+            self.snapshot_collector.record_outcome(
+                market_id=market_id,
+                bot_type='short_expiry',
+                outcome=actual_outcome,
+                resolution_price=current_price
+            )
+        except Exception as e:
+            logger.warning(f"Failed to record snapshot outcome for {market_id[:16]}: {e}")
+
         logger.info(f"Force closed {market_id[:16]} ({exit_reason}) | P&L: ${pnl:+.2f}")
 
     def _check_positions(self):
@@ -1199,6 +1304,22 @@ class ShortExpiryTrader:
                         self.balance += payout
                         self._save_balance(self.balance)
 
+                    # Record outcome in snapshot collector (closes ML feedback loop)
+                    try:
+                        # For resolved markets: YES token price ≥ 0.5 → YES won, else NO won
+                        if outcome == 'YES':
+                            actual_outcome = 'YES' if exit_price >= 0.5 else 'NO'
+                        else:
+                            actual_outcome = 'NO' if exit_price >= 0.5 else 'YES'
+                        self.snapshot_collector.record_outcome(
+                            market_id=market_id,
+                            bot_type='short_expiry',
+                            outcome=actual_outcome,
+                            resolution_price=exit_price
+                        )
+                    except Exception as e:
+                        logger.warning(f"Failed to record snapshot outcome for {market_id[:16]}: {e}")
+
                     # Send Telegram notification
                     self.telegram.notify_position_closed(
                         market_id=market_id,
@@ -1263,6 +1384,21 @@ class ShortExpiryTrader:
                     if self.paper_trading:
                         self.balance += payout
                         self._save_balance(self.balance)
+
+                    # Record outcome in snapshot collector (closes ML feedback loop)
+                    try:
+                        if outcome == 'YES':
+                            actual_outcome = 'YES' if exit_price >= 0.5 else 'NO'
+                        else:
+                            actual_outcome = 'NO' if exit_price >= 0.5 else 'YES'
+                        self.snapshot_collector.record_outcome(
+                            market_id=market_id,
+                            bot_type='short_expiry',
+                            outcome=actual_outcome,
+                            resolution_price=exit_price
+                        )
+                    except Exception as e:
+                        logger.warning(f"Failed to record snapshot outcome for {market_id[:16]}: {e}")
 
                     # Send Telegram notification
                     self.telegram.notify_position_closed(
@@ -1337,20 +1473,34 @@ class ShortExpiryTrader:
                         self.balance += payout
                         self._save_balance(self.balance)
 
-                    # Update risk manager (for circuit breaker)
-                    was_active = self.risk_manager.consecutive_losses >= self.risk_manager.config['risk_management']['circuit_breaker_losses']
-                    self.risk_manager.update_consecutive_losses(is_loss=(pnl < 0))
-                    is_now_active = self.risk_manager.consecutive_losses >= self.risk_manager.config['risk_management']['circuit_breaker_losses']
+                    # Update per-bucket risk manager (for circuit breaker)
+                    cb_losses_threshold = self.risk_manager.config['risk_management']['circuit_breaker_losses']
+                    was_active = self.risk_manager.consecutive_losses.get(bucket, 0) >= cb_losses_threshold
+                    self.risk_manager.update_consecutive_losses(is_loss=(pnl < 0), bucket=bucket)
+                    is_now_active = self.risk_manager.consecutive_losses.get(bucket, 0) >= cb_losses_threshold
 
-                    # Check if circuit breaker was just triggered
+                    # Check if circuit breaker was just triggered for this bucket
                     if not was_active and is_now_active:
                         cooldown_hours = self.risk_manager.config['risk_management'].get('circuit_breaker_cooldown_hours', 4.0)
                         self.telegram.notify_circuit_breaker(
-                            consecutive_losses=self.risk_manager.consecutive_losses,
+                            consecutive_losses=self.risk_manager.consecutive_losses.get(bucket, 0),
                             cooldown_hours=cooldown_hours,
-                            bot_name="Short-Expiry Trader"
+                            bot_name=f"Short-Expiry Trader [{bucket}]"
                         )
                         self._save_circuit_breaker_status()
+
+                    # Record outcome in snapshot collector (closes ML feedback loop)
+                    try:
+                        # For non-resolution exits: use P&L direction to infer outcome
+                        actual_outcome = outcome if pnl >= 0 else ('NO' if outcome == 'YES' else 'YES')
+                        self.snapshot_collector.record_outcome(
+                            market_id=market_id,
+                            bot_type='short_expiry',
+                            outcome=actual_outcome,
+                            resolution_price=current_price
+                        )
+                    except Exception as e:
+                        logger.warning(f"Failed to record snapshot outcome for {market_id[:16]}: {e}")
 
                     # Send Telegram notification
                     self.telegram.notify_position_closed(

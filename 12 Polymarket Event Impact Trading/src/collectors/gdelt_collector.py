@@ -57,13 +57,20 @@ class GDELTCollector:
         'bitcoin', 'btc', 'ethereum', 'eth', 'cryptocurrency', 'crypto',
         'blockchain', 'coinbase', 'binance', 'solana', 'dogecoin',
         'ripple', 'xrp', 'cardano', 'polygon', 'defi', 'nft',
-        'satoshi', 'vitalik', 'stablecoin', 'usdt', 'usdc'
+        'satoshi', 'vitalik', 'stablecoin', 'usdt', 'usdc',
+        # Macro events that directly move BTC/ETH prices
+        'fed', 'federal reserve', 'interest rate', 'inflation', 'cpi',
+        'fomc', 'powell', 'sec', 'etf approval', 'rate hike', 'rate cut',
+        'treasury', 'yellen', 'blackrock', 'spot btc', 'crypto regulation',
+        'tether', 'dollar index', 'dxy',
     }
 
     # Crypto-related GDELT themes
     CRYPTO_THEMES = {
         'ECON_CRYPTOCURRENCY', 'ECON_BITCOIN', 'TECH_BLOCKCHAIN',
-        'CRISISLEX_FINANCIAL', 'ECON_STOCKMARKET'
+        'CRISISLEX_FINANCIAL', 'ECON_STOCKMARKET',
+        # Macro themes that move crypto
+        'ECON_INTEREST_RATE', 'ECON_INFLATION', 'GOV_REGULATION',
     }
 
     def __init__(self, db_path: str = 'data/gdelt_news.db',
@@ -723,17 +730,17 @@ class GDELTCollector:
                     logger.info("Performing database checkpoint...")
                     self._checkpoint_db()
 
-                # Check integrity every 20 cycles (~5 hours at 15-min intervals)
+                # Check integrity every 20 cycles in a background thread (avoids blocking
+                # the collection cycle — PRAGMA integrity_check can take minutes on large DBs)
                 if collection_count % 20 == 0:
-                    logger.info("Performing periodic integrity check...")
-                    if not self._check_integrity():
-                        logger.error("Integrity check failed! Attempting recovery...")
-                        if self._attempt_recovery():
-                            logger.info("Recovery successful, continuing...")
+                    import threading
+                    def _bg_integrity_check():
+                        logger.info("Background integrity check starting...")
+                        if not self._check_integrity():
+                            logger.error("Background integrity check failed! Manual intervention may be needed.")
                         else:
-                            logger.error("Recovery failed, stopping collector")
-                            self.stop()
-                            break
+                            logger.info("Background integrity check: OK")
+                    threading.Thread(target=_bg_integrity_check, daemon=True).start()
 
                 # Wait for next cycle
                 logger.info(f"Next collection in {interval_seconds} seconds...")

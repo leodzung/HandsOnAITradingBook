@@ -64,6 +64,7 @@ class LiveDataTrainer:
         conn = sqlite3.connect(self.positions_db)
 
         # Load all closed positions with features
+        # Features are stored inside the 'metadata' JSON column as 'features_json' key
         query = """
             SELECT
                 market_id,
@@ -75,12 +76,13 @@ class LiveDataTrainer:
                 edge,
                 confidence,
                 signal_reason,
-                features_json,
+                json_extract(metadata, '$.features_json') AS features_json,
                 pnl
             FROM positions
             WHERE status != 'open'
             AND exit_price IS NOT NULL
-            AND features_json IS NOT NULL
+            AND metadata IS NOT NULL
+            AND json_extract(metadata, '$.features_json') IS NOT NULL
         """
 
         df = pd.read_sql_query(query, conn)
@@ -104,13 +106,20 @@ class LiveDataTrainer:
                 # Parse features JSON
                 features = json.loads(row['features_json']) if isinstance(row['features_json'], str) else row['features_json']
 
-                # Create label based on outcome
-                # If we bought YES and price went up (exit > entry), that's a win
-                # If we bought NO and price went down (exit < entry), that's a win
+                # Spread-adjusted label: entry=ASK, exit=BID, so raw P&L is always
+                # reduced by the bid-ask spread. A "win" must recover that cost.
+                # Use spread_pct from features if available, else default 2% (Polymarket typical).
+                spread_pct_raw = features.get('spread_pct', 2.0)
+                spread_cost = max(float(spread_pct_raw) / 100.0, 0.01)  # floor at 1%
+
                 if row['outcome'] == 'YES':
-                    label = 1 if row['exit_price'] > row['entry_price'] else 0
-                else:  # NO
-                    label = 1 if row['exit_price'] < row['entry_price'] else 0
+                    price_change = (row['exit_price'] - row['entry_price']) / row['entry_price'] \
+                                   if row['entry_price'] > 0 else 0.0
+                    label = 1 if price_change > spread_cost else 0
+                else:  # NO — win when YES price falls (entry > exit for YES token)
+                    price_change = (row['entry_price'] - row['exit_price']) / row['entry_price'] \
+                                   if row['entry_price'] > 0 else 0.0
+                    label = 1 if price_change > spread_cost else 0
 
                 # Flatten features (handle nested dicts/series)
                 flat_features = {}
@@ -121,8 +130,14 @@ class LiveDataTrainer:
                     elif isinstance(value, (int, float)):
                         flat_features[key] = float(value)
                     elif isinstance(value, dict):
-                        # Skip nested dicts for now
-                        continue
+                        # Handle pandas Series serialized as {"0": value}
+                        if len(value) == 1:
+                            try:
+                                flat_features[key] = float(list(value.values())[0])
+                            except:
+                                continue
+                        else:
+                            continue
                     else:
                         # Try to convert to float
                         try:

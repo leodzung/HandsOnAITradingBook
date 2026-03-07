@@ -28,6 +28,8 @@ For programmatic usage, see training_pipeline.py which orchestrates both steps.
 """
 
 import json
+import os
+import signal
 import sqlite3
 import logging
 import time
@@ -750,6 +752,42 @@ class AlchemyDataCollector:
         conn.close()
         return stats
 
+    def _run_market_mapper(self):
+        """
+        Auto-trigger market_mapper.py to populate condition_ids after new trades are collected.
+
+        This closes the gap between raw on-chain token IDs and Polymarket condition IDs,
+        so the training pipeline can query trades by market.
+        """
+        import subprocess
+        try:
+            # Locate market_mapper.py relative to this file or the project root
+            candidates = [
+                Path(__file__).parent.parent.parent / "market_mapper.py",
+                Path("market_mapper.py"),
+                Path("src") / "market_mapper.py",
+            ]
+            mapper_path = next((p for p in candidates if p.exists()), None)
+            if mapper_path is None:
+                logger.debug("market_mapper.py not found on any search path — skipping auto-trigger")
+                return
+            logger.info(f"Auto-triggering market mapper: {mapper_path}")
+            result = subprocess.run(
+                ["python3", str(mapper_path), "--update-trades"],
+                capture_output=True, text=True, timeout=120
+            )
+            if result.returncode == 0:
+                logger.info("Market mapper completed: condition_ids updated")
+            else:
+                logger.warning(
+                    f"Market mapper exited with code {result.returncode}: "
+                    f"{result.stderr[:200]}"
+                )
+        except subprocess.TimeoutExpired:
+            logger.warning("Market mapper timed out after 120s")
+        except Exception as e:
+            logger.warning(f"Failed to auto-trigger market mapper: {e}")
+
     def run_continuous(self, interval_seconds: int = 120):
         """
         Run collector continuously with periodic updates.
@@ -775,6 +813,9 @@ class AlchemyDataCollector:
 
                 if trades == 0:
                     logger.info("No new trades (already up to date)")
+                else:
+                    # Auto-populate condition_ids for newly collected trades
+                    self._run_market_mapper()
 
                 # Wait for next cycle
                 logger.info(f"Next collection in {interval_seconds} seconds...")
@@ -823,7 +864,7 @@ def main():
 
     # Load config
     config_path = Path("config/config.json")
-    api_key = args.api_key
+    api_key = args.api_key or os.environ.get('ALCHEMY_API_KEY')
 
     if not api_key and config_path.exists():
         with open(config_path) as f:
@@ -831,10 +872,16 @@ def main():
             api_key = config.get("alchemy_api_key")
 
     if not api_key:
-        logger.error("Alchemy API key required. Set via --api-key or config.json")
+        logger.error("Alchemy API key required. Set via --api-key, ALCHEMY_API_KEY env var, or config.json")
         return
 
     collector = AlchemyDataCollector(api_key)
+
+    def handle_sigterm(signum, frame):
+        logger.info("Received SIGTERM, shutting down gracefully...")
+        collector.stop()
+
+    signal.signal(signal.SIGTERM, handle_sigterm)
 
     if args.stats:
         stats = collector.get_statistics()

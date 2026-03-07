@@ -57,6 +57,10 @@ class PolymarketClient:
         self._orderbook_manager = None
         self._orderbook_source = self.config.get('orderbook_source', 'websocket')
 
+        # Rate limiting for Gamma API (avoid hammering during market discovery loops)
+        self._gamma_last_call = 0.0
+        self._gamma_min_interval = self.config.get('gamma_rate_limit_interval', 1.0)  # seconds
+
     @classmethod
     def build_market_url(cls, market: Dict = None, event_slug: str = None,
                         market_slug: str = None, asset: str = None) -> str:
@@ -162,6 +166,13 @@ class PolymarketClient:
         """
         return [m for m in markets if not m.get('closed', False)]
 
+    def _gamma_rate_limit(self):
+        """Enforce minimum interval between Gamma API calls to avoid rate limiting."""
+        elapsed = time.time() - self._gamma_last_call
+        if elapsed < self._gamma_min_interval:
+            time.sleep(self._gamma_min_interval - elapsed)
+        self._gamma_last_call = time.time()
+
     def get_markets(self, limit: int = 100, offset: int = 0,
                    active: bool = True, closed: bool = False,
                    end_date_min: Optional[str] = None,
@@ -190,6 +201,8 @@ class PolymarketClient:
         Returns:
             List of market dictionaries
         """
+        self._gamma_rate_limit()
+
         params = {
             'limit': limit,
             'offset': offset,

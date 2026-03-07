@@ -38,7 +38,8 @@ class MLPredictor:
         self.model = None
         self.feature_names = None
         self.model_info = None
-        
+        self._schema_validated = False  # Validate feature schema on first prediction
+
         if self.enabled:
             self._load_model()
     
@@ -144,6 +145,22 @@ class MLPredictor:
         try:
             # Extract features
             features = self.extract_features(market, additional_context)
+
+            # ML-019: One-time schema validation — warn if extractor output drifted from training
+            if not self._schema_validated:
+                self._schema_validated = True
+                missing_in_extractor = [f for f in self.feature_names if f not in features]
+                extra_in_extractor = [f for f in features if f not in self.feature_names]
+                if missing_in_extractor:
+                    logger.warning(
+                        f"ML-019 feature schema drift: model expects {len(missing_in_extractor)} "
+                        f"features absent from extractor: {missing_in_extractor[:15]}"
+                    )
+                if extra_in_extractor:
+                    logger.info(
+                        f"ML-019: extractor produces {len(extra_in_extractor)} features "
+                        f"not used by model: {extra_in_extractor[:10]}"
+                    )
 
             # Create DataFrame with correct feature order
             feature_values = [features.get(fname, 0) for fname in self.feature_names]

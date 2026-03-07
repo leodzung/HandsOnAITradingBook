@@ -157,6 +157,11 @@ class AutoRetrainer:
             if drift_trigger:
                 reasons.append(drift_reason)
 
+        # Check 4: New sample count (retrain if enough new data regardless of age)
+        sample_trigger, sample_reason = self._check_sample_count_trigger()
+        if sample_trigger:
+            reasons.append(sample_reason)
+
         should_retrain = len(reasons) > 0
 
         if should_retrain:
@@ -209,6 +214,51 @@ class AutoRetrainer:
         """Check if feature drift detected."""
         # Placeholder - would integrate with DriftDetector
         return False, None
+
+    def _check_sample_count_trigger(self, min_new_samples: int = 100) -> Tuple[bool, Optional[str]]:
+        """
+        Check if enough new samples have accumulated since the last retrain.
+
+        This ensures retraining is triggered by data volume, not just calendar time.
+        A model should retrain after 100+ new closed positions even if it's only 5 days old.
+        """
+        try:
+            if not self.training_data_path.exists():
+                return False, None
+
+            # Get last training date from report
+            last_train_date = None
+            if self.report_path.exists():
+                with open(self.report_path) as f:
+                    report = json.load(f)
+                training_date_str = report.get('training_date')
+                if training_date_str:
+                    last_train_date = datetime.fromisoformat(training_date_str)
+
+            if last_train_date is None:
+                return False, None
+
+            df = pd.read_csv(self.training_data_path)
+
+            # Find a date column to count new samples
+            date_col = next(
+                (c for c in ['snapshot_time', 'entry_time', 'timestamp', 'date'] if c in df.columns),
+                None
+            )
+            if date_col:
+                df[date_col] = pd.to_datetime(df[date_col], errors='coerce')
+                new_samples = int((df[date_col] > last_train_date).sum())
+                if new_samples >= min_new_samples:
+                    return True, (
+                        f"New samples since last retrain: {new_samples:,} "
+                        f"(threshold: {min_new_samples})"
+                    )
+
+            return False, None
+
+        except Exception as e:
+            logger.error(f"Error checking sample count trigger: {e}")
+            return False, None
 
     def run_full_retraining(self, dry_run: bool = False) -> Dict[str, Any]:
         """
