@@ -1763,11 +1763,72 @@ operations:
       threshold: null
       alert: info
       description: Final tradeable market count for price-level trader
+  - id: RISK-018
+    title: risk_management.min_edge must not exceed any rule's min_edge
+    description: 'The global risk_management.min_edge threshold MUST be <= the minimum
+      min_edge value across all signal rules (arbitrage, momentum, mean_reversion).
+
+      Setting risk_management.min_edge HIGHER than a rule''s min_edge is FORBIDDEN
+      because it silently discards valid signals that passed the rule threshold —
+      the bot generates the signal, then can_execute() drops it with no log.
+
+      In config_short_expiry.json: risk_management.min_edge MUST be <= 0.02
+      (matching rules.arbitrage.min_edge).
+
+      '
+    rationale: 'Bug fixed 2026-03-06: risk_management.min_edge=0.05 > rules.arbitrage.min_edge=0.02.
+      Every arbitrage signal (edge 0.02-0.05) was silently rejected by can_execute().
+      Zero arbitrage trades executed despite valid opportunities being detected.
+
+      '
+    status: enforced
+    priority: critical
+    implemented_date: '2026-03-06'
+    validation:
+    - type: structural_test
+      command: python3 -c "import json; c=json.load(open('config/config_short_expiry.json'));
+        rm=c['risk_management']['min_edge']; arb=c['rules']['arbitrage']['min_edge'];
+        assert rm<=arb, f'min_edge mismatch: risk_mgmt={rm} > arbitrage={arb}'; print('OK')"
+      description: Verify risk_management.min_edge <= rules.arbitrage.min_edge
+    forbidden_patterns:
+    - '"min_edge": 0\.[1-9]'
+    files_to_check:
+    - config/config_short_expiry.json
+  - id: PERF-001
+    title: Orderbook subscription clients must have a circuit breaker
+    description: 'Any client that calls a remote orderbook subscription endpoint
+      MUST implement a circuit breaker that:
+
+      1. Tracks consecutive connection failures.
+
+      2. After >= 3 consecutive failures, marks the service unavailable for >= 60s.
+
+      3. Returns immediately (no network call) while in the back-off window.
+
+      Blocking N × timeout_seconds per discovery cycle without a circuit breaker
+      is FORBIDDEN when N is the number of markets to register.
+
+      '
+    rationale: 'Bug fixed 2026-03-06: OrderbookServiceClient.subscribe_market() had
+      no circuit breaker. When orderbook service was down, 108 markets × 5s timeout
+      = 9 minutes wasted per discovery cycle. _process_bucket() barely ran, so no
+      trades were opened despite qualified markets existing.
+
+      '
+    status: enforced
+    priority: high
+    implemented_date: '2026-03-06'
+    validation:
+    - type: grep
+      pattern: _cb_unavailable_until|circuit.breaker|CB_FAILURE_THRESHOLD
+      files_to_check:
+      - src/services/orderbook_client.py
+      description: Verify circuit breaker state exists in orderbook client
 metadata:
   last_validated: '2026-03-06T12:00:10.874840'
   validation_status: FAIL
-  total_constraints: 49
-  enforced_constraints: 49
+  total_constraints: 51
+  enforced_constraints: 51
   proposed_constraints: 0
   contact:
     maintainer: Trading System Team
