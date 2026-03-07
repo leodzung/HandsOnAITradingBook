@@ -1918,6 +1918,32 @@ operations:
     - register_market_for_orderbook
     files_to_check:
     - src/services/orderbook_service.py
+  - id: ARCH-025
+    title: _get_liquidity_limit must guard against None from OrderbookFeatures.extract
+    description: >
+      In position_sizer.py, _get_liquidity_limit() calls OrderbookFeatures.extract(orderbook)
+      which intentionally returns None for empty orderbooks (bids=[], asks=[]). The method
+      MUST check `if features is None: return 0.0` before subscripting features. When
+      _get_liquidity_limit returns 0.0, the `if liquidity_limit > 0` guard in calculate()
+      skips the cap — correct behavior for illiquid markets.
+    rationale: >
+      Bug found 2026-03-07: Polymarket client returns {'bids': [], 'asks': []} for
+      illiquid markets (not None), so the `if orderbook is not None` check in calculate()
+      passed. _get_liquidity_limit then called OrderbookFeatures.extract() -> None and
+      immediately crashed on `min(features['bid_depth_5'], ...)`. Every trade attempt
+      in the short-expiry bot failed with TypeError: 'NoneType' object is not subscriptable,
+      preventing any positions from opening despite valid signals and sufficient balance.
+    status: enforced
+    priority: critical
+    implemented_date: '2026-03-07'
+    validation:
+    - type: grep
+      pattern: "if features is None"
+      files_to_check:
+      - src/core/position_sizer.py
+      description: Guard must exist in _get_liquidity_limit before subscripting features
+    files_to_check:
+    - src/core/position_sizer.py
   - id: PERF-002
     title: min_position_size must be calibrated against expected Kelly outputs
     description: '
@@ -1976,8 +2002,8 @@ operations:
       min_value: 0.25
       description: liquidity_cap_pct must be >= 0.25
 metadata:
-  last_validated: '2026-03-06T22:49:49.726470'
-  validation_status: PASS
+  last_validated: '2026-03-06T23:00:10.928150'
+  validation_status: FAIL
   total_constraints: 57
   enforced_constraints: 55
   proposed_constraints: 0

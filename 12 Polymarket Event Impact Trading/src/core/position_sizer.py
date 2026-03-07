@@ -103,6 +103,8 @@ class PositionSizer:
     def _get_liquidity_limit(self, orderbook: Dict) -> float:
         """Calculate liquidity-based position cap using orderbook depth."""
         features = OrderbookFeatures.extract(orderbook)
+        if features is None:
+            return 0.0  # Empty orderbook — no liquidity cap applied
         # Use ask depth for buys (we lift asks), bid depth for sells
         # Since we don't know direction here, use the smaller side as conservative cap
         depth = min(features['bid_depth_5'], features['ask_depth_5'])
