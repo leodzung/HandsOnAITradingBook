@@ -28,11 +28,11 @@
       "medium": 150
     },
     "max_spread_pct": {
-      "ultra_short": 30.0,
+      "ultra_short": 15.0,
       "short": 25.0,
       "medium": 20.0
     },
-    "min_price": 0.02,
+    "min_price": 0.10,
     "max_price": 0.98,
     "require_last_trade_price": false,
     "api_cache_ttl_seconds": 300,
@@ -54,9 +54,9 @@
   },
   "risk_management": {
     "stop_loss_pct": {
-      "ultra_short": 10,
-      "short": 15,
-      "medium": 20
+      "ultra_short": 20,
+      "short": 30,
+      "medium": 30
     },
     "take_profit_pct": {
       "ultra_short": 30,
@@ -112,7 +112,7 @@
   },
   "rules": {
     "arbitrage": {
-      "enabled": true,
+      "enabled": false,
       "max_total_price": 0.98,
       "min_edge": 0.02
     },
@@ -159,81 +159,81 @@
       {
         "min_hours": 12,
         "tp_pct": 30,
-        "sl_pct": 10
+        "sl_pct": 20
       },
       {
         "min_hours": 4,
         "tp_pct": 25,
-        "sl_pct": 8
+        "sl_pct": 16
       },
       {
         "min_hours": 1,
         "tp_pct": 15,
-        "sl_pct": 5
+        "sl_pct": 10
       },
       {
         "min_hours": 0,
         "tp_pct": 10,
-        "sl_pct": 3
+        "sl_pct": 6
       }
     ],
     "short": [
       {
         "min_hours": 24,
         "tp_pct": 50,
-        "sl_pct": 15
+        "sl_pct": 30
       },
       {
         "min_hours": 12,
         "tp_pct": 40,
-        "sl_pct": 12
+        "sl_pct": 24
       },
       {
         "min_hours": 4,
         "tp_pct": 30,
-        "sl_pct": 10
+        "sl_pct": 20
       },
       {
         "min_hours": 1,
         "tp_pct": 20,
-        "sl_pct": 8
+        "sl_pct": 16
       },
       {
         "min_hours": 0,
         "tp_pct": 10,
-        "sl_pct": 5
+        "sl_pct": 10
       }
     ],
     "medium": [
       {
         "min_hours": 72,
         "tp_pct": 75,
-        "sl_pct": 20
+        "sl_pct": 40
       },
       {
         "min_hours": 48,
         "tp_pct": 65,
-        "sl_pct": 18
+        "sl_pct": 36
       },
       {
         "min_hours": 24,
         "tp_pct": 50,
-        "sl_pct": 15
+        "sl_pct": 30
       },
       {
         "min_hours": 12,
         "tp_pct": 40,
-        "sl_pct": 12
+        "sl_pct": 24
       },
       {
         "min_hours": 4,
         "tp_pct": 30,
-        "sl_pct": 10
+        "sl_pct": 20
       },
       {
         "min_hours": 0,
         "tp_pct": 15,
-        "sl_pct": 5
+        "sl_pct": 10
       }
     ],
     "force_exit_hours": 1.0,

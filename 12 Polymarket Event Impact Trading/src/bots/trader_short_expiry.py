@@ -235,12 +235,19 @@ class ShortExpiryRiskManager:
                 # Ensure at least a small TP margin (0.5%) to avoid spurious triggers
                 take_profit_pct = max(take_profit_pct, 0.5)
 
+        # Fix 1: Spread-aware SL — entry is at ASK, exit monitors BID, so the spread
+        # is immediately deducted from PnL. Widen the SL by the spread recorded at entry
+        # so we don't stop out the moment after opening.
+        metadata = position.get('metadata', {})
+        spread_at_entry_pct = metadata.get('spread_at_entry_pct', 0) if isinstance(metadata, dict) else 0
+        effective_sl = stop_loss_pct + spread_at_entry_pct
+
         # Log dynamic thresholds for monitoring
         logger.debug(f"Dynamic TP/SL for {bucket}: hours_remaining={hours_remaining:.1f}h, "
-                    f"tp={take_profit_pct:.1f}%, sl={stop_loss_pct}%")
+                    f"tp={take_profit_pct:.1f}%, sl={stop_loss_pct}% + spread={spread_at_entry_pct:.1f}% = effective_sl={effective_sl:.1f}%")
 
-        # Stop-loss
-        if pnl_pct <= -stop_loss_pct:
+        # Stop-loss (spread-aware)
+        if pnl_pct <= -effective_sl:
             return 'stop_loss'
 
         # Take-profit
@@ -784,6 +791,19 @@ class ShortExpiryTrader:
             if not self.risk_manager.can_execute(signal, self.balance, bucket):
                 continue
 
+            # Fix 2: Block entry when bid-ask spread >= SL threshold.
+            # Entry uses ASK, exit monitors BID — spread alone can trigger the SL.
+            try:
+                spread_pct = self._get_spread_pct(market)
+                sl_pct = self.config['risk_management']['stop_loss_pct'].get(bucket, 15)
+                if spread_pct >= sl_pct:
+                    logger.warning(
+                        f"Skipping {market_id[:16]}: spread {spread_pct:.1f}% >= SL {sl_pct:.1f}% — instant stop-out risk"
+                    )
+                    continue
+            except Exception as e:
+                logger.debug(f"Could not check spread for {market_id[:16]}: {e}")
+
             # Execute trade (paper trading)
             self._execute_trade(market, signal, bucket, features)
 
@@ -945,13 +965,17 @@ class ShortExpiryTrader:
                         'reason': 'momentum'
                     }
                 else:
-                    return {
-                        'action': 'BUY',
-                        'outcome': 'NO',
-                        'edge': 0.08,
-                        'confidence': 0.65,
-                        'reason': 'momentum'
-                    }
+                    # Fix 6: NO momentum had 0% win rate. Require a stronger downward signal
+                    # AND the market must already be leaning NO (price < 0.40 for YES token).
+                    # A small 1h dip is mean-reverting, not a sign of NO resolution.
+                    if price_change_1h < -0.03 and market_price < 0.40:
+                        return {
+                            'action': 'BUY',
+                            'outcome': 'NO',
+                            'edge': 0.08,
+                            'confidence': 0.65,
+                            'reason': 'momentum_no'
+                        }
 
         return {'action': 'HOLD', 'reason': 'no_signal'}
 
@@ -960,6 +984,15 @@ class ShortExpiryTrader:
         """Execute trade (paper trading)."""
         market_id = market.get('conditionId', '')
         outcome = signal['outcome']
+
+        # Fix 4: Block same-market cross-direction entry — combined cost > 1.0 is a guaranteed loss.
+        for pos in self.position_manager.get_open_positions():
+            if pos.get('market_id') == market_id and pos.get('outcome') != outcome:
+                logger.warning(
+                    f"Blocking cross-direction entry: {market_id[:16]} already has "
+                    f"{pos.get('outcome')} open — buying {outcome} would guarantee loss"
+                )
+                return
 
         # Calculate position size using unified PositionSizer
         orderbook = self.client.get_orderbook(market_id) if market_id else None
@@ -1048,6 +1081,13 @@ class ShortExpiryTrader:
         sl_pct = sl_pct_map.get(bucket, 15)  # Default 15% if bucket not found
         tp_pct = tp_pct_map.get(bucket, 50)  # Default 50% if bucket not found
 
+        # Fix 1: Record spread at entry so should_exit() can compute spread-aware SL
+        try:
+            spread_at_entry_pct = self._get_spread_pct(market)
+        except Exception:
+            spread_at_entry_pct = 0.0
+        logger.info(f"Entry spread for {market_id[:16]}: {spread_at_entry_pct:.1f}% (SL={sl_pct}%, effective_SL={sl_pct + spread_at_entry_pct:.1f}%)")
+
         # Create TradeRequest
         trade_request = TradeRequest(
             market_id=market_id,
@@ -1065,6 +1105,7 @@ class ShortExpiryTrader:
             metadata={
                 'hours_to_expiry': features['hours_to_expiry'].iloc[0],
                 'bucket': bucket,
+                'spread_at_entry_pct': spread_at_entry_pct,
                 'features_json': features.to_json()
             }
         )
