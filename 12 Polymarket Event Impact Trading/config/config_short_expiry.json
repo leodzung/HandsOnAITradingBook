@@ -50,7 +50,7 @@
       "short": 75,
       "medium": 100
     },
-    "min_position_size": 10
+    "min_position_size": 5
   },
   "risk_management": {
     "stop_loss_pct": {
@@ -126,7 +126,7 @@
     },
     "momentum": {
       "enabled": true,
-      "min_price_change_1h": 0.02,
+      "min_price_change_1h": 0.01,
       "min_volume_24h": 500
     }
   },
@@ -260,7 +260,7 @@
       "short": 75,
       "medium": 100
     },
-    "min_position_size": 10,
-    "liquidity_cap_pct": 0.1
+    "min_position_size": 5,
+    "liquidity_cap_pct": 0.3
   }
 }

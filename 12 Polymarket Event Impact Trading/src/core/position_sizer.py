@@ -67,10 +67,21 @@ class PositionSizer:
         if orderbook is not None:
             liquidity_limit = self._get_liquidity_limit(orderbook)
             if liquidity_limit > 0:
+                if sized > liquidity_limit:
+                    logger.debug(
+                        f"PositionSizer: liquidity cap applied ${sized:.2f} -> ${liquidity_limit:.2f} "
+                        f"(cap={self.liquidity_cap_pct:.0%} of orderbook depth)"
+                    )
                 sized = min(sized, liquidity_limit)
 
         # 6. Min floor
         if sized < self.min_position_size:
+            logger.warning(
+                f"PositionSizer: size ${sized:.2f} below min ${self.min_position_size} — returning 0 "
+                f"[edge={edge:.4f} kelly={kelly_fraction:.4f} base=${base_size:.2f} "
+                f"conf={confidence:.2f} conf_scaled=${base_size * (0.5 + 0.5 * clamped_confidence):.2f} "
+                f"after_liq=${sized:.2f} min={self.min_position_size}]"
+            )
             return 0.0
 
         logger.info(

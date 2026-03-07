@@ -1945,10 +1945,64 @@ operations:
     - register_market_for_orderbook
     files_to_check:
     - src/services/orderbook_service.py
+  - id: PERF-002
+    title: min_position_size must be calibrated against expected Kelly outputs
+    description: '
+
+      min_position_size in position_sizing config must be set so that the smallest
+      expected Kelly output (edge * kelly_multiplier * balance * confidence_multiplier)
+      exceeds it. With balance=$382, kelly_multiplier=0.5, and min confidence 0.6
+      (multiplier=0.8), the minimum edge to pass a $5 floor is ~3.3%. Document the
+      minimum required edge per signal type whenever min_position_size or kelly_multiplier
+      is changed.
+
+      Rule: min_position_size <= (min_expected_edge * kelly_multiplier * min_balance * 0.8)
+
+      '
+    rationale: 'Bug found 2026-03-06: min_position_size=10 blocked arbitrage (edge
+      2-5%) and mean reversion (fixed edge=0.05) entirely. Kelly outputs were $3-$9,
+      all below the $10 floor, so PositionSizer returned 0 for every signal except
+      momentum. Lowered to 5 to allow these signals to open positions.
+
+      '
+    status: enforced
+    priority: high
+    implemented_date: '2026-03-06'
+    validation:
+    - type: json_value
+      file: config/config_short_expiry.json
+      path: position_sizing.min_position_size
+      max_value: 5
+      description: min_position_size must be <= 5 given current kelly_multiplier and balance
+  - id: PERF-003
+    title: liquidity_cap_pct must be >= 0.25 to avoid killing valid positions in thin markets
+    description: '
+
+      Polymarket prediction markets routinely have orderbook depth of $50-$150 per
+      side. A liquidity_cap_pct of 0.10 caps position size at $5-$15, which combined
+      with a $10 min floor kills most positions. liquidity_cap_pct must be >= 0.25
+      to allow valid positions through in thin markets.
+
+      '
+    rationale: 'Bug found 2026-03-06: liquidity_cap_pct=0.10 capped positions to
+      $8 for an $80-depth market. Even momentum signals that passed Kelly sizing were
+      killed: $12.62 -> $8.00 -> below $10 min -> 0. Raised to 0.30 to allow valid
+      positions in typical thin Polymarket markets.
+
+      '
+    status: enforced
+    priority: high
+    implemented_date: '2026-03-06'
+    validation:
+    - type: json_value
+      file: config/config_short_expiry.json
+      path: position_sizing.liquidity_cap_pct
+      min_value: 0.25
+      description: liquidity_cap_pct must be >= 0.25
 metadata:
   last_validated: '2026-03-06T12:00:10.874840'
   validation_status: FAIL
-  total_constraints: 55
+  total_constraints: 57
   enforced_constraints: 55
   proposed_constraints: 0
   contact:
