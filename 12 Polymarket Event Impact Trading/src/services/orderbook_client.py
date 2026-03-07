@@ -5,7 +5,7 @@ Client library for bots to connect to the centralized Orderbook Microservice.
 Replaces direct WebSocket/OrderbookManager usage.
 
 Usage:
-    from services.orderbook_client import OrderbookServiceClient
+    from src.services.orderbook_client import OrderbookServiceClient
 
     # Create client
     orderbook_client = OrderbookServiceClient()
@@ -31,6 +31,10 @@ class OrderbookServiceClient:
     from the centralized service instead of managing WebSocket themselves.
     """
 
+    # Circuit breaker constants
+    _CB_FAILURE_THRESHOLD = 3       # consecutive failures before backing off
+    _CB_BACKOFF_SECONDS = 300       # 5 minutes back-off when tripped
+
     def __init__(self, service_url: str = "http://localhost:8765", cache_ttl_seconds: int = 5):
         """
         Initialize orderbook service client.
@@ -44,6 +48,10 @@ class OrderbookServiceClient:
         self._cache: Dict[str, Dict] = {}
         self._cache_timestamps: Dict[str, datetime] = {}
         self._cache_lock = threading.Lock()
+
+        # Circuit breaker state for subscribe_market
+        self._cb_consecutive_failures = 0
+        self._cb_unavailable_until: Optional[datetime] = None
 
         logger.info(f"OrderbookServiceClient initialized (service={service_url})")
 
@@ -122,6 +130,16 @@ class OrderbookServiceClient:
         Returns:
             True if successful
         """
+        # Circuit breaker: skip if service recently deemed unavailable
+        if self._cb_unavailable_until is not None:
+            if datetime.now() < self._cb_unavailable_until:
+                return False
+            else:
+                # Back-off period elapsed — reset and retry
+                self._cb_unavailable_until = None
+                self._cb_consecutive_failures = 0
+                logger.info("Orderbook service circuit breaker reset — retrying subscriptions")
+
         try:
             response = requests.post(
                 f"{self.service_url}/subscribe/{condition_id}",
@@ -131,13 +149,22 @@ class OrderbookServiceClient:
 
             if response.status_code == 200:
                 logger.debug(f"Subscribed to market {condition_id[:16]}...")
+                self._cb_consecutive_failures = 0  # Reset on success
                 return True
             else:
                 logger.warning(f"Failed to subscribe: {response.text}")
                 return False
 
         except Exception as e:
-            logger.error(f"Error subscribing to market: {e}")
+            self._cb_consecutive_failures += 1
+            if self._cb_consecutive_failures >= self._CB_FAILURE_THRESHOLD:
+                self._cb_unavailable_until = datetime.now() + timedelta(seconds=self._CB_BACKOFF_SECONDS)
+                logger.warning(
+                    f"Orderbook service unreachable after {self._cb_consecutive_failures} attempts — "
+                    f"skipping subscriptions for {self._CB_BACKOFF_SECONDS}s"
+                )
+            else:
+                logger.error(f"Error subscribing to market: {e}")
             return False
 
     def health_check(self) -> Dict:

@@ -70,8 +70,8 @@
     },
     "circuit_breaker_losses": 4,
     "circuit_breaker_cooldown_hours": 4.0,
-    "min_edge": 0.05,
-    "min_confidence": 0.60,
+    "min_edge": 0.02,
+    "min_confidence": 0.6,
     "market_cooldown_hours": {
       "ultra_short": 1.0,
       "short": 2.0,
@@ -242,10 +242,10 @@
   },
   "exposure_limits": {
     "max_positions_per_asset": 8,
-    "max_capital_per_asset_pct": 0.50,
-    "max_same_direction_pct": 0.80,
+    "max_capital_per_asset_pct": 0.5,
+    "max_same_direction_pct": 0.8,
     "max_total_positions": 15,
-    "max_capital_deployed_pct": 0.70,
+    "max_capital_deployed_pct": 0.7,
     "soft_mode": true
   },
   "use_ml_model": true,
@@ -255,8 +255,12 @@
   "position_sizing": {
     "kelly_multiplier": 0.5,
     "max_kelly_fraction": 0.25,
-    "max_position_size": {"ultra_short": 50, "short": 75, "medium": 100},
+    "max_position_size": {
+      "ultra_short": 50,
+      "short": 75,
+      "medium": 100
+    },
     "min_position_size": 10,
-    "liquidity_cap_pct": 0.10
+    "liquidity_cap_pct": 0.1
   }
 }
