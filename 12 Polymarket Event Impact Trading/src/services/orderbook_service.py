@@ -164,13 +164,28 @@ async def subscribe_market(condition_id: str, question: str = ""):
     Returns:
         Success status
     """
-    if not client:
+    if not client or not orderbook_manager:
         raise HTTPException(status_code=503, detail="Service not initialized")
 
     try:
-        client.register_market_for_orderbook(condition_id, question=question)
+        # Resolve condition_id → token IDs directly, then register with the local
+        # orderbook_manager. We intentionally bypass client.register_market_for_orderbook()
+        # because that method calls back to this same HTTP endpoint when
+        # use_orderbook_service=True, causing a circular self-call that silently
+        # swallows the subscription without ever populating _subscribed_assets.
+        tokens = client.get_token_ids(condition_id)
+        yes_token = tokens.get('yes_token_id')
+        no_token = tokens.get('no_token_id')
+
+        if not yes_token or not no_token:
+            raise HTTPException(status_code=404, detail="Token IDs not found for market")
+
+        orderbook_manager.register_market(condition_id, yes_token, no_token, question)
+        logger.debug(f"Subscribed market {condition_id[:16]}... ({question[:40]})")
         return {"status": "subscribed", "condition_id": condition_id}
 
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Error subscribing to market: {e}")
         raise HTTPException(status_code=500, detail=str(e))

@@ -19,6 +19,7 @@ RUN mkdir -p data logs
 
 ENV PYTHONUNBUFFERED=1
 ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONPATH=/app/src:/app
 
 # --- Dashboard stage: adds docker-cli for container monitoring ---
 FROM base AS dashboard
