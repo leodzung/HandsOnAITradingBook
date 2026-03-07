@@ -444,12 +444,10 @@ class ConstraintValidator:
         with open(report_path, 'w') as f:
             json.dump(report, f, indent=2)
 
-        # Update CONSTRAINTS.yml metadata
-        self.constraints['metadata']['last_validated'] = report['timestamp']
-        self.constraints['metadata']['validation_status'] = report['status']
-
-        with open(self.constraints_file, 'w') as f:
-            yaml.dump(self.constraints, f, default_flow_style=False, sort_keys=False)
+        # Update metadata in the JSON report only.
+        # Do NOT rewrite CONSTRAINTS.yml with yaml.dump — yaml.dump does not
+        # faithfully round-trip complex strings (colons in f-strings, curly
+        # braces, mixed quotes) and corrupts command fields on every run.
 
         # Print summary
         self._print_summary(report)

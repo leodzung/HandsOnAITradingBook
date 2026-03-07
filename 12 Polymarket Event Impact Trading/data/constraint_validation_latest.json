@@ -1,5 +1,5 @@
 {
-  "timestamp": "2026-03-06T22:49:49.726470",
+  "timestamp": "2026-03-06T23:01:13.414785",
   "total_constraints": 39,
   "passed": 48,
   "warnings": 3,
@@ -25,7 +25,7 @@
       "constraint_id": "ML-002",
       "title": "Feature drift detection and alerting",
       "validation_type": "continuous_monitoring",
-      "error": "2026-03-06 22:49:45,968 - ERROR - Error: database disk image is malformed\nTraceback (most recent call last):\n  File \"/Users/leole/workspace/HandsOnAITradingBook/12 Polymarket Event Impact Trading/scripts/analyze_feature_drift.py\", line 449, in main\n    analyze_drift(args.bot_type, args.baseline_strategy, args.lookback)\n  File \"/Users/leole/workspace/HandsOnAITradingBook/12 Polymarket Event Impact Trading/scripts/analyze_feature_drift.py\", line 172, in analyze_drift\n    detector = DriftDetector()\n  File \"/Users/leole/workspace/HandsOnAITradingBook/12 Polymarket Event Impact Trading/src/ml/drift_detector.py\", line 82, in __init__\n    self.tracker = FeatureImportanceTracker(db_path)\n  File \"/Users/leole/workspace/HandsOnAITradingBook/12 Polymarket Event Impact Trading/src/ml/feature_importance_tracker.py\", line 48, in __init__\n    self._init_database()\n  File \"/Users/leole/workspace/HandsOnAITradingBook/12 Polymarket Event Impact Trading/src/ml/feature_importance_tracker.py\", line 57, in _init_database\n    cursor.execute(\"\"\"\nsqlite3.DatabaseError: database disk image is malformed\n",
+      "error": "2026-03-06 23:01:09,696 - ERROR - Error: database disk image is malformed\nTraceback (most recent call last):\n  File \"/Users/leole/workspace/HandsOnAITradingBook/12 Polymarket Event Impact Trading/scripts/analyze_feature_drift.py\", line 449, in main\n    analyze_drift(args.bot_type, args.baseline_strategy, args.lookback)\n  File \"/Users/leole/workspace/HandsOnAITradingBook/12 Polymarket Event Impact Trading/scripts/analyze_feature_drift.py\", line 172, in analyze_drift\n    detector = DriftDetector()\n  File \"/Users/leole/workspace/HandsOnAITradingBook/12 Polymarket Event Impact Trading/src/ml/drift_detector.py\", line 82, in __init__\n    self.tracker = FeatureImportanceTracker(db_path)\n  File \"/Users/leole/workspace/HandsOnAITradingBook/12 Polymarket Event Impact Trading/src/ml/feature_importance_tracker.py\", line 48, in __init__\n    self._init_database()\n  File \"/Users/leole/workspace/HandsOnAITradingBook/12 Polymarket Event Impact Trading/src/ml/feature_importance_tracker.py\", line 57, in _init_database\n    cursor.execute(\"\"\"\nsqlite3.DatabaseError: database disk image is malformed\n",
       "severity": "high"
     }
   ]
