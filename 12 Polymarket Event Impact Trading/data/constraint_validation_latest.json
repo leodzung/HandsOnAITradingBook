@@ -1,39 +1,31 @@
 {
-  "timestamp": "2026-02-25T19:47:34.206582",
-  "total_constraints": 10,
-  "passed": 12,
-  "warnings": 1,
-  "violations": 3,
-  "status": "FAIL",
-  "violation_details": [
-    {
-      "constraint_id": "ML-001",
-      "title": "Cross-validation (k\u22655) before model deployment",
-      "validation_type": "pre_deployment_gate",
-      "error": "Validating model: data/models/CANDIDATE_MODEL.pkl\n\n\u274c Model file not found: data/models/CANDIDATE_MODEL.pkl\n\u274c Validation failed - unable to extract metrics\n",
-      "severity": "critical"
-    },
-    {
-      "constraint_id": "ML-003",
-      "title": "Training labels use correct token-condition mapping",
-      "validation_type": "label_quality_check",
-      "error": "Validating labels: /Users/leole/workspace/HandsOnAITradingBook/12 Polymarket Event Impact Trading/data/alchemy_trades.db\nSample size: 100\n\n\u274c Failed to query labeled trades: Execution failed on sql '\n            SELECT maker_asset_id, label, price\n            FROM on_chain_trades\n            WHERE label IS NOT NULL\n            ORDER BY RANDOM()\n            LIMIT 100\n        ': no such column: label\n\u274c Validation failed - unable to check labels\n",
-      "severity": "critical"
-    },
-    {
-      "constraint_id": "DEBT-002",
-      "title": "REGRESSION: WebSocket reconnection logic",
-      "validation_type": "regression",
-      "error": "tests/integration/test_websocket_reconnection.py::TestWebSocketReconnection::test_reconnection_flow_with_backoff FAILED [ 75%]\n       ERROR    src.utils.orderbook_websocket:orderbook_websocket.py:464 WebSocket error: Connection failed\n       FAILED tests/integration/test_websocket_reconnection.py::TestWebSocketReconnection::test_reconnection_flow_with_backoff",
-      "severity": "critical"
-    }
-  ],
+  "timestamp": "2026-03-06T22:49:49.726470",
+  "total_constraints": 39,
+  "passed": 48,
+  "warnings": 3,
+  "violations": 0,
+  "status": "PASS",
+  "violation_details": [],
   "warning_details": [
+    {
+      "constraint_id": "ARCH-003",
+      "title": "Common features centralized in common_features.py",
+      "validation_type": "structural_test",
+      "error": "tests/test_common_features.py::TestOrderbookFeatures::test_empty_orderbook FAILED [ 28%]\n       tests/test_common_features.py::TestOrderbookFeatures::test_missing_orderbook_keys FAILED [ 33%]\n       FAILED tests/test_common_features.py::TestOrderbookFeatures::test_empty_orderbook",
+      "severity": "high"
+    },
+    {
+      "constraint_id": "ARCH-006",
+      "title": "PositionSizer is single source for position sizing",
+      "validation_type": "structural_test",
+      "error": "tests/test_position_sizer.py::TestLiquidityCap::test_empty_orderbook FAILED [ 72%]\n       FAILED tests/test_position_sizer.py::TestLiquidityCap::test_empty_orderbook",
+      "severity": "high"
+    },
     {
       "constraint_id": "ML-002",
       "title": "Feature drift detection and alerting",
       "validation_type": "continuous_monitoring",
-      "error": "2026-02-25 19:47:32,516 - ERROR - Error: database disk image is malformed\nTraceback (most recent call last):\n  File \"/Users/leole/workspace/HandsOnAITradingBook/12 Polymarket Event Impact Trading/scripts/analyze_feature_drift.py\", line 449, in main\n    analyze_drift(args.bot_type, args.baseline_strategy, args.lookback)\n  File \"/Users/leole/workspace/HandsOnAITradingBook/12 Polymarket Event Impact Trading/scripts/analyze_feature_drift.py\", line 172, in analyze_drift\n    detector = DriftDetector()\n  File \"/Users/leole/workspace/HandsOnAITradingBook/12 Polymarket Event Impact Trading/src/ml/drift_detector.py\", line 82, in __init__\n    self.tracker = FeatureImportanceTracker(db_path)\n  File \"/Users/leole/workspace/HandsOnAITradingBook/12 Polymarket Event Impact Trading/src/ml/feature_importance_tracker.py\", line 48, in __init__\n    self._init_database()\n  File \"/Users/leole/workspace/HandsOnAITradingBook/12 Polymarket Event Impact Trading/src/ml/feature_importance_tracker.py\", line 57, in _init_database\n    cursor.execute(\"\"\"\nsqlite3.DatabaseError: database disk image is malformed\n",
+      "error": "2026-03-06 22:49:45,968 - ERROR - Error: database disk image is malformed\nTraceback (most recent call last):\n  File \"/Users/leole/workspace/HandsOnAITradingBook/12 Polymarket Event Impact Trading/scripts/analyze_feature_drift.py\", line 449, in main\n    analyze_drift(args.bot_type, args.baseline_strategy, args.lookback)\n  File \"/Users/leole/workspace/HandsOnAITradingBook/12 Polymarket Event Impact Trading/scripts/analyze_feature_drift.py\", line 172, in analyze_drift\n    detector = DriftDetector()\n  File \"/Users/leole/workspace/HandsOnAITradingBook/12 Polymarket Event Impact Trading/src/ml/drift_detector.py\", line 82, in __init__\n    self.tracker = FeatureImportanceTracker(db_path)\n  File \"/Users/leole/workspace/HandsOnAITradingBook/12 Polymarket Event Impact Trading/src/ml/feature_importance_tracker.py\", line 48, in __init__\n    self._init_database()\n  File \"/Users/leole/workspace/HandsOnAITradingBook/12 Polymarket Event Impact Trading/src/ml/feature_importance_tracker.py\", line 57, in _init_database\n    cursor.execute(\"\"\"\nsqlite3.DatabaseError: database disk image is malformed\n",
       "severity": "high"
     }
   ]

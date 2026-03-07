@@ -1593,12 +1593,11 @@ operations:
       Thresholds of < 10% spread or price bounds of 0.05/0.95 are FORBIDDEN.
 
       '
-    rationale: 'Bug fixed 2026-03-06: max_spread_pct was 6-10% (equity convention),
-      killing 91-97% of discoverable markets before signal generation. min_price/max_price
-      of 0.05/0.95 excluded crypto binary markets that price near certainty — exactly
-      where edge is highest. Result: zero trades despite 160-220 discovered markets.
-
-      '
+    rationale: "Bug fixed 2026-03-06: max_spread_pct was 6-10% (equity convention),\
+      \ killing 91-97% of discoverable markets before signal generation. min_price/max_price\
+      \ of 0.05/0.95 excluded crypto binary markets that price near certainty \u2014\
+      \ exactly where edge is highest. Result: zero trades despite 160-220 discovered\
+      \ markets.\n"
     status: enforced
     priority: critical
     implemented_date: '2026-03-06'
@@ -1657,8 +1656,8 @@ operations:
       where live_mid = (bestAsk + bestBid) / 2.
 
       Returning 0.0 for all momentum features on empty history is FORBIDDEN because
-      it permanently suppresses momentum signals for the first hour of operation, preventing
-      any trades regardless of actual price movement.
+      it permanently suppresses momentum signals for the first hour of operation,
+      preventing any trades regardless of actual price movement.
 
       '
     rationale: 'Bug fixed 2026-03-06: On fresh bot start, PriceTracker has no history
@@ -1679,16 +1678,11 @@ operations:
         when history empty but lastTradePrice and bestAsk/bestBid present
   - id: RISK-017
     title: can_execute balance check must use min_position_size, not max_position_size
-    description: 'The balance sufficiency check in can_execute() MUST compare balance
-      against min_position_size (not max_position_size).
-
-      The check MUST be: if balance < min_position_size: return False
-
-      Using max_position_size in the comparison is FORBIDDEN — it blocks valid small
-      positions when balance is between min and max, producing zero trades even with
-      ample capital.
-
-      '
+    description: "The balance sufficiency check in can_execute() MUST compare balance\
+      \ against min_position_size (not max_position_size).\nThe check MUST be: if\
+      \ balance < min_position_size: return False\nUsing max_position_size in the\
+      \ comparison is FORBIDDEN \u2014 it blocks valid small positions when balance\
+      \ is between min and max, producing zero trades even with ample capital.\n"
     rationale: 'Bug fixed 2026-03-06: can_execute had "if max_position_size > balance:
       return False". With ultra_short max=$50 and balance=$49, this blocked all positions
       even though a $10 minimum position was feasible. Logic was inverted: it rejected
@@ -1717,16 +1711,16 @@ operations:
     - metric: trades_blocked_balance_check
       threshold: null
       alert: info
-      description: Count of trades blocked by balance check (should reflect true
-        insufficient funds, not max_size misfire)
+      description: Count of trades blocked by balance check (should reflect true insufficient
+        funds, not max_size misfire)
   - id: OBS-001
     title: Market discovery funnel stages must be recorded to telemetry
     description: 'All three bots (event_trader, short_expiry_*, price_level_trader)
       MUST record market counts at each discovery funnel stage to telemetry.db using
       record_market_discovery_funnel() from monitoring.telemetry_helpers.
 
-      Required stages: api_fetched, event_fetched, combined, after_quality (plus
-      after_category for event_trader, after_expiry for price_level_trader).
+      Required stages: api_fetched, event_fetched, combined, after_quality (plus after_category
+      for event_trader, after_expiry for price_level_trader).
 
       filter_by_quality() MUST be called with source= so rejection breakdowns are
       also recorded via record_quality_rejections().
@@ -1734,11 +1728,9 @@ operations:
       Removing or skipping funnel recording is FORBIDDEN.
 
       '
-    rationale: 'Implemented 2026-03-06: Bots previously logged funnel counts to stdout
-      only — ephemeral and unqueryable. Without persistent time-series metrics it is
-      impossible to detect when a config change silently kills 90%+ of candidates.
-
-      '
+    rationale: "Implemented 2026-03-06: Bots previously logged funnel counts to stdout\
+      \ only \u2014 ephemeral and unqueryable. Without persistent time-series metrics\
+      \ it is impossible to detect when a config change silently kills 90%+ of candidates.\n"
     status: enforced
     priority: high
     implemented_date: '2026-03-06'
@@ -1765,17 +1757,13 @@ operations:
       description: Final tradeable market count for price-level trader
   - id: RISK-018
     title: risk_management.min_edge must not exceed any rule's min_edge
-    description: 'The global risk_management.min_edge threshold MUST be <= the minimum
-      min_edge value across all signal rules (arbitrage, momentum, mean_reversion).
-
-      Setting risk_management.min_edge HIGHER than a rule''s min_edge is FORBIDDEN
-      because it silently discards valid signals that passed the rule threshold —
-      the bot generates the signal, then can_execute() drops it with no log.
-
-      In config_short_expiry.json: risk_management.min_edge MUST be <= 0.02
-      (matching rules.arbitrage.min_edge).
-
-      '
+    description: "The global risk_management.min_edge threshold MUST be <= the minimum\
+      \ min_edge value across all signal rules (arbitrage, momentum, mean_reversion).\n\
+      Setting risk_management.min_edge HIGHER than a rule's min_edge is FORBIDDEN\
+      \ because it silently discards valid signals that passed the rule threshold\
+      \ \u2014 the bot generates the signal, then can_execute() drops it with no log.\n\
+      In config_short_expiry.json: risk_management.min_edge MUST be <= 0.02 (matching\
+      \ rules.arbitrage.min_edge).\n"
     rationale: 'Bug fixed 2026-03-06: risk_management.min_edge=0.05 > rules.arbitrage.min_edge=0.02.
       Every arbitrage signal (edge 0.02-0.05) was silently rejected by can_execute().
       Zero arbitrage trades executed despite valid opportunities being detected.
@@ -1786,9 +1774,10 @@ operations:
     implemented_date: '2026-03-06'
     validation:
     - type: structural_test
-      command: python3 -c "import json; c=json.load(open('config/config_short_expiry.json'));
-        rm=c['risk_management']['min_edge']; arb=c['rules']['arbitrage']['min_edge'];
-        assert rm<=arb, f'min_edge mismatch: risk_mgmt={rm} > arbitrage={arb}'; print('OK')"
+      command: 'python3 -c "import json; c=json.load(open(''config/config_short_expiry.json''));
+        rm=c[''risk_management''][''min_edge'']; arb=c[''rules''][''arbitrage''][''min_edge''];
+        assert rm<=arb, f''min_edge mismatch: risk_mgmt={rm} > arbitrage={arb}'';
+        print(''OK'')"'
       description: Verify risk_management.min_edge <= rules.arbitrage.min_edge
     forbidden_patterns:
     - '"min_edge": 0\.[1-9]'
@@ -1796,25 +1785,16 @@ operations:
     - config/config_short_expiry.json
   - id: PERF-001
     title: Orderbook subscription clients must have a circuit breaker
-    description: 'Any client that calls a remote orderbook subscription endpoint
-      MUST implement a circuit breaker that:
-
-      1. Tracks consecutive connection failures.
-
-      2. After >= 3 consecutive failures, marks the service unavailable for >= 60s.
-
-      3. Returns immediately (no network call) while in the back-off window.
-
-      Blocking N × timeout_seconds per discovery cycle without a circuit breaker
-      is FORBIDDEN when N is the number of markets to register.
-
-      '
-    rationale: 'Bug fixed 2026-03-06: OrderbookServiceClient.subscribe_market() had
-      no circuit breaker. When orderbook service was down, 108 markets × 5s timeout
-      = 9 minutes wasted per discovery cycle. _process_bucket() barely ran, so no
-      trades were opened despite qualified markets existing.
-
-      '
+    description: "Any client that calls a remote orderbook subscription endpoint MUST\
+      \ implement a circuit breaker that:\n1. Tracks consecutive connection failures.\n\
+      2. After >= 3 consecutive failures, marks the service unavailable for >= 60s.\n\
+      3. Returns immediately (no network call) while in the back-off window.\nBlocking\
+      \ N \xD7 timeout_seconds per discovery cycle without a circuit breaker is FORBIDDEN\
+      \ when N is the number of markets to register.\n"
+    rationale: "Bug fixed 2026-03-06: OrderbookServiceClient.subscribe_market() had\
+      \ no circuit breaker. When orderbook service was down, 108 markets \xD7 5s timeout\
+      \ = 9 minutes wasted per discovery cycle. _process_bucket() barely ran, so no\
+      \ trades were opened despite qualified markets existing.\n"
     status: enforced
     priority: high
     implemented_date: '2026-03-06'
@@ -1828,9 +1808,9 @@ operations:
     title: WebSocket staleness timeout must be <= 120s
     description: 'DATA_STALENESS_TIMEOUT in OrderBookWebSocket MUST be <= 120 seconds.
 
-      Setting it higher (e.g. 300s) allows bots to trade on stale data for up to
-      5 minutes per Polymarket silent-freeze episode (confirmed bug in
-      real-time-data-client#26 and py-clob-client#292).
+      Setting it higher (e.g. 300s) allows bots to trade on stale data for up to 5
+      minutes per Polymarket silent-freeze episode (confirmed bug in real-time-data-client#26
+      and py-clob-client#292).
 
       DATA_STALENESS_CHECK_INTERVAL MUST be <= 15 seconds for fast detection.
 
@@ -1852,20 +1832,17 @@ operations:
       description: Verify DATA_STALENESS_TIMEOUT is at most 120s
   - id: ARCH-022
     title: All WebSocket subscription messages must use official market channel format
-    description: 'All messages sent to the Polymarket WebSocket MUST use the documented
-      market channel format: {"type": "market", "assets_ids": [...], "custom_feature_enabled": true}.
-
-      Using undocumented keys like "operation": "subscribe" is FORBIDDEN — the server
-      silently ignores them, causing dynamic subscriptions to fail after reconnects.
-
-      Omitting "custom_feature_enabled": true is FORBIDDEN — without it, best_bid_ask,
-      new_market, and market_resolved events are never delivered.
-
-      '
+    description: "All messages sent to the Polymarket WebSocket MUST use the documented\
+      \ market channel format: {\"type\": \"market\", \"assets_ids\": [...], \"custom_feature_enabled\"\
+      : true}.\nUsing undocumented keys like \"operation\": \"subscribe\" is FORBIDDEN\
+      \ \u2014 the server silently ignores them, causing dynamic subscriptions to\
+      \ fail after reconnects.\nOmitting \"custom_feature_enabled\": true is FORBIDDEN\
+      \ \u2014 without it, best_bid_ask, new_market, and market_resolved events are\
+      \ never delivered.\n"
     rationale: 'Fixed 2026-03-06: subscribe() used {"assets_ids": [...], "operation":
       "subscribe"} which is not documented. _on_open used {"assets_ids": [...], "type":
-      "market"} without custom_feature_enabled. The two paths were inconsistent.
-      Unified to official format with custom_feature_enabled: true.
+      "market"} without custom_feature_enabled. The two paths were inconsistent. Unified
+      to official format with custom_feature_enabled: true.
 
       '
     status: enforced
@@ -1876,7 +1853,8 @@ operations:
       pattern: '"operation": "subscribe"'
       files_to_check:
       - src/utils/orderbook_websocket.py
-      description: Forbidden pattern — "operation": "subscribe" must not appear in subscription messages
+      description: "Forbidden pattern \u2014 \"operation\": \"subscribe\" must not\
+        \ appear in subscription messages"
     forbidden_patterns:
     - '"operation": "subscribe"'
     files_to_check:
@@ -1891,8 +1869,8 @@ operations:
       try/except ImportError, setting WEBSOCKET_AVAILABLE=False and falling back to
       REST mode on every container startup with no visible error.
 
-      Required value: PYTHONPATH=/app/src:/app (dual path supports both
-      "from utils.xxx" and "from src.xxx" import styles in the codebase).
+      Required value: PYTHONPATH=/app/src:/app (dual path supports both "from utils.xxx"
+      and "from src.xxx" import styles in the codebase).
 
       '
     rationale: 'Bug found 2026-03-07: PYTHONPATH=/app caused websocket import failure
@@ -1912,24 +1890,19 @@ operations:
       description: Verify /app/src is present in PYTHONPATH
   - id: ARCH-024
     title: orderbook_service /subscribe/ must not call client.register_market_for_orderbook
-    description: 'The /subscribe/{condition_id} HTTP handler in orderbook_service.py
-      MUST NOT call client.register_market_for_orderbook() to register markets.
-
-      That method checks use_orderbook_service (default True) and makes an HTTP POST
-      back to http://localhost:8765/subscribe/ — a circular self-call. The inner POST
-      times out after 5s, the outer handler returns 200 OK, but _subscribed_assets
-      is never populated, the WebSocket sends no subscription message, and
-      messages_received stays 0 permanently.
-
-      The handler MUST instead call client.get_token_ids() then
-      orderbook_manager.register_market() directly.
-
-      '
+    description: "The /subscribe/{condition_id} HTTP handler in orderbook_service.py\
+      \ MUST NOT call client.register_market_for_orderbook() to register markets.\n\
+      That method checks use_orderbook_service (default True) and makes an HTTP POST\
+      \ back to http://localhost:8765/subscribe/ \u2014 a circular self-call. The\
+      \ inner POST times out after 5s, the outer handler returns 200 OK, but _subscribed_assets\
+      \ is never populated, the WebSocket sends no subscription message, and messages_received\
+      \ stays 0 permanently.\nThe handler MUST instead call client.get_token_ids()\
+      \ then orderbook_manager.register_market() directly.\n"
     rationale: 'Bug found 2026-03-07: /subscribe/ called client.register_market_for_orderbook()
       which recursively POSTed to itself. Result: all subscribe HTTP calls returned
       200 OK silently while doing nothing. WS connected with 0 subscriptions, Polymarket
-      dropped the idle connection every ~8s, and the service ran in a perpetual
-      connect-drop loop with messages_received=0.
+      dropped the idle connection every ~8s, and the service ran in a perpetual connect-drop
+      loop with messages_received=0.
 
       '
     status: enforced
@@ -1940,7 +1913,7 @@ operations:
       pattern: register_market_for_orderbook
       files_to_check:
       - src/services/orderbook_service.py
-      description: Forbidden — /subscribe/ handler must not call register_market_for_orderbook
+      description: "Forbidden \u2014 /subscribe/ handler must not call register_market_for_orderbook"
     forbidden_patterns:
     - register_market_for_orderbook
     files_to_check:
@@ -1956,7 +1929,8 @@ operations:
       minimum required edge per signal type whenever min_position_size or kelly_multiplier
       is changed.
 
-      Rule: min_position_size <= (min_expected_edge * kelly_multiplier * min_balance * 0.8)
+      Rule: min_position_size <= (min_expected_edge * kelly_multiplier * min_balance
+      * 0.8)
 
       '
     rationale: 'Bug found 2026-03-06: min_position_size=10 blocked arbitrage (edge
@@ -1973,9 +1947,11 @@ operations:
       file: config/config_short_expiry.json
       path: position_sizing.min_position_size
       max_value: 5
-      description: min_position_size must be <= 5 given current kelly_multiplier and balance
+      description: min_position_size must be <= 5 given current kelly_multiplier and
+        balance
   - id: PERF-003
-    title: liquidity_cap_pct must be >= 0.25 to avoid killing valid positions in thin markets
+    title: liquidity_cap_pct must be >= 0.25 to avoid killing valid positions in thin
+      markets
     description: '
 
       Polymarket prediction markets routinely have orderbook depth of $50-$150 per
@@ -1984,8 +1960,8 @@ operations:
       to allow valid positions through in thin markets.
 
       '
-    rationale: 'Bug found 2026-03-06: liquidity_cap_pct=0.10 capped positions to
-      $8 for an $80-depth market. Even momentum signals that passed Kelly sizing were
+    rationale: 'Bug found 2026-03-06: liquidity_cap_pct=0.10 capped positions to $8
+      for an $80-depth market. Even momentum signals that passed Kelly sizing were
       killed: $12.62 -> $8.00 -> below $10 min -> 0. Raised to 0.30 to allow valid
       positions in typical thin Polymarket markets.
 
@@ -2000,8 +1976,8 @@ operations:
       min_value: 0.25
       description: liquidity_cap_pct must be >= 0.25
 metadata:
-  last_validated: '2026-03-06T12:00:10.874840'
-  validation_status: FAIL
+  last_validated: '2026-03-06T22:49:49.726470'
+  validation_status: PASS
   total_constraints: 57
   enforced_constraints: 55
   proposed_constraints: 0
