@@ -1,31 +1,326 @@
 {
-  "timestamp": "2026-03-06T23:01:13.414785",
+  "timestamp": "2026-03-08T10:00:11.838234",
   "total_constraints": 39,
-  "passed": 48,
-  "warnings": 3,
-  "violations": 0,
-  "status": "PASS",
-  "violation_details": [],
+  "passed": 7,
+  "warnings": 23,
+  "violations": 22,
+  "status": "FAIL",
+  "violation_details": [
+    {
+      "constraint_id": "ARCH-001",
+      "title": "PriceFetcher is single source of truth for price data",
+      "validation_type": "structural_test",
+      "error": "",
+      "severity": "critical"
+    },
+    {
+      "constraint_id": "ARCH-002",
+      "title": "PositionManager V2 is single source for position data",
+      "validation_type": "structural_test",
+      "error": "",
+      "severity": "critical"
+    },
+    {
+      "constraint_id": "ARCH-005",
+      "title": "All position operations must go through TradeExecutor",
+      "validation_type": "structural_test",
+      "error": "",
+      "severity": "critical"
+    },
+    {
+      "constraint_id": "ARCH-007",
+      "title": "Per-bucket config values must be resolved before comparison",
+      "validation_type": "structural_test",
+      "error": "",
+      "severity": "critical"
+    },
+    {
+      "constraint_id": "ARCH-008",
+      "title": "No synthetic NO price calculation from YES price",
+      "validation_type": "structural_test",
+      "error": "",
+      "severity": "critical"
+    },
+    {
+      "constraint_id": "ARCH-009",
+      "title": "Thread-safe shared state in orderbook modules",
+      "validation_type": "structural_test",
+      "error": "",
+      "severity": "critical"
+    },
+    {
+      "constraint_id": "ARCH-015",
+      "title": "Arbitrage checks must use BID prices, not ASK",
+      "validation_type": "structural_test",
+      "error": "",
+      "severity": "critical"
+    },
+    {
+      "constraint_id": "ARCH-016",
+      "title": "Feature extractors must return None for uncomputable markets; callers must skip",
+      "validation_type": "structural_test",
+      "error": "",
+      "severity": "critical"
+    },
+    {
+      "constraint_id": "ARCH-017",
+      "title": "Position loop must use .get() for all DB-derived fields and validate before use",
+      "validation_type": "structural_test",
+      "error": "",
+      "severity": "critical"
+    },
+    {
+      "constraint_id": "RISK-001",
+      "title": "Stop-loss and take-profit always active",
+      "validation_type": "integration_test",
+      "error": "",
+      "severity": "critical"
+    },
+    {
+      "constraint_id": "RISK-004",
+      "title": "Market cooldown prevents over-trading",
+      "validation_type": "structural_test",
+      "error": "",
+      "severity": "critical"
+    },
+    {
+      "constraint_id": "RISK-004",
+      "title": "Market cooldown prevents over-trading",
+      "validation_type": "behavioral_test",
+      "error": "",
+      "severity": "critical"
+    },
+    {
+      "constraint_id": "RISK-005",
+      "title": "Minimum expiry time at entry",
+      "validation_type": "structural_test",
+      "error": "",
+      "severity": "critical"
+    },
+    {
+      "constraint_id": "RISK-007",
+      "title": "Sufficient balance validation before trade",
+      "validation_type": "structural_test",
+      "error": "",
+      "severity": "critical"
+    },
+    {
+      "constraint_id": "RISK-007",
+      "title": "Sufficient balance validation before trade",
+      "validation_type": "behavioral_test",
+      "error": "",
+      "severity": "critical"
+    },
+    {
+      "constraint_id": "RISK-015",
+      "title": "Positions with missing expiry data must be force-closed immediately",
+      "validation_type": "behavioral_test",
+      "error": "",
+      "severity": "critical"
+    },
+    {
+      "constraint_id": "RISK-016",
+      "title": "Current price must be validated non-None before any exit logic",
+      "validation_type": "structural_test",
+      "error": "",
+      "severity": "critical"
+    },
+    {
+      "constraint_id": "RISK-010",
+      "title": "Input validation for all external data",
+      "validation_type": "structural_test",
+      "error": "",
+      "severity": "critical"
+    },
+    {
+      "constraint_id": "ML-003",
+      "title": "Training labels use correct token-condition mapping",
+      "validation_type": "structural_test",
+      "error": "",
+      "severity": "critical"
+    },
+    {
+      "constraint_id": "ML-004",
+      "title": "Feature validation before ML prediction",
+      "validation_type": "structural_test",
+      "error": "",
+      "severity": "critical"
+    },
+    {
+      "constraint_id": "ML-004",
+      "title": "Feature validation before ML prediction",
+      "validation_type": "integration_test",
+      "error": "",
+      "severity": "critical"
+    },
+    {
+      "constraint_id": "DEBT-002",
+      "title": "REGRESSION: WebSocket reconnection logic",
+      "validation_type": "regression",
+      "error": "",
+      "severity": "critical"
+    }
+  ],
   "warning_details": [
     {
       "constraint_id": "ARCH-003",
       "title": "Common features centralized in common_features.py",
       "validation_type": "structural_test",
-      "error": "tests/test_common_features.py::TestOrderbookFeatures::test_empty_orderbook FAILED [ 28%]\n       tests/test_common_features.py::TestOrderbookFeatures::test_missing_orderbook_keys FAILED [ 33%]\n       FAILED tests/test_common_features.py::TestOrderbookFeatures::test_empty_orderbook",
+      "error": "",
+      "severity": "high"
+    },
+    {
+      "constraint_id": "ARCH-004",
+      "title": "WebSocket orderbook with REST fallback",
+      "validation_type": "integration_test",
+      "error": "",
+      "severity": "high"
+    },
+    {
+      "constraint_id": "ARCH-004",
+      "title": "WebSocket orderbook with REST fallback",
+      "validation_type": "behavioral_test",
+      "error": "",
       "severity": "high"
     },
     {
       "constraint_id": "ARCH-006",
       "title": "PositionSizer is single source for position sizing",
       "validation_type": "structural_test",
-      "error": "tests/test_position_sizer.py::TestLiquidityCap::test_empty_orderbook FAILED [ 72%]\n       FAILED tests/test_position_sizer.py::TestLiquidityCap::test_empty_orderbook",
+      "error": "",
       "severity": "high"
     },
     {
-      "constraint_id": "ML-002",
-      "title": "Feature drift detection and alerting",
-      "validation_type": "continuous_monitoring",
-      "error": "2026-03-06 23:01:09,696 - ERROR - Error: database disk image is malformed\nTraceback (most recent call last):\n  File \"/Users/leole/workspace/HandsOnAITradingBook/12 Polymarket Event Impact Trading/scripts/analyze_feature_drift.py\", line 449, in main\n    analyze_drift(args.bot_type, args.baseline_strategy, args.lookback)\n  File \"/Users/leole/workspace/HandsOnAITradingBook/12 Polymarket Event Impact Trading/scripts/analyze_feature_drift.py\", line 172, in analyze_drift\n    detector = DriftDetector()\n  File \"/Users/leole/workspace/HandsOnAITradingBook/12 Polymarket Event Impact Trading/src/ml/drift_detector.py\", line 82, in __init__\n    self.tracker = FeatureImportanceTracker(db_path)\n  File \"/Users/leole/workspace/HandsOnAITradingBook/12 Polymarket Event Impact Trading/src/ml/feature_importance_tracker.py\", line 48, in __init__\n    self._init_database()\n  File \"/Users/leole/workspace/HandsOnAITradingBook/12 Polymarket Event Impact Trading/src/ml/feature_importance_tracker.py\", line 57, in _init_database\n    cursor.execute(\"\"\"\nsqlite3.DatabaseError: database disk image is malformed\n",
+      "constraint_id": "ARCH-012",
+      "title": "No hardcoded sleeps for connection waiting",
+      "validation_type": "structural_test",
+      "error": "",
+      "severity": "high"
+    },
+    {
+      "constraint_id": "ARCH-013",
+      "title": "Bounded caches and collections in orderbook modules",
+      "validation_type": "structural_test",
+      "error": "",
+      "severity": "high"
+    },
+    {
+      "constraint_id": "ARCH-014",
+      "title": "Code quality standards in orderbook modules",
+      "validation_type": "structural_test",
+      "error": "",
+      "severity": "medium"
+    },
+    {
+      "constraint_id": "ARCH-010",
+      "title": "TradeExecutor must not mutate TradeRequest inputs",
+      "validation_type": "structural_test",
+      "error": "",
+      "severity": "high"
+    },
+    {
+      "constraint_id": "ARCH-011",
+      "title": "execute_close_trade must accept bucket for per-bucket thresholds",
+      "validation_type": "structural_test",
+      "error": "",
+      "severity": "high"
+    },
+    {
+      "constraint_id": "RISK-002",
+      "title": "Circuit breaker after 3 consecutive losses",
+      "validation_type": "behavioral_test",
+      "error": "",
+      "severity": "high"
+    },
+    {
+      "constraint_id": "RISK-003",
+      "title": "Slippage estimation before order execution",
+      "validation_type": "integration_test",
+      "error": "",
+      "severity": "high"
+    },
+    {
+      "constraint_id": "RISK-003",
+      "title": "Slippage estimation before order execution",
+      "validation_type": "structural_test",
+      "error": "",
+      "severity": "high"
+    },
+    {
+      "constraint_id": "RISK-006",
+      "title": "Minimum balance protection",
+      "validation_type": "structural_test",
+      "error": "",
+      "severity": "high"
+    },
+    {
+      "constraint_id": "RISK-008",
+      "title": "Symmetric test coverage for BUY/SELL operations",
+      "validation_type": "structural_test",
+      "error": "",
+      "severity": "high"
+    },
+    {
+      "constraint_id": "RISK-009",
+      "title": "Configuration validation at startup",
+      "validation_type": "integration_test",
+      "error": "",
+      "severity": "high"
+    },
+    {
+      "constraint_id": "RISK-011",
+      "title": "ExposureManager enforced across all bots",
+      "validation_type": "structural_test",
+      "error": "",
+      "severity": "high"
+    },
+    {
+      "constraint_id": "RISK-011",
+      "title": "ExposureManager enforced across all bots",
+      "validation_type": "integration_test",
+      "error": "",
+      "severity": "high"
+    },
+    {
+      "constraint_id": "RISK-012",
+      "title": "TradeExecutor price validation must check both bounds",
+      "validation_type": "structural_test",
+      "error": "",
+      "severity": "high"
+    },
+    {
+      "constraint_id": "RISK-013",
+      "title": "TradeExecutor must validate position size is positive",
+      "validation_type": "structural_test",
+      "error": "",
+      "severity": "high"
+    },
+    {
+      "constraint_id": "RISK-014",
+      "title": "API errors must use distinct rejection_stage from trade rejections",
+      "validation_type": "structural_test",
+      "error": "",
+      "severity": "high"
+    },
+    {
+      "constraint_id": "TEST-001",
+      "title": "All pytest commands must set PYTHONPATH=src",
+      "validation_type": "structural_test",
+      "error": "",
+      "severity": "medium"
+    },
+    {
+      "constraint_id": "TEST-002",
+      "title": "Collector modules must have test coverage",
+      "validation_type": "structural_test",
+      "error": "",
+      "severity": "high"
+    },
+    {
+      "constraint_id": "TEST-002",
+      "title": "Collector modules must have test coverage",
+      "validation_type": "integration_test",
+      "error": "",
       "severity": "high"
     }
   ]

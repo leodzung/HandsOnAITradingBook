@@ -143,26 +143,24 @@ class TestOrderbookFeatures:
         assert features['depth_imbalance'] == pytest.approx(-0.6667, abs=1e-4)
 
     def test_empty_orderbook(self):
-        """Test handling of empty orderbook."""
+        """Test handling of empty orderbook — returns None (ARCH-016: callers must skip)."""
         orderbook = {'bids': [], 'asks': []}
 
         features = OrderbookFeatures.extract(orderbook)
 
-        assert features['spread'] == 0.0
-        assert features['spread_pct'] == 0.0
-        assert features['mid_price'] == 0.5  # Default neutral
-        assert features['bid_depth_5'] == 0.0
-        assert features['ask_depth_5'] == 0.0
-        assert features['depth_imbalance'] == 0.0
+        assert features is None, (
+            "OrderbookFeatures.extract must return None for empty orderbook so callers can skip"
+        )
 
     def test_missing_orderbook_keys(self):
-        """Test handling of missing bids/asks keys."""
+        """Test handling of missing bids/asks keys — returns None (ARCH-016)."""
         orderbook = {}
 
         features = OrderbookFeatures.extract(orderbook)
 
-        assert features['mid_price'] == 0.5
-        assert features['depth_imbalance'] == 0.0
+        assert features is None, (
+            "OrderbookFeatures.extract must return None when bids/asks are missing"
+        )
 
 
 class TestVolumeFeatures:

@@ -69,17 +69,10 @@ class OrderbookFeatures:
         bids = orderbook.get('bids', [])
         asks = orderbook.get('asks', [])
 
-        # Handle empty orderbook — return zero-filled dict so callers never crash on None
+        # Handle empty orderbook — return None so callers can skip uncomputable markets (ARCH-016)
         if not bids or not asks:
-            logger.debug("Empty orderbook — returning zero-filled features (illiquid market)")
-            zero_features = {
-                'spread': 0.0, 'spread_pct': 0.0, 'mid_price': 0.5,
-                'bid_depth_5': 0.0, 'ask_depth_5': 0.0, 'depth_imbalance': 0.0
-            }
-            if return_best_bid_ask:
-                zero_features['best_bid'] = 0.0
-                zero_features['best_ask'] = 0.0
-            return zero_features
+            logger.debug("Empty orderbook — returning None (uncomputable market, caller must skip)")
+            return None
 
         # Extract best bid/ask (handle both dict and array formats)
         # Dict format: {'price': '0.45', 'size': '1000'}

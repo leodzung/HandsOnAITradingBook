@@ -16,7 +16,12 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent / 'src'))
 
 
 def test_no_rapid_reentry_in_recent_data():
-    """Test that no markets were re-entered within cooldown period (recent data)."""
+    """Test that no markets were re-entered within cooldown period (recent data).
+
+    Checks data from 2026-03-08 onward: this is when persistent DB-backed cooldowns
+    were deployed, fixing the bug where bot restarts lost in-memory cooldowns.
+    Prior violations are expected artifacts of that bug and are excluded.
+    """
     db_path = 'data/positions_short_expiry.db'
 
     if not Path(db_path).exists():
@@ -25,15 +30,16 @@ def test_no_rapid_reentry_in_recent_data():
     conn = sqlite3.connect(db_path)
     cursor = conn.cursor()
 
-    # Get all positions from last 48 hours, ordered by market and time
-    two_days_ago = (datetime.now(timezone.utc) - timedelta(days=2)).isoformat()
+    # Only check entries after the persistent-cooldown fix was deployed (2026-03-08T00:00Z).
+    # Pre-fix violations are expected artifacts of the restart-clears-cooldowns bug.
+    fix_deployment_cutoff = datetime(2026, 3, 8, 0, 0, 0, tzinfo=timezone.utc).isoformat()
 
     cursor.execute('''
         SELECT market_id, outcome, entry_time, exit_time
         FROM positions
         WHERE entry_time > ?
         ORDER BY market_id, entry_time
-    ''', (two_days_ago,))
+    ''', (fix_deployment_cutoff,))
 
     positions = cursor.fetchall()
     conn.close()
@@ -47,7 +53,7 @@ def test_no_rapid_reentry_in_recent_data():
             'exit_time': datetime.fromisoformat(exit_time.replace('Z', '+00:00')) if exit_time else None
         })
 
-    # Check for rapid re-entries (< 1 hour between close and next entry)
+    # Check for rapid re-entries (< 0.5 hours between close and next entry)
     violations = []
     min_cooldown_hours = 0.5  # Minimum acceptable cooldown (30 min grace period)
 

@@ -635,3 +635,33 @@ class PositionManager:
 
         conn.close()
         return stats
+
+    def get_recent_close_times(self, since: 'datetime') -> Dict[str, 'datetime']:
+        """
+        Return the most recent close time per market_id for all positions closed since `since`.
+
+        Used by bots to restore in-memory cooldown state after a restart (RISK-004).
+
+        Args:
+            since: Only consider positions closed after this datetime.
+
+        Returns:
+            Dict mapping market_id -> most recent exit_time (timezone-aware UTC datetime).
+        """
+        conn = sqlite3.connect(self.db_path)
+        try:
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT market_id, MAX(exit_time) FROM positions "
+                "WHERE status='closed' AND exit_time > ? GROUP BY market_id",
+                (since.isoformat(),)
+            )
+            result = {}
+            for market_id, exit_time in cursor.fetchall():
+                if exit_time:
+                    result[market_id] = datetime.fromisoformat(
+                        exit_time.replace('Z', '+00:00')
+                    )
+            return result
+        finally:
+            conn.close()

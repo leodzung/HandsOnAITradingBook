@@ -352,6 +352,7 @@ class ShortExpiryTrader:
 
         # Market cooldown tracking (prevent over-trading same markets)
         self.market_cooldowns = {}  # market_id -> last_close_time
+        self._load_cooldowns_from_db()  # Restore cooldowns after restart
 
         # Market cache
         self.market_cache = {}
@@ -382,6 +383,17 @@ class ShortExpiryTrader:
             balance = self.config['paper_trading_balance']
             self._save_balance(balance)
             return balance
+
+    def _load_cooldowns_from_db(self):
+        """Load recent market close times from DB to restore cooldowns after restart (RISK-004)."""
+        max_cooldown = max(self.config['risk_management']['market_cooldown_hours'].values(), default=2.0)
+        since = datetime.now(timezone.utc) - timedelta(hours=max_cooldown)
+        try:
+            self.market_cooldowns = self.position_manager.get_recent_close_times(since)
+            if self.market_cooldowns:
+                logger.info(f"Restored {len(self.market_cooldowns)} market cooldowns from DB")
+        except Exception as e:
+            logger.warning(f"Could not load cooldowns from DB: {e}")
 
     def _save_balance(self, balance: float):
         """Save paper trading balance."""

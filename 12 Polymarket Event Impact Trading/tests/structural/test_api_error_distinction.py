@@ -49,7 +49,7 @@ class TestApiErrorDistinction:
         )
 
     def test_execute_close_trade_api_error_on_orderbook_failure(self):
-        """execute_close_trade must return api_error when orderbook fetch fails."""
+        """execute_close_trade must return api_error when orderbook fetch fails (non-forced exits)."""
         from src.core.trade_executor import TradeExecutor
 
         client = Mock()
@@ -62,10 +62,14 @@ class TestApiErrorDistinction:
             paper_trading=True
         )
 
+        # Use a non-forced exit reason ('signal_reversal' is not in FORCED_EXIT_REASONS,
+        # so slippage validation runs and the orderbook failure is caught as api_error.
+        # Note: stop_loss/take_profit/expiry are in FORCED_EXIT_REASONS and intentionally
+        # bypass slippage to ensure they always execute.
         result = executor.execute_close_trade(
             market_id='test', outcome='YES', token_id='test',
             exit_price=0.50, position_size=50.0,
-            exit_reason='stop_loss', question='Test'
+            exit_reason='signal_reversal', question='Test'
         )
 
         assert not result.success

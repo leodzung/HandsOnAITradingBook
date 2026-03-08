@@ -428,6 +428,8 @@ class MarketMicrostructureFeatures:
         """
         # Use centralized orderbook extraction
         orderbook_features = OrderbookFeatures.extract(orderbook, return_best_bid_ask=False)
+        if orderbook_features is None:
+            return None
 
         # Use centralized volume extraction
         volume_features = VolumeFeatures.extract(market)
