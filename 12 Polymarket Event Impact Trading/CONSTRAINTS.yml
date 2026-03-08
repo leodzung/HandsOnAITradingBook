@@ -2001,11 +2001,78 @@ operations:
       path: position_sizing.liquidity_cap_pct
       min_value: 0.25
       description: liquidity_cap_pct must be >= 0.25
+  - id: ML-005
+    title: Use Gamma API (not CLOB) for outcome labeling; CLOB returns 0.5/0.5 post-resolution
+    description: 'When labeling market snapshots as YES/NO, the Gamma batch API
+      (gamma-api.polymarket.com/markets?closed=true) MUST be used as the primary
+      source. The CLOB API get_market() returns outcomePrices=[0.5, 0.5] for most
+      resolved markets, causing them to be labeled INVALID even when they resolved
+      YES or NO. Only use CLOB as a fallback for markets not found in Gamma batches.
+
+      Outcome inference from Gamma: p0 >= 0.99 → YES, p1 >= 0.99 → NO, else skip.
+
+      '
+    rationale: 'Bug found 2026-03-08: label_snapshots.py (CLOB-based) labeled 23,750
+      of 23,791 snapshots as INVALID because CLOB prices stay at 0.5 post-resolution.
+      ResolutionBackfiller was created to use Gamma batch API as primary source.
+
+      '
+    status: enforced
+    priority: critical
+    implemented_date: '2026-03-08'
+    validation:
+    - type: code_review
+      description: ResolutionBackfiller._fetch_resolved_from_gamma() uses Gamma API;
+        CLOB only in _check_market_outcome_clob() as fallback called from Path B.
+  - id: OPS-010
+    title: New Docker entrypoint scripts must be whitelisted in .dockerignore
+    description: 'The .dockerignore file excludes all of scripts/ by default.
+      Any new script that runs as a Docker service entrypoint MUST be explicitly
+      whitelisted with a !scripts/<name>.py line in .dockerignore, or the container
+      will fail with "can''t open file" at runtime.
+
+      '
+    rationale: 'Bug found 2026-03-08: run_resolution_backfiller.py was not in
+      .dockerignore whitelist so the built image did not include it. Container
+      started but immediately failed: "python3: can''t open file /app/scripts/
+      run_resolution_backfiller.py".
+
+      '
+    status: enforced
+    priority: high
+    implemented_date: '2026-03-08'
+    validation:
+    - type: file_content_check
+      file: .dockerignore
+      description: Every scripts/run_*.py service entrypoint has a matching
+        !scripts/run_*.py whitelist line
+  - id: ML-006
+    title: ML training must merge snapshot DB data with positions DB to eliminate selection bias
+    description: 'train_short_expiry_from_live.py MUST call load_labeled_snapshots()
+      and merge the result with positions-based training data before fitting models.
+      Training on positions-only data introduces selection bias: only markets where
+      the bot chose to trade are included, skewing the feature distribution.
+      market_snapshots.db covers all evaluated markets (traded and non-traded)
+      and is the unbiased primary training source once labeled samples exist.
+
+      '
+    rationale: 'Design constraint added 2026-03-08. Phase 3 of the snapshot labeling
+      plan. Snapshot data covers non-trade observations which positions DB misses,
+      providing a fuller picture of what features look like when NOT to trade.
+
+      '
+    status: enforced
+    priority: high
+    implemented_date: '2026-03-08'
+    validation:
+    - type: code_review
+      description: LiveDataTrainer.run() calls load_labeled_snapshots() and pd.concat
+        before training.
 metadata:
-  last_validated: '2026-03-06T23:00:10.928150'
+  last_validated: '2026-03-08T10:00:00.000000'
   validation_status: FAIL
-  total_constraints: 57
-  enforced_constraints: 55
+  total_constraints: 60
+  enforced_constraints: 58
   proposed_constraints: 0
   contact:
     maintainer: Trading System Team
