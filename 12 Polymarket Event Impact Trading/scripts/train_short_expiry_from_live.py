@@ -52,6 +52,7 @@ class LiveDataTrainer:
         self.models_dir.mkdir(exist_ok=True)
 
         self.positions_db = self.data_dir / "positions_short_expiry.db"
+        self.snapshots_db = self.data_dir / "market_snapshots.db"
 
     def load_closed_positions(self):
         """Load closed positions from database."""
@@ -94,6 +95,118 @@ class LiveDataTrainer:
             logger.warning(f"Only {len(df)} closed positions. Recommended: 100+ per bucket")
 
         return df
+
+    def load_labeled_snapshots(self):
+        """
+        Load labeled snapshots from market_snapshots.db as additional training data.
+
+        This is the primary training source once Phase 1/2 labeling runs:
+        snapshots cover ALL evaluated markets (not just traded ones), eliminating
+        the selection bias present in positions-only training.
+
+        Returns:
+            DataFrame with same columns as positions data, or None if unavailable.
+        """
+        logger.info("Loading labeled snapshots from market_snapshots.db...")
+
+        if not self.snapshots_db.exists():
+            logger.info(f"Snapshots DB not found: {self.snapshots_db}")
+            return None
+
+        conn = sqlite3.connect(self.snapshots_db)
+        query = """
+            SELECT
+                market_id,
+                outcome,
+                yes_price AS entry_price,
+                NULL AS exit_price,
+                days_to_expiry,
+                features_json,
+                NULL AS pnl
+            FROM market_snapshots
+            WHERE labeled = 1
+              AND bot_type = 'short_expiry'
+              AND outcome IN ('YES', 'NO')
+        """
+        df = pd.read_sql_query(query, conn)
+        conn.close()
+
+        if df.empty:
+            logger.info("No labeled snapshots found in market_snapshots.db")
+            return None
+
+        logger.info(f"Loaded {len(df)} labeled snapshots")
+
+        # Assign bucket from days_to_expiry
+        def _days_to_bucket(d):
+            try:
+                d = float(d)
+            except (TypeError, ValueError):
+                return "short"
+            if d < 1:
+                return "ultra_short"
+            elif d <= 3:
+                return "short"
+            else:
+                return "medium"
+
+        df["bucket"] = df["days_to_expiry"].apply(_days_to_bucket)
+
+        # Build a flat features + label df that matches prepare_training_data output
+        training_samples = []
+        for _, row in df.iterrows():
+            try:
+                features = json.loads(row["features_json"]) if isinstance(row["features_json"], str) else row["features_json"]
+                if not isinstance(features, dict):
+                    continue
+            except Exception:
+                continue
+
+            # Spread-adjusted label: outcome YES → did price reach 1.0 (win)?
+            spread_pct_raw = features.get("spread_pct", 2.0)
+            spread_cost = max(float(spread_pct_raw) / 100.0, 0.01)
+
+            # For snapshots we use the resolution outcome directly as ground truth.
+            # A YES resolution means the YES token paid out 1.0.
+            # Label = 1 if the bot would have profited by holding to resolution
+            # (assuming entry at yes_price, exit at 1.0 for YES / 0.0 for NO).
+            entry_price = float(row["entry_price"]) if row["entry_price"] else 0.5
+            if row["outcome"] == "YES":
+                price_change = (1.0 - entry_price) / entry_price if entry_price > 0 else 0.0
+                label = 1 if price_change > spread_cost else 0
+            else:  # NO outcome → YES token worth 0
+                price_change = (entry_price - 0.0) / entry_price if entry_price > 0 else 0.0
+                label = 0  # Holding YES token to NO resolution is a loss
+
+            flat_features = {}
+            for key, value in features.items():
+                if isinstance(value, (int, float)):
+                    flat_features[key] = float(value)
+                elif isinstance(value, dict) and len(value) == 1:
+                    try:
+                        flat_features[key] = float(list(value.values())[0])
+                    except Exception:
+                        continue
+                else:
+                    try:
+                        flat_features[key] = float(value)
+                    except Exception:
+                        continue
+
+            flat_features["label"] = label
+            flat_features["bucket"] = row["bucket"]
+            flat_features["market_id"] = row["market_id"]
+            flat_features["actual_pnl"] = 0.0  # unknown for snapshots
+            training_samples.append(flat_features)
+
+        if not training_samples:
+            logger.warning("No training samples extracted from snapshots")
+            return None
+
+        result = pd.DataFrame(training_samples)
+        logger.info(f"Created {len(result)} snapshot training samples")
+        logger.info(f"Snapshot samples per bucket:\n{result['bucket'].value_counts()}")
+        return result
 
     def prepare_training_data(self, positions_df):
         """Extract features and create labels from positions."""
@@ -256,7 +369,7 @@ class LiveDataTrainer:
             'feature_importance': feature_importance.to_dict('records'),
             'trained_at': datetime.now().isoformat(),
             'samples': len(X),
-            'training_data_source': 'live_positions'
+            'training_data_source': 'live_positions+snapshots'
         }
 
         model_path = self.models_dir / f"short_expiry_{bucket}.pkl"
@@ -281,10 +394,20 @@ class LiveDataTrainer:
             logger.info("Check status: python3 scripts/check_data_status.py")
             return
 
-        # Prepare training data
+        # Prepare training data from positions
         training_df = self.prepare_training_data(positions_df)
         if training_df is None:
             return
+
+        # Merge with snapshot-based training data (larger, unbiased dataset)
+        snapshot_df = self.load_labeled_snapshots()
+        if snapshot_df is not None and not snapshot_df.empty:
+            logger.info(f"Merging {len(training_df)} position samples + {len(snapshot_df)} snapshot samples")
+            training_df = pd.concat([training_df, snapshot_df], ignore_index=True)
+            # Fill NaN columns introduced by schema differences between datasets
+            training_df = training_df.fillna(0)
+            logger.info(f"Combined training set: {len(training_df)} total samples")
+            logger.info(f"Combined samples per bucket:\n{training_df['bucket'].value_counts()}")
 
         # Save training data
         training_csv = self.data_dir / "short_expiry_training_live.csv"

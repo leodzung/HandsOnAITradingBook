@@ -62,12 +62,20 @@ config/
 # Backups
 backups/
 
-# Scripts (except healthcheck)
+# Scripts (except healthcheck and github reporter)
 scripts/
 !scripts/docker_healthcheck.py
+!scripts/run_github_reporter.py
+!scripts/run_db_backup.py
+!scripts/run_resolution_backfiller.py
 
 # CI/CD
 .github/
+
+# Large model files
+*.gguf
+*.bin
+*.safetensors
 
 # Misc
 suggestions.yml

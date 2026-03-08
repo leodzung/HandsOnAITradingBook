@@ -1,4 +1,38 @@
 services:
+  # Orderbook Microservice (shared WebSocket orderbook for all bots)
+  orderbook-service:
+    build:
+      context: .
+      target: base
+    container_name: polymarket-orderbook
+    command: python src/services/orderbook_service.py
+    restart: unless-stopped
+    profiles: ["trading", "all"]
+    volumes:
+      - ./data:/app/data
+      - ./logs:/app/logs
+    env_file: .env
+    environment:
+      - PYTHONUNBUFFERED=1
+    networks:
+      - polymarket-net
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+          cpus: "0.5"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8765/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
   # Event-Based Trading Bot
   event-trader:
     build:
@@ -8,6 +42,9 @@ services:
     command: python src/bots/trader.py
     restart: unless-stopped
     profiles: ["trading", "all"]
+    depends_on:
+      orderbook-service:
+        condition: service_healthy
     volumes:
       - ./data:/app/data
       - ./logs:/app/logs
@@ -15,6 +52,9 @@ services:
     env_file: .env
     environment:
       - PYTHONUNBUFFERED=1
+      - ORDERBOOK_SERVICE_URL=http://orderbook-service:8765
+    networks:
+      - polymarket-net
     deploy:
       resources:
         limits:
@@ -41,6 +81,9 @@ services:
     command: python src/bots/trader_price_levels.py
     restart: unless-stopped
     profiles: ["trading", "all"]
+    depends_on:
+      orderbook-service:
+        condition: service_healthy
     volumes:
       - ./data:/app/data
       - ./logs:/app/logs
@@ -48,6 +91,9 @@ services:
     env_file: .env
     environment:
       - PYTHONUNBUFFERED=1
+      - ORDERBOOK_SERVICE_URL=http://orderbook-service:8765
+    networks:
+      - polymarket-net
     deploy:
       resources:
         limits:
@@ -74,6 +120,9 @@ services:
     command: python src/bots/trader_short_expiry.py
     restart: unless-stopped
     profiles: ["trading", "all"]
+    depends_on:
+      orderbook-service:
+        condition: service_healthy
     volumes:
       - ./data:/app/data
       - ./logs:/app/logs
@@ -81,6 +130,9 @@ services:
     env_file: .env
     environment:
       - PYTHONUNBUFFERED=1
+      - ORDERBOOK_SERVICE_URL=http://orderbook-service:8765
+    networks:
+      - polymarket-net
     deploy:
       resources:
         limits:
@@ -107,6 +159,9 @@ services:
     command: python src/bots/arbitrage_bot.py --config config/config_arbitrage.json
     restart: unless-stopped
     profiles: ["trading", "all"]
+    depends_on:
+      orderbook-service:
+        condition: service_healthy
     volumes:
       - ./data:/app/data
       - ./logs:/app/logs
@@ -114,6 +169,9 @@ services:
     env_file: .env
     environment:
       - PYTHONUNBUFFERED=1
+      - ORDERBOOK_SERVICE_URL=http://orderbook-service:8765
+    networks:
+      - polymarket-net
     deploy:
       resources:
         limits:
@@ -146,6 +204,8 @@ services:
     env_file: .env
     environment:
       - PYTHONUNBUFFERED=1
+    networks:
+      - polymarket-net
     deploy:
       resources:
         limits:
@@ -179,6 +239,9 @@ services:
     env_file: .env
     environment:
       - PYTHONUNBUFFERED=1
+      - ALCHEMY_API_KEY=${ALCHEMY_API_KEY}
+    networks:
+      - polymarket-net
     deploy:
       resources:
         limits:
@@ -214,6 +277,8 @@ services:
     env_file: .env
     environment:
       - PYTHONUNBUFFERED=1
+    networks:
+      - polymarket-net
     deploy:
       resources:
         limits:
@@ -230,3 +295,108 @@ services:
       options:
         max-size: "10m"
         max-file: "3"
+
+  # Database Backup Service
+  db-backup:
+    build:
+      context: .
+      target: base
+    container_name: polymarket-db-backup
+    command: >
+      sh -c "sleep 30 && while true; do
+        python scripts/run_db_backup.py;
+        sleep 86400;
+      done"
+    restart: unless-stopped
+    profiles: ["monitoring", "all"]
+    volumes:
+      - ./data:/app/data
+      - ./logs:/app/logs
+      - ./config:/app/config:ro
+      - ./backups:/app/backups
+    env_file: .env
+    environment:
+      - PYTHONUNBUFFERED=1
+    networks:
+      - polymarket-net
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: "0.25"
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "5m"
+        max-file: "3"
+
+  # GitHub Issue Reporter
+  github-issue-reporter:
+    build:
+      context: .
+      target: dashboard
+    container_name: polymarket-github-reporter
+    command: >
+      sh -c "sleep 60 && while true; do
+        python scripts/run_github_reporter.py;
+        sleep 1800;
+      done"
+    restart: unless-stopped
+    profiles: ["monitoring", "all"]
+    volumes:
+      - ./data:/app/data
+      - ./logs:/app/logs
+      - ./config:/app/config:ro
+      - /var/run/docker.sock:/var/run/docker.sock
+    env_file: .env
+    environment:
+      - PYTHONUNBUFFERED=1
+    networks:
+      - polymarket-net
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+          cpus: "0.25"
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "5m"
+        max-file: "3"
+
+  # Resolution Backfiller - labels unlabeled snapshots every 30 min
+  resolution-backfiller:
+    build:
+      context: .
+      target: base
+    container_name: polymarket-resolution-backfiller
+    command: >
+      sh -c "sleep 60 && while true; do
+        python3 scripts/run_resolution_backfiller.py;
+        sleep 1800;
+      done"
+    restart: unless-stopped
+    profiles: ["collectors", "all"]
+    volumes:
+      - ./data:/app/data
+      - ./logs:/app/logs
+      - ./config:/app/config:ro
+    env_file: .env
+    environment:
+      - PYTHONUNBUFFERED=1
+    networks:
+      - polymarket-net
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+          cpus: "0.25"
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "5m"
+        max-file: "3"
+
+networks:
+  polymarket-net:
+    driver: bridge
