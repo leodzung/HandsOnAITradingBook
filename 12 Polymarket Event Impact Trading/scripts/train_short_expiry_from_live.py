@@ -163,14 +163,13 @@ class LiveDataTrainer:
                 continue
 
             # Spread-adjusted label: outcome YES → did price reach 1.0 (win)?
-            spread_pct_raw = features.get("spread_pct", 2.0)
-            spread_cost = max(float(spread_pct_raw) / 100.0, 0.01)
+            spread_cost = max(self._scalar(features.get("spread_pct", 2.0), 2.0) / 100.0, 0.01)
 
             # For snapshots we use the resolution outcome directly as ground truth.
             # A YES resolution means the YES token paid out 1.0.
             # Label = 1 if the bot would have profited by holding to resolution
             # (assuming entry at yes_price, exit at 1.0 for YES / 0.0 for NO).
-            entry_price = float(row["entry_price"]) if row["entry_price"] else 0.5
+            entry_price = self._scalar(row["entry_price"], 0.5) if row["entry_price"] else 0.5
             if row["outcome"] == "YES":
                 price_change = (1.0 - entry_price) / entry_price if entry_price > 0 else 0.0
                 label = 1 if price_change > spread_cost else 0
@@ -208,6 +207,19 @@ class LiveDataTrainer:
         logger.info(f"Snapshot samples per bucket:\n{result['bucket'].value_counts()}")
         return result
 
+    @staticmethod
+    def _scalar(value, default=0.0):
+        """Extract a float scalar from a value that may be a pandas Series dict {"0": v}."""
+        if isinstance(value, dict):
+            try:
+                return float(list(value.values())[0])
+            except Exception:
+                return default
+        try:
+            return float(value)
+        except Exception:
+            return default
+
     def prepare_training_data(self, positions_df):
         """Extract features and create labels from positions."""
         logger.info("Preparing training data...")
@@ -222,16 +234,16 @@ class LiveDataTrainer:
                 # Spread-adjusted label: entry=ASK, exit=BID, so raw P&L is always
                 # reduced by the bid-ask spread. A "win" must recover that cost.
                 # Use spread_pct from features if available, else default 2% (Polymarket typical).
-                spread_pct_raw = features.get('spread_pct', 2.0)
-                spread_cost = max(float(spread_pct_raw) / 100.0, 0.01)  # floor at 1%
+                spread_cost = max(self._scalar(features.get('spread_pct', 2.0), 2.0) / 100.0, 0.01)
+
+                entry = self._scalar(row['entry_price'], 0.0)
+                exit_ = self._scalar(row['exit_price'], 0.0)
 
                 if row['outcome'] == 'YES':
-                    price_change = (row['exit_price'] - row['entry_price']) / row['entry_price'] \
-                                   if row['entry_price'] > 0 else 0.0
+                    price_change = (exit_ - entry) / entry if entry > 0 else 0.0
                     label = 1 if price_change > spread_cost else 0
                 else:  # NO — win when YES price falls (entry > exit for YES token)
-                    price_change = (row['entry_price'] - row['exit_price']) / row['entry_price'] \
-                                   if row['entry_price'] > 0 else 0.0
+                    price_change = (entry - exit_) / entry if entry > 0 else 0.0
                     label = 1 if price_change > spread_cost else 0
 
                 # Flatten features (handle nested dicts/series)
